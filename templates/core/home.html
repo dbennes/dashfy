@@ -649,15 +649,15 @@
     </div>
     <div class="card-body">
       <div class="c3-probe-tabs" data-c3-probe-tabs>
-        <button class="c3-probe-tab is-active" type="button" data-c3-probe-tab="materials" aria-selected="true">
+        <button class="c3-probe-tab" type="button" data-c3-probe-tab="materials" aria-selected="false">
           <i class="bi bi-table"></i> Material rows
         </button>
-        <button class="c3-probe-tab" type="button" data-c3-probe-tab="drawing-lines" aria-selected="false">
+        <button class="c3-probe-tab is-active" type="button" data-c3-probe-tab="drawing-lines" aria-selected="true">
           <i class="bi bi-diagram-3"></i> Drawing lines
         </button>
       </div>
 
-      <div class="c3-probe-view is-active" data-c3-probe-view="materials">
+      <div class="c3-probe-view" data-c3-probe-view="materials">
         <div class="c3-probe-result-head">
           <div class="c3-probe-result-title">
             <strong>{{ manager.material.material_rows|length|intcomma }}</strong> item(s) found
@@ -780,7 +780,7 @@
         </div>
       </div>
 
-      <div class="c3-probe-view" data-c3-probe-view="drawing-lines">
+      <div class="c3-probe-view is-active" data-c3-probe-view="drawing-lines">
         <div class="c3-probe-result-head">
           <div class="c3-probe-result-title">
             <strong>{{ manager.material.drawing_line_rows|length|intcomma }}</strong> drawing(s)
@@ -2009,6 +2009,8 @@
           views.forEach(function(view){
             view.classList.toggle('is-active', view.getAttribute('data-c3-probe-view') === key);
           });
+          var table = root.querySelector('[data-c3-probe-view="' + key + '"] [data-c3-probe-grid]');
+          if (table && !table._c3ProbeGrid) initC3ProbeGrid(table);
         });
       });
     });
@@ -2475,7 +2477,7 @@
     setupPoPlacedResize();
     initC3ProbeTabs();
     c3WhenVisible(document.querySelector('[data-c3-probe]'), function(){
-      document.querySelectorAll('[data-c3-probe-grid]').forEach(initC3ProbeGrid);
+      document.querySelectorAll('[data-c3-probe-view].is-active [data-c3-probe-grid]').forEach(initC3ProbeGrid);
     }, { rootMargin: '720px 0px', idle: true });
     initC3LinkedFilters();
     initC3NoteTooltips();
