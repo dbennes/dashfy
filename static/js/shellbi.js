@@ -2024,22 +2024,25 @@
 window.renderShellChart = function (elementId, payload) {
   const el = document.getElementById(elementId);
   if (!el) return;
-  const whenIdle = window.requestIdleCallback || (fn => window.setTimeout(fn, 16));
+  const nextFrame = callback => {
+    if (window.requestAnimationFrame) window.requestAnimationFrame(callback);
+    else window.setTimeout(callback, 16);
+  };
   const runWhenVisible = callback => {
     const rect = el.getBoundingClientRect();
     if (rect.top < window.innerHeight + 420 && rect.bottom > -160) {
-      whenIdle(callback, { timeout: 900 });
+      nextFrame(callback);
       return;
     }
     if (!('IntersectionObserver' in window)) {
-      whenIdle(callback, { timeout: 900 });
+      nextFrame(callback);
       return;
     }
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
         if (!entry.isIntersecting) return;
         observer.disconnect();
-        whenIdle(callback, { timeout: 900 });
+        nextFrame(callback);
       });
     }, { rootMargin: '520px 0px', threshold: 0.01 });
     observer.observe(el);

@@ -1009,8 +1009,8 @@
     function run() {
       if (done) return;
       done = true;
-      if (options.idle === false) fn();
-      else c3Idle(fn);
+      if (options.idle === true) c3Idle(fn);
+      else fn();
     }
     var rect = el.getBoundingClientRect();
     if (rect.top < window.innerHeight + 320 && rect.bottom > -160) {
@@ -2466,7 +2466,7 @@
     }
     c3WhenVisible(document.querySelector('[data-c3-areaperf]'), function(){
       renderC3AreaPerf(document.querySelector('[data-c3-areaperf]'), C3_AREAPERF_PAYLOAD);
-    }, { idle: false });
+    });
     c3WhenVisible(document.querySelector('[data-c3-monthload]'), function(){
       renderC3MonthLoad(document.querySelector('[data-c3-monthload]'), C3_MONTHLOAD_PAYLOAD);
     });
@@ -2476,7 +2476,7 @@
     initC3ProbeTabs();
     c3WhenVisible(document.querySelector('[data-c3-probe]'), function(){
       document.querySelectorAll('[data-c3-probe-grid]').forEach(initC3ProbeGrid);
-    }, { rootMargin: '720px 0px' });
+    }, { rootMargin: '720px 0px', idle: true });
     initC3LinkedFilters();
     initC3NoteTooltips();
 
