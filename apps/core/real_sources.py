@@ -16,6 +16,10 @@ from django.db.utils import OperationalError, ProgrammingError
 
 from apps.eclic.api_client import EclicAPIError, EclicClient
 from apps.core.models import DatafySupplySnapshot, EngineeringStatusImport, P6CurveImport
+from apps.core.supply_snapshot_filters import (
+    hash_supply_snapshot_filters,
+    normalized_supply_snapshot_filters,
+)
 
 
 ECLIC_MANAGERIAL_DISCIPLINES = [
@@ -803,7 +807,7 @@ def _supply_campaign_views(
         ("total", "Total scope", "All items in the campaign"),
         ("po", "With PO", "Items with a linked purchase order"),
         ("no_po", "Without PO", "Items still without a purchase order"),
-        ("no_yard", "PO not arrived", "Items with PO, awaiting yard arrival confirmation"),
+        ("no_yard", "Item not arrived", "Items with PO, awaiting yard arrival confirmation"),
         ("yard", "At Yard", "Items with confirmed yard arrival"),
     ]
     bucket_defs = [
@@ -1107,7 +1111,7 @@ def _supply_campaign_views(
                 },
                 {
                     "key": "no_yard",
-                    "label": "PO not arrived",
+                    "label": "Item not arrived",
                     "value": no_yard_items,
                     "width_css": _supply_ratio_css(no_yard_items, total_items),
                     "pct": _supply_ratio(no_yard_items, total_items),
@@ -1191,9 +1195,7 @@ def _supply_campaign_views(
 
 
 def _supply_filters_hash(filters: dict[str, Any]) -> str:
-    normalized = json.loads(json.dumps(filters, default=json_default, ensure_ascii=False))
-    encoded = json.dumps(normalized, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return hash_supply_snapshot_filters(filters)
 
 
 def _rows(cursor, query: str, params: tuple = ()) -> list[dict[str, Any]]:
@@ -4867,6 +4869,7 @@ def _construction_datafy_empty(message: str = "No active DATAFY SQLite snapshot.
 def _construction_datafy_snapshot(filters: dict, *, allow_live: bool | None = None) -> dict:
     if allow_live is None:
         allow_live = not settings.DASHFY_SQLITE_ONLY
+    requested_snapshot_filters = normalized_supply_snapshot_filters(filters)
     try:
         snapshot = (
             DatafySupplySnapshot.objects
@@ -4874,6 +4877,20 @@ def _construction_datafy_snapshot(filters: dict, *, allow_live: bool | None = No
             .order_by("-created_at", "-id")
             .first()
         )
+        if snapshot is None:
+            snapshots = (
+                DatafySupplySnapshot.objects
+                .filter(is_active=True)
+                .order_by("-created_at", "-id")
+            )
+            snapshot = next(
+                (
+                    candidate
+                    for candidate in snapshots
+                    if normalized_supply_snapshot_filters(candidate.filters) == requested_snapshot_filters
+                ),
+                None,
+            )
     except (OperationalError, ProgrammingError):
         snapshot = None
 

@@ -1929,16 +1929,23 @@
     buttons.forEach(button => {
       const active = button.dataset.supplyMode === mode;
       button.classList.toggle('is-active', active);
+      button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
     views.forEach(view => {
       view.classList.toggle('is-active', view.dataset.supplyScope === mode);
     });
+    if (typeof window.c3RenderPoPlacedScope === 'function') {
+      window.requestAnimationFrame(() => window.c3RenderPoPlacedScope(mode));
+    }
   };
   const initSupplyCampaignPanel = root => {
     const buttons = Array.from(root.querySelectorAll('[data-supply-mode]'));
     buttons.forEach(button => {
-      button.setAttribute('aria-pressed', button.classList.contains('is-active') ? 'true' : 'false');
+      const active = button.classList.contains('is-active') || button.classList.contains('active');
+      button.classList.toggle('is-active', active);
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
   };
 

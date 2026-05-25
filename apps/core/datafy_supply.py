@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Any
 
@@ -9,6 +8,7 @@ from django.db import transaction
 
 from .models import DatafySupplySnapshot
 from .real_sources import _construction_datafy, json_default
+from .supply_snapshot_filters import hash_supply_snapshot_filters, normalized_supply_snapshot_filters
 
 
 def _json_ready(value: Any) -> Any:
@@ -16,9 +16,7 @@ def _json_ready(value: Any) -> Any:
 
 
 def supply_filters_hash(filters: dict[str, Any]) -> str:
-    normalized = _json_ready(filters)
-    encoded = json.dumps(normalized, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return hash_supply_snapshot_filters(filters)
 
 
 def latest_supply_snapshot(filters: dict[str, Any]) -> DatafySupplySnapshot | None:
@@ -45,9 +43,16 @@ def refresh_supply_snapshot(filters: dict[str, Any], *, refreshed_by: Any = None
     user = getattr(refreshed_by, "_wrapped", refreshed_by)
     if not getattr(user, "is_authenticated", False):
         user = None
+    normalized_filters = normalized_supply_snapshot_filters(filters)
+    active_snapshot_ids = [
+        snapshot.pk
+        for snapshot in DatafySupplySnapshot.objects.filter(is_active=True)
+        if normalized_supply_snapshot_filters(snapshot.filters) == normalized_filters
+    ]
 
     with transaction.atomic():
-        DatafySupplySnapshot.objects.filter(filters_hash=filters_hash, is_active=True).update(is_active=False)
+        if active_snapshot_ids:
+            DatafySupplySnapshot.objects.filter(pk__in=active_snapshot_ids).update(is_active=False)
         snapshot = DatafySupplySnapshot.objects.create(
             source_database=settings.DATAFY_DB_NAME,
             source_host=f"{settings.DATAFY_DB_HOST}:{settings.DATAFY_DB_PORT}",

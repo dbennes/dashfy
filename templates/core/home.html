@@ -472,7 +472,7 @@
         <div class="rhs">
           <div class="scope-switch" data-supply-scope-switch>
             {% for view in manager.material.supply_campaign_views %}
-              <button type="button" class="{% if forloop.first %}active{% endif %}" data-supply-mode="{{ view.key }}">{{ view.label|upper }}</button>
+              <button type="button" class="{% if forloop.first %}active is-active{% endif %}" data-supply-mode="{{ view.key }}" aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}">{{ view.label|upper }}</button>
             {% endfor %}
           </div>
         </div>
@@ -493,7 +493,7 @@
                 <div class="sub">{{ view.executive.yard_pct|floatformat:1 }}% of scope at yard</div>
               </div>
               <div class="kpi kpi-amber">
-                <div class="lbl"><span class="marker"></span><span>PO not arrived</span></div>
+                <div class="lbl"><span class="marker"></span><span>Item not arrived</span></div>
                 <div class="val">{{ view.executive.yard_gap|intcomma }}</div>
                 <div class="sub">purchased, awaiting arrival</div>
               </div>
@@ -512,7 +512,7 @@
               <div class="card-head">
                 <div class="lhs">
                   <span class="tag">STATUS PO</span>
-                  <h3>Total · With PO · Without PO · PO not arrived · At Yard</h3>
+                  <h3>Total · With PO · Without PO · Item not arrived · At Yard</h3>
                 </div>
                 <div class="rhs">{{ view.label|upper }} · ITEMS BY CAMPAIGN</div>
               </div>
@@ -529,6 +529,11 @@
                   <h3>Finalized drawings and material pending items</h3>
                 </div>
                 <div class="rhs">
+                  <div class="c3-supply-stage-actions" aria-label="Supply scenario filter">
+                    <button type="button" data-c3-linked-filter="supply-stage" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}">All</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="no_yard">Item not arrived</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard">At Yard</button>
+                  </div>
                   <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
                   {% if request.user.is_admin or request.user.can_export %}
                     <button class="c3-export-link" type="button" data-c3-export-pending="{{ view.key }}" title="Export drawing list for the current pending condition">
@@ -1256,7 +1261,7 @@
       total: 'Total',
       po: 'With PO',
       no_po: 'Without PO',
-      no_yard: 'PO not arrived',
+      no_yard: 'Item not arrived',
       yard: 'At Yard'
     };
     return labels[stage] || stage || 'Selection';
@@ -1357,7 +1362,7 @@
       { key: 'total',   label: 'TOTAL',     field: 'total'   },
       { key: 'po',      label: 'WITH PO',     field: 'po'      },
       { key: 'no_po',   label: 'WITHOUT PO',  field: 'no_po'   },
-      { key: 'no_yard', label: 'PO NOT ARRIVED', field: 'no_yard' },
+      { key: 'no_yard', label: 'ITEM NOT ARRIVED', field: 'no_yard' },
       { key: 'yard',    label: 'AT YARD',     field: 'yard'    }
     ];
     var totalsByStage = stages.map(function(s){ return camps.reduce(function(a,c){ return a + (c[s.field]||0); }, 0); });
@@ -1728,9 +1733,9 @@
     if (!row) return '';
     if (c3Flag(row.dataset.drawingFinalized)) return 'Finalized';
     if (c3DatasetNumber(row, 'withPo') <= 0) return 'Without PO';
-    if (c3DatasetNumber(row, 'poNotArrived') > 0) return 'PO not arrived';
+    if (c3DatasetNumber(row, 'poNotArrived') > 0) return 'Item not arrived';
     if (c3DatasetNumber(row, 'yardActual') > 0) return 'At Yard';
-    return 'PO not arrived';
+    return 'Item not arrived';
   }
 
   function exportC3PendingMatrix(scopeKey, button) {
@@ -2359,7 +2364,7 @@
     }, { passive: true });
 
     // ECharts supply campaign panel (keep previous behavior)
-    if (window.echarts) initSupplyEcharts();
+    initSupplyEcharts();
   });
 
   function initSupplyEcharts() {
@@ -2379,6 +2384,8 @@
         var mode = btn.dataset.supplyMode;
         panel.querySelectorAll('[data-supply-mode]').forEach(function(b){
           b.classList.toggle('active', b === btn);
+          b.classList.toggle('is-active', b === btn);
+          b.setAttribute('aria-pressed', b === btn ? 'true' : 'false');
         });
         panel.querySelectorAll('[data-supply-scope]').forEach(function(v){
           v.classList.toggle('is-active', v.dataset.supplyScope === mode);
