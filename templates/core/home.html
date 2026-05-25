@@ -531,7 +531,7 @@
                 <div class="rhs">
                   <div class="scope-switch c3-supply-stage-actions" aria-label="Supply scenario filter">
                     <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-scenario-label="All items" data-scenario-detail="All material rows, arrived or not arrived">All items</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="no_yard" data-scenario-label="Item not arrived" data-scenario-detail="Drawings with at least one purchased item not confirmed at yard">Item not arrived</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="no_yard" data-scenario-label="Item not arrived" data-scenario-detail="Drawings with one or more active material item not confirmed at yard">Item not arrived</button>
                     <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard" data-scenario-detail="Drawings with every active material item confirmed at yard">At Yard</button>
                   </div>
                   <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
@@ -1332,9 +1332,10 @@
   function c3DrawingStageMatches(row, stage) {
     if (!stage) return true;
     if (!row) return false;
-    if (stage === 'yard' && c3DatasetHas(row, 'stageTotalItems') && c3DatasetHas(row, 'stageYardItems')) {
+    if ((stage === 'no_yard' || stage === 'yard') && c3DatasetHas(row, 'stageTotalItems') && c3DatasetHas(row, 'stageYardItems')) {
       var totalItems = c3DatasetNumber(row, 'stageTotalItems');
       var yardItems = c3DatasetNumber(row, 'stageYardItems');
+      if (stage === 'no_yard') return totalItems > 0 && yardItems < totalItems;
       return totalItems > 0 && yardItems >= totalItems;
     }
     return c3StageItems(row, stage) > 0;
