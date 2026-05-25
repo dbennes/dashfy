@@ -3164,3 +3164,560 @@ button.c3-export-link {
 /* Light theme tweaks for tbody chips */
 .cockpit-v3[data-theme="light"] .c3-pending-table tbody td.col-total { background: rgba(0,0,0,0.03); }
 .cockpit-v3[data-theme="light"] .c3-pending-table tfoot td.col-total { background: rgba(77,124,15,0.10); }
+
+/* ===== Mobile / tablet resilience ===== */
+@media (max-width: 1180px) {
+  .cockpit-v3 .card,
+  .cockpit-v3 .card-head,
+  .cockpit-v3 .card-body,
+  .cockpit-v3 .row-2 > *,
+  .cockpit-v3 .row-3 > *,
+  .cockpit-v3 .c3-probe-card,
+  .cockpit-v3 .c3-model-card {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .cockpit-v3 .filterbar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cockpit-v3 .fb-cell {
+    flex: 0 0 auto;
+  }
+
+  .cockpit-v3 .c3-discipline-scroll,
+  .cockpit-v3 .c3-probe-table-wrap,
+  .cockpit-v3 .c3-pending-table-wrap {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .cockpit-v3 .c3-discipline-scroll {
+    overflow-x: auto;
+  }
+
+  .cockpit-v3 .c3-discipline-table {
+    min-width: 680px;
+  }
+}
+
+@media (max-width: 860px) {
+  .cockpit-v3 .shell {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .cockpit-v3 .sidebar {
+    width: 44px;
+  }
+
+  .cockpit-v3 .sidebar:hover {
+    width: min(220px, calc(100vw - 12px));
+  }
+
+  .cockpit-v3 .sb-brand {
+    padding-inline: 8px;
+  }
+
+  .cockpit-v3 .sb-brand-tile {
+    width: 26px;
+    height: 26px;
+  }
+
+  .cockpit-v3 .sb-item {
+    grid-template-columns: 24px 1fr;
+    height: 34px;
+    margin-inline: 6px;
+    padding-inline: 4px;
+  }
+
+  .cockpit-v3 .sb-foot {
+    padding-inline: 6px;
+  }
+
+  .cockpit-v3 .sb-avatar {
+    width: 30px;
+    height: 30px;
+  }
+
+  .cockpit-v3 .topbar {
+    min-width: 0;
+    height: 40px;
+    padding-right: 6px;
+  }
+
+  .cockpit-v3 .tb-project {
+    flex: 0 0 auto;
+    padding-inline: 8px;
+    min-width: 0;
+  }
+
+  .cockpit-v3 .tb-project .code {
+    flex: 0 0 auto;
+  }
+
+  .cockpit-v3 .tb-project .name {
+    display: inline-block;
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cockpit-v3 .tb-tickers {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cockpit-v3 .tb-ticker,
+  .cockpit-v3 .tb-ticker:nth-child(n+3),
+  .cockpit-v3 .tb-ticker:nth-child(n+5),
+  .cockpit-v3 .tb-ticker:nth-child(n+6) {
+    display: flex;
+    flex: 0 0 auto;
+    min-width: 74px;
+    padding-inline: 8px;
+  }
+
+  .cockpit-v3 .tb-status {
+    display: flex;
+    flex: 0 0 auto;
+  }
+
+  .cockpit-v3 .tb-tools {
+    flex: 0 0 auto;
+  }
+
+  .cockpit-v3 .filterbar {
+    position: static;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    height: auto;
+    min-height: 0;
+    gap: 8px;
+    padding: 8px;
+    overflow: visible;
+  }
+
+  .cockpit-v3 .fb-cell {
+    min-width: 0 !important;
+    height: 46px;
+    padding: 6px 8px;
+    border: 1px solid var(--line-1);
+    border-radius: var(--r-2);
+    background: var(--bg-2);
+  }
+
+  .cockpit-v3 .fb-actions {
+    grid-column: 1 / -1;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .cockpit-v3 .fb-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .cockpit-v3 .section-nav {
+    position: static;
+    top: auto;
+    height: auto;
+    min-height: 36px;
+    padding-inline: 8px;
+  }
+
+  .cockpit-v3 .sn-spacer {
+    display: none;
+  }
+
+  .cockpit-v3 .sn-meta {
+    flex: 0 0 auto;
+  }
+
+  .cockpit-v3 .section {
+    padding: 12px 8px 24px;
+  }
+
+  .cockpit-v3 .section-head {
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .cockpit-v3 .section-head > div,
+  .cockpit-v3 .section-head .p6-source-meta.c3-meta-inline {
+    width: 100%;
+    flex: 1 1 100%;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .cockpit-v3 .section-head .p6-source-meta.c3-meta-inline {
+    flex-direction: column;
+  }
+
+  .cockpit-v3 .section-head .c3-meta-line {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.45;
+  }
+
+  .cockpit-v3 .p6-import-form,
+  .cockpit-v3 .p6-import-btn,
+  .cockpit-v3 .source-refresh-btn {
+    width: 100%;
+  }
+
+  .cockpit-v3 .card-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .cockpit-v3 .card-head .lhs {
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .cockpit-v3 .card-head h3 {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.25;
+  }
+
+  .cockpit-v3 .card-head .rhs {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .cockpit-v3 .card-body {
+    padding: 12px;
+  }
+
+  .cockpit-v3 .card-body.flush {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cockpit-v3 .kpi-strip {
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  }
+
+  .cockpit-v3 .kpi {
+    padding: 10px;
+  }
+
+  .cockpit-v3 .kpi .val {
+    font-size: 20px;
+  }
+
+  .cockpit-v3 .row-2,
+  .cockpit-v3 .row-3,
+  .cockpit-v3 .c3-p6-layout,
+  .cockpit-v3 .c3-engineering-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cockpit-v3 .curve-chart,
+  .cockpit-v3 .c3-poplaced-chart {
+    min-width: 520px;
+    height: 300px;
+  }
+
+  .cockpit-v3 .barchart {
+    min-width: 420px;
+    height: 250px;
+  }
+
+  .cockpit-v3 .bar-row,
+  .cockpit-v3 .bar-row[style] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: stretch;
+    gap: 7px;
+    padding: 10px 12px;
+  }
+
+  .cockpit-v3 .bar-row .main strong {
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  .cockpit-v3 .bar-row .main small {
+    line-height: 1.35;
+  }
+
+  .cockpit-v3 .bar-row .delta-cell {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    text-align: left;
+  }
+
+  .cockpit-v3 .legend {
+    gap: 8px 12px;
+  }
+
+  .cockpit-v3 .scope-switch {
+    width: 100%;
+    height: auto;
+    flex-wrap: wrap;
+  }
+
+  .cockpit-v3 .scope-switch button,
+  .cockpit-v3 .scope-switch a {
+    flex: 1 1 120px;
+    min-height: 30px;
+    justify-content: center;
+  }
+
+  .cockpit-v3 .c3-supply-stage-actions {
+    width: 100%;
+  }
+
+  .cockpit-v3 .c3-poplaced-row {
+    padding: 0 12px 12px !important;
+  }
+
+  .cockpit-v3 .c3-pending-table {
+    min-width: 660px;
+  }
+
+  .cockpit-v3 .c3-pending-context {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .cockpit-v3 .c3-pending-context span,
+  .cockpit-v3 .c3-pending-context b {
+    white-space: normal;
+  }
+
+  .cockpit-v3 .c3-probe-card .card-body {
+    padding: 10px;
+  }
+
+  .cockpit-v3 .c3-probe-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cockpit-v3 .c3-probe-tab {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .cockpit-v3 .c3-probe-result-title {
+    width: 100%;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .cockpit-v3 .c3-probe-result-title span {
+    width: 100%;
+    line-height: 1.35;
+  }
+
+  .cockpit-v3 .c3-probe-badges {
+    width: 100%;
+  }
+
+  .cockpit-v3 .c3-grid-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  .cockpit-v3 .c3-grid-search,
+  .cockpit-v3 .c3-grid-context,
+  .cockpit-v3 .c3-grid-visible,
+  .cockpit-v3 .c3-grid-pager {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .cockpit-v3 .c3-grid-search {
+    flex: none;
+  }
+
+  .cockpit-v3 .c3-grid-select,
+  .cockpit-v3 .c3-grid-tool,
+  .cockpit-v3 .c3-col-menu,
+  .cockpit-v3 .c3-col-menu summary {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .cockpit-v3 .c3-grid-tool,
+  .cockpit-v3 .c3-col-menu summary {
+    justify-content: center;
+  }
+
+  .cockpit-v3 .c3-grid-visible,
+  .cockpit-v3 .c3-grid-pager {
+    justify-content: space-between;
+  }
+
+  .cockpit-v3 .c3-col-panel {
+    left: 0;
+    right: auto;
+    width: min(280px, calc(100vw - 72px));
+  }
+
+  .cockpit-v3 .c3-probe-table-wrap {
+    max-height: min(64vh, 460px);
+  }
+
+  .cockpit-v3 .c3-probe-table {
+    min-width: 1500px;
+  }
+
+  .cockpit-v3 [data-c3-probe-grid="drawing-lines"] {
+    min-width: 1420px;
+  }
+
+  .cockpit-v3 .c3-note-floating {
+    width: min(320px, calc(100vw - 28px));
+    max-height: 50vh;
+  }
+
+  .cockpit-v3 .dx-project-consult {
+    overflow: visible;
+  }
+
+  .cockpit-v3 .dx-project-consult-shell {
+    gap: 10px;
+  }
+
+  .cockpit-v3 .dx-project-tree-panel {
+    max-height: 280px;
+  }
+
+  .cockpit-v3 .dx-project-viewer {
+    min-height: 340px;
+  }
+
+  .cockpit-v3 .dx-project-selection-copy,
+  .cockpit-v3 .dx-project-selection-actions {
+    width: 100%;
+  }
+
+  .cockpit-v3 .dx-project-selection strong,
+  .cockpit-v3 .dx-project-selection small {
+    white-space: normal;
+  }
+
+  .cockpit-v3 .dx-project-selection-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 520px) {
+  .cockpit-v3 .shell {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .cockpit-v3 .sidebar {
+    width: 40px;
+  }
+
+  .cockpit-v3 .sb-brand {
+    padding-inline: 6px;
+  }
+
+  .cockpit-v3 .sb-brand-tile {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
+
+  .cockpit-v3 .sb-item {
+    margin-inline: 5px;
+    grid-template-columns: 22px 1fr;
+  }
+
+  .cockpit-v3 .sb-item svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .cockpit-v3 .tb-project {
+    padding-inline: 6px;
+  }
+
+  .cockpit-v3 .tb-project .name {
+    max-width: 54px;
+  }
+
+  .cockpit-v3 .tb-ticker {
+    min-width: 66px;
+    padding-inline: 6px;
+  }
+
+  .cockpit-v3 .filterbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cockpit-v3 .fb-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cockpit-v3 .section {
+    padding-inline: 6px;
+  }
+
+  .cockpit-v3 .kpi-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cockpit-v3 .c3-grid-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cockpit-v3 .curve-chart,
+  .cockpit-v3 .c3-poplaced-chart {
+    min-width: 460px;
+  }
+
+  .cockpit-v3 .barchart {
+    min-width: 380px;
+  }
+
+  .cockpit-v3 .c3-pending-table {
+    min-width: 620px;
+  }
+
+  .cockpit-v3 .dx-project-viewer {
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 860px) {
+  @supports (content-visibility: auto) {
+    .cockpit-v3 .section,
+    .cockpit-v3 .c3-probe-card,
+    .cockpit-v3 .c3-probe-table-wrap {
+      content-visibility: visible;
+      contain-intrinsic-size: none;
+    }
+  }
+}
