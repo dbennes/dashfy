@@ -193,6 +193,38 @@
 
   initConnectedFilters();
 
+  const initMobileDisclosureControls = () => {
+    const filterbar = document.querySelector('[data-c3-filterbar]');
+    const filterToggle = filterbar ? filterbar.querySelector('[data-filterbar-toggle]') : null;
+    if (filterbar && filterToggle) {
+      filterbar.classList.add('is-mobile-filter-ready');
+      const setFilterOpen = open => {
+        filterbar.classList.toggle('is-mobile-expanded', open);
+        filterToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      setFilterOpen(false);
+      filterToggle.addEventListener('click', () => {
+        setFilterOpen(!filterbar.classList.contains('is-mobile-expanded'));
+      });
+    }
+
+    document.querySelectorAll('[data-c3-grid-controls]').forEach(toolbar => {
+      const toggle = toolbar.querySelector('[data-grid-mobile-toggle]');
+      if (!toggle) return;
+      toolbar.classList.add('is-mobile-tools-ready');
+      const setToolsOpen = open => {
+        toolbar.classList.toggle('is-mobile-tools-open', open);
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      setToolsOpen(false);
+      toggle.addEventListener('click', () => {
+        setToolsOpen(!toolbar.classList.contains('is-mobile-tools-open'));
+      });
+    });
+  };
+
+  initMobileDisclosureControls();
+
   // Sidebar toggle (mobile)
   const sidebar = document.getElementById('app-sidebar');
   const backdrop = document.getElementById('sidebar-backdrop');

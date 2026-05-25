@@ -46,6 +46,16 @@
 
 {# ===== FILTERBAR (sticky) ===== #}
 <form method="get" class="filterbar" id="filters-bar" data-c3-filterbar data-c3-auto-submit>
+  <button class="fb-mobile-toggle" type="button" data-filterbar-toggle aria-expanded="false">
+    <span><i class="bi bi-funnel"></i> Filters</span>
+    <small>
+      {{ manager.filters.date_from|default:"Start" }} -> {{ manager.filters.date_to|default:"Today" }}
+      {% if manager.filters.discipline %} · {{ manager.filters.discipline }}{% endif %}
+      {% if manager.filters.campaign %} · {{ manager.filters.campaign }}{% endif %}
+      {% if manager.filters.contract_week %} · CW {{ manager.filters.contract_week }}{% endif %}
+    </small>
+    <i class="bi bi-chevron-down"></i>
+  </button>
   <div class="fb-cell" style="min-width:130px">
     <label>From</label>
     <input type="date" name="date_from" value="{{ manager.filters.date_from }}">
@@ -683,6 +693,7 @@
             <option value="ok">Covered</option>
             <option value="unknown">Check unit</option>
           </select>
+          <button class="c3-grid-tool c3-grid-mobile-toggle" type="button" data-grid-mobile-toggle aria-expanded="false" title="Show table tools"><i class="bi bi-sliders"></i> Tools</button>
           <button class="c3-grid-tool" type="button" data-grid-density title="Toggle compact table"><i class="bi bi-layout-three-columns"></i> Dense</button>
           <button class="c3-grid-tool" type="button" data-grid-copy title="Copy visible rows"><i class="bi bi-clipboard"></i> Copy visible</button>
           <button class="c3-grid-tool c3-grid-export" type="button" data-grid-export title="Export visible rows to CSV"><i class="bi bi-download"></i> Export selection</button>
@@ -779,6 +790,7 @@
             <option value="partial">Partial</option>
             <option value="ok">Covered</option>
           </select>
+          <button class="c3-grid-tool c3-grid-mobile-toggle" type="button" data-grid-mobile-toggle aria-expanded="false" title="Show table tools"><i class="bi bi-sliders"></i> Tools</button>
           <button class="c3-grid-tool" type="button" data-grid-density title="Toggle compact table"><i class="bi bi-layout-three-columns"></i> Dense</button>
           <button class="c3-grid-tool" type="button" data-grid-copy title="Copy visible rows"><i class="bi bi-clipboard"></i> Copy visible</button>
           <button class="c3-grid-tool c3-grid-export" type="button" data-grid-export title="Export visible rows to CSV"><i class="bi bi-download"></i> Export selection</button>
