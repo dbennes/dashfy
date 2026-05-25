@@ -3435,7 +3435,12 @@ button.c3-export-link {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .cockpit-v3 .curve-chart,
+  .cockpit-v3 .curve-chart {
+    width: 100%;
+    min-width: 0;
+    height: 280px;
+  }
+
   .cockpit-v3 .c3-poplaced-chart {
     min-width: 520px;
     height: 300px;
@@ -3633,31 +3638,47 @@ button.c3-export-link {
 
 @media (max-width: 520px) {
   .cockpit-v3 .shell {
-    grid-template-columns: 40px minmax(0, 1fr);
+    grid-template-columns: 34px minmax(0, 1fr);
   }
 
   .cockpit-v3 .sidebar {
-    width: 40px;
+    width: 34px;
+  }
+
+  .cockpit-v3 .sidebar:hover {
+    width: min(198px, calc(100vw - 10px));
   }
 
   .cockpit-v3 .sb-brand {
-    padding-inline: 6px;
+    padding-inline: 5px;
   }
 
   .cockpit-v3 .sb-brand-tile {
-    width: 24px;
-    height: 24px;
-    font-size: 12px;
+    width: 22px;
+    height: 22px;
+    font-size: 11px;
   }
 
   .cockpit-v3 .sb-item {
-    margin-inline: 5px;
-    grid-template-columns: 22px 1fr;
+    height: 32px;
+    margin-inline: 4px;
+    grid-template-columns: 20px 1fr;
+    padding-inline: 3px;
   }
 
   .cockpit-v3 .sb-item svg {
-    width: 15px;
-    height: 15px;
+    width: 14px;
+    height: 14px;
+  }
+
+  .cockpit-v3 .sb-foot {
+    padding-inline: 4px;
+  }
+
+  .cockpit-v3 .sb-avatar {
+    width: 26px;
+    height: 26px;
+    font-size: 10px;
   }
 
   .cockpit-v3 .tb-project {
@@ -3693,7 +3714,11 @@ button.c3-export-link {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .cockpit-v3 .curve-chart,
+  .cockpit-v3 .curve-chart {
+    min-width: 0;
+    height: 255px;
+  }
+
   .cockpit-v3 .c3-poplaced-chart {
     min-width: 460px;
   }
