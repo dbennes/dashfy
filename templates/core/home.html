@@ -1979,11 +1979,13 @@
     if (!trigger) return;
     var gridKey = trigger.dataset.gridTarget || 'materials';
     var context = c3ContextFromLinkedTrigger(trigger, null);
+    var stageActions = trigger.closest('.c3-supply-stage-actions');
     document.querySelectorAll('[data-c3-linked-filter].is-linked-active').forEach(function(item){
       item.classList.remove('is-linked-active');
+      if (!stageActions && item.closest('.c3-supply-stage-actions')) return;
       item.classList.remove('active');
+      item.setAttribute('aria-pressed', 'false');
     });
-    var stageActions = trigger.closest('.c3-supply-stage-actions');
     if (stageActions) {
       stageActions.querySelectorAll('button').forEach(function(button){
         button.classList.remove('active');
