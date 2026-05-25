@@ -530,9 +530,9 @@
                 </div>
                 <div class="rhs">
                   <div class="scope-switch c3-supply-stage-actions" aria-label="Supply scenario filter">
-                    <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}">All</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="no_yard">Item not arrived</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard">At Yard</button>
+                    <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-scenario-label="All items" data-scenario-detail="All material rows, arrived or not arrived">All items</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="no_yard" data-scenario-label="Item not arrived" data-scenario-detail="Only items with PO not confirmed at yard">Item not arrived</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard" data-scenario-detail="Only items with confirmed yard arrival">At Yard</button>
                   </div>
                   <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
                   {% if request.user.is_admin or request.user.can_export %}
@@ -1284,6 +1284,13 @@
     return parts.join(' · ') || 'Linked selection';
   }
 
+  function c3ScenarioContextText(ctx) {
+    if (!ctx) return 'All items';
+    var label = ctx.scenarioLabel || c3ContextLabel(ctx);
+    var detail = ctx.scenarioDetail || 'Rows grouped by missing material count in this scenario';
+    return label + ' · ' + detail;
+  }
+
   function c3DatasetHas(row, key) {
     return !!(row && Object.prototype.hasOwnProperty.call(row.dataset || {}, key));
   }
@@ -1471,7 +1478,17 @@
   }
 
   function c3BuildPendingPayload(scopeKey, payload, context) {
-    if (!context || !context.stage) return payload;
+    if (!context || !context.stage) {
+      if (!context || !context.scenarioLabel) return payload;
+      var scope = context.scope || payload.scope || scopeKey;
+      var count = Array.from(document.querySelectorAll('[data-c3-probe-grid="materials"] tbody tr[data-grid-row]'))
+        .filter(function(row){ return !scope || !row.dataset.scope || c3Same(row.dataset.scope, scope); })
+        .length;
+      return Object.assign({}, payload, {
+        filtered_context: context,
+        filtered_count: count,
+      });
+    }
     var campaigns = payload.campaigns || [];
     var groups = new Map();
     var rows = Array.from(document.querySelectorAll('[data-c3-probe-grid="materials"] tbody tr[data-grid-row]'))
@@ -1585,8 +1602,8 @@
     };
 
     var html = ['<div class="c3-pending-table-wrap">'];
-    if (context && context.stage) {
-      html.push('<div class="c3-pending-context"><span>' + c3Attr(c3ContextLabel(context)) + '</span><b>' + fmtInt(payload.filtered_count || 0) + ' linked item(s)</b></div>');
+    if (context && (context.stage || context.scenarioLabel)) {
+      html.push('<div class="c3-pending-context"><span>' + c3Attr(c3ScenarioContextText(context)) + '</span><b>' + fmtInt(payload.filtered_count || 0) + ' item(s) considered</b></div>');
     }
     html.push('<table class="c3-pending-table">');
     // header
@@ -1694,6 +1711,8 @@
     if (trigger.dataset.campaign) context.campaign = trigger.dataset.campaign;
     if (trigger.dataset.stage) context.stage = trigger.dataset.stage;
     if (trigger.dataset.pendingBucket != null) context.pendingBucket = trigger.dataset.pendingBucket;
+    if (trigger.dataset.scenarioLabel) context.scenarioLabel = trigger.dataset.scenarioLabel;
+    if (trigger.dataset.scenarioDetail) context.scenarioDetail = trigger.dataset.scenarioDetail;
     return context;
   }
 
@@ -1834,6 +1853,10 @@
   function c3RenderPoPlacedScope(key, context) {
     var payload = c3OriginalPoPayload(key);
     if (!payload) return;
+    if (!context) {
+      var activeScenario = document.querySelector('[data-supply-scope="' + key + '"] .c3-supply-stage-actions button.active');
+      if (activeScenario) context = c3ContextFromLinkedTrigger(activeScenario, null);
+    }
     renderC3PoPlacedChart(key, payload);
     renderC3PoPlacedTable(key, payload, context || null);
   }
@@ -1925,8 +1948,7 @@
   function c3ResetPendingMatrices() {
     document.querySelectorAll('[data-c3-poplaced-data]').forEach(function(node){
       var key = node.dataset.c3PoplacedData;
-      var payload = c3OriginalPoPayload(key);
-      if (payload) renderC3PoPlacedTable(key, payload, null);
+      c3RenderPoPlacedScope(key);
     });
   }
 
@@ -2191,7 +2213,6 @@
     if (clearBtn) {
       clearBtn.addEventListener('click', function(){
         linkedContext = null;
-        c3ResetPendingMatrices();
         document.querySelectorAll('[data-c3-linked-filter].is-linked-active').forEach(function(item){
           item.classList.remove('is-linked-active');
           item.classList.remove('active');
@@ -2203,6 +2224,7 @@
           first.classList.add('active');
           first.setAttribute('aria-pressed', 'true');
         });
+        c3ResetPendingMatrices();
         clearManualFilters();
         applyFilters();
       });
