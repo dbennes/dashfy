@@ -529,10 +529,10 @@
                   <h3>Finalized drawings and material pending items</h3>
                 </div>
                 <div class="rhs">
-                  <div class="c3-supply-stage-actions" aria-label="Supply scenario filter">
-                    <button type="button" data-c3-linked-filter="supply-stage" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}">All</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="no_yard">Item not arrived</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard">At Yard</button>
+                  <div class="scope-switch c3-supply-stage-actions" aria-label="Supply scenario filter">
+                    <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}">All</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="no_yard">Item not arrived</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard">At Yard</button>
                   </div>
                   <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
                   {% if request.user.is_admin or request.user.can_export %}
@@ -1944,13 +1944,23 @@
     var context = c3ContextFromLinkedTrigger(trigger, null);
     document.querySelectorAll('[data-c3-linked-filter].is-linked-active').forEach(function(item){
       item.classList.remove('is-linked-active');
+      item.classList.remove('active');
     });
+    var stageActions = trigger.closest('.c3-supply-stage-actions');
+    if (stageActions) {
+      stageActions.querySelectorAll('button').forEach(function(button){
+        button.classList.remove('active');
+        button.setAttribute('aria-pressed', 'false');
+      });
+    }
     trigger.classList.add('is-linked-active');
+    trigger.classList.add('active');
+    trigger.setAttribute('aria-pressed', 'true');
     if (trigger.dataset.c3LinkedFilter === 'supply-stage') {
       c3UpdatePendingMatrix(context.scope, context);
     }
     c3SetProbeTab(gridKey);
-    if (c3ApplyProbeContext(gridKey, context)) c3FocusProbeGrid(gridKey);
+    if (c3ApplyProbeContext(gridKey, context) && trigger.dataset.c3NoScroll !== 'true') c3FocusProbeGrid(gridKey);
   }
 
   function initC3LinkedFilters() {
@@ -2184,6 +2194,14 @@
         c3ResetPendingMatrices();
         document.querySelectorAll('[data-c3-linked-filter].is-linked-active').forEach(function(item){
           item.classList.remove('is-linked-active');
+          item.classList.remove('active');
+          item.setAttribute('aria-pressed', 'false');
+        });
+        document.querySelectorAll('.c3-supply-stage-actions').forEach(function(group){
+          var first = group.querySelector('button');
+          if (!first) return;
+          first.classList.add('active');
+          first.setAttribute('aria-pressed', 'true');
         });
         clearManualFilters();
         applyFilters();

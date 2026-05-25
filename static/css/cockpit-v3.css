@@ -720,36 +720,16 @@ body::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.60); }
   opacity: 0.42;
   cursor: default;
 }
-.cockpit-v3 .c3-supply-stage-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  height: 24px;
-  padding: 2px;
-  border: 1px solid var(--line-2);
-  border-radius: var(--r-2);
-  background: var(--bg-1);
-}
+.cockpit-v3 .c3-supply-stage-actions { flex: 0 0 auto; }
 .cockpit-v3 .c3-supply-stage-actions button {
-  height: 18px;
-  padding: 0 7px;
-  border: 1px solid transparent;
-  border-radius: var(--r-1);
-  background: transparent;
-  color: var(--fg-2);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: uppercase;
+  padding: 0 var(--s-3);
   white-space: nowrap;
-  cursor: pointer;
 }
 .cockpit-v3 .c3-supply-stage-actions button:hover,
 .cockpit-v3 .c3-supply-stage-actions button.is-linked-active {
-  border-color: var(--signal-amber-line);
-  background: var(--signal-amber-dim);
-  color: var(--signal-amber);
+  background: var(--signal-amber);
+  color: #0a0b0d;
+  font-weight: 600;
 }
 .cockpit-v3 .c3-poplaced-row .card-head .rhs {
   flex-wrap: wrap;
