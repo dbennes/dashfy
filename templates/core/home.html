@@ -1342,6 +1342,15 @@
     return String(row?.dataset?.pendingBucket || '0');
   }
 
+  function c3DrawingPendingBucket(row) {
+    if (!row) return 0;
+    if (c3Flag(row.dataset.drawingFinalized) || String(row.dataset.pendingBucket || '') === '-1') return -1;
+    var raw = row.dataset.pendingBucket || row.dataset.linePendingBucket || '0';
+    var parsed = parseInt(raw, 10);
+    if (!Number.isFinite(parsed)) return 0;
+    return parsed >= 8 ? 8 : Math.max(0, parsed);
+  }
+
   function c3RowMatchesLinkedContext(row, ctx) {
     if (!row || !ctx) return true;
     if (ctx.scope && row.dataset.scope && !c3Same(row.dataset.scope, ctx.scope)) return false;
@@ -1351,7 +1360,7 @@
       var expectedBucket = String(ctx.pendingBucket);
       if (expectedBucket === '-1') {
         if (!c3Flag(row.dataset.drawingFinalized) && String(row.dataset.pendingBucket || '') !== '-1') return false;
-      } else if (c3StagePendingBucket(row, ctx.stage || 'total') !== expectedBucket) {
+      } else if (String(c3DrawingPendingBucket(row)) !== expectedBucket) {
         return false;
       }
     }
@@ -1477,33 +1486,29 @@
     return c3Number(row.getAttribute('data-missing-qty') || row.querySelector('[data-col="missing"]')?.getAttribute('data-sort-value') || 0);
   }
 
+  function c3DrawingLineRows(scopeKey, payload, context) {
+    var scope = context?.scope || payload?.scope || scopeKey;
+    return Array.from(document.querySelectorAll('[data-c3-probe-grid="drawing-lines"] tbody tr[data-grid-row]'))
+      .filter(function(row){
+        if (scope && row.dataset.scope && !c3Same(row.dataset.scope, scope)) return false;
+        if (context?.campaign && row.dataset.campaign && !c3Same(row.dataset.campaign, context.campaign)) return false;
+        if (context?.stage && c3StageItems(row, context.stage) <= 0) return false;
+        return true;
+      });
+  }
+
   function c3BuildPendingPayload(scopeKey, payload, context) {
     if (!context || !context.stage) {
       if (!context || !context.scenarioLabel) return payload;
-      var scope = context.scope || payload.scope || scopeKey;
-      var count = Array.from(document.querySelectorAll('[data-c3-probe-grid="materials"] tbody tr[data-grid-row]'))
-        .filter(function(row){ return !scope || !row.dataset.scope || c3Same(row.dataset.scope, scope); })
-        .length;
+      var count = c3DrawingLineRows(scopeKey, payload, context).length;
       return Object.assign({}, payload, {
         filtered_context: context,
         filtered_count: count,
+        filtered_unit: 'drawing(s)',
       });
     }
     var campaigns = payload.campaigns || [];
-    var groups = new Map();
-    var rows = Array.from(document.querySelectorAll('[data-c3-probe-grid="materials"] tbody tr[data-grid-row]'))
-      .filter(function(row){ return c3RowMatchesLinkedContext(row, context); });
-    rows.forEach(function(row){
-      var campaign = row.dataset.campaign || '-';
-      var drawing = row.dataset.drawing || row.querySelector('[data-col="drawing"]')?.textContent.trim() || '-';
-      var key = c3Norm(campaign) + '|' + drawing;
-      if (!groups.has(key)) {
-        groups.set(key, { campaign: campaign, drawing: drawing, pending: 0, total: 0 });
-      }
-      var group = groups.get(key);
-      group.total += 1;
-      if (c3MaterialRowMissing(row) > 0) group.pending += 1;
-    });
+    var rows = c3DrawingLineRows(scopeKey, payload, context);
 
     var bucketOrder = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
     var bucketMap = {};
@@ -1527,10 +1532,10 @@
     });
     var campaignIndex = {};
     campaigns.forEach(function(c, index){ campaignIndex[c3Norm(c.label)] = index; });
-    groups.forEach(function(group){
-      var bucket = group.pending >= 8 ? 8 : group.pending;
+    rows.forEach(function(drawingRow){
+      var bucket = c3DrawingPendingBucket(drawingRow);
       var row = bucketMap[bucket] || bucketMap[8];
-      var index = campaignIndex[c3Norm(group.campaign)];
+      var index = campaignIndex[c3Norm(drawingRow.dataset.campaign || '-')];
       if (index == null) return;
       row.segments[index].value += 1;
       row.total += 1;
@@ -1549,6 +1554,7 @@
       pending_rows: filteredRows,
       filtered_context: context,
       filtered_count: rows.length,
+      filtered_unit: 'drawing(s)',
     };
   }
 
@@ -1603,7 +1609,7 @@
 
     var html = ['<div class="c3-pending-table-wrap">'];
     if (context && (context.stage || context.scenarioLabel)) {
-      html.push('<div class="c3-pending-context"><span>' + c3Attr(c3ScenarioContextText(context)) + '</span><b>' + fmtInt(payload.filtered_count || 0) + ' item(s) considered</b></div>');
+      html.push('<div class="c3-pending-context"><span>' + c3Attr(c3ScenarioContextText(context)) + '</span><b>' + fmtInt(payload.filtered_count || 0) + ' ' + c3Attr(payload.filtered_unit || 'drawing(s)') + ' considered</b></div>');
     }
     html.push('<table class="c3-pending-table">');
     // header
@@ -1729,12 +1735,10 @@
   }
 
   function c3DrawingRowsForExport(scopeKey, payload, context) {
-    var scope = context?.scope || payload?.scope || scopeKey;
-    return Array.from(document.querySelectorAll('[data-c3-probe-grid="drawing-lines"] tbody tr[data-grid-row]'))
-      .filter(function(row){
-        if (scope && row.dataset.scope && !c3Same(row.dataset.scope, scope)) return false;
-        return context ? c3RowMatchesLinkedContext(row, context) : true;
-      });
+    if (!context) return c3DrawingLineRows(scopeKey, payload, null);
+    return c3DrawingLineRows(scopeKey, payload, context).filter(function(row){
+      return c3RowMatchesLinkedContext(row, context);
+    });
   }
 
   function c3ExportConditionSlug(context, payload, scopeKey) {
@@ -1921,11 +1925,11 @@
     if (button) button.click();
   }
 
-  function c3ApplyProbeContext(gridKey, context) {
+  function c3ApplyProbeContext(gridKey, context, options) {
     var table = document.querySelector('[data-c3-probe-grid="' + gridKey + '"]');
     if (table && !table._c3ProbeGrid) initC3ProbeGrid(table);
     if (!table || !table._c3ProbeGrid) return false;
-    table._c3ProbeGrid.applyLinkedFilter(context || {});
+    table._c3ProbeGrid.applyLinkedFilter(context || {}, options || {});
     return true;
   }
 
@@ -1981,8 +1985,9 @@
     if (trigger.dataset.c3LinkedFilter === 'supply-stage') {
       c3UpdatePendingMatrix(context.scope, context);
     }
+    var noScroll = trigger.dataset.c3NoScroll === 'true';
     c3SetProbeTab(gridKey);
-    if (c3ApplyProbeContext(gridKey, context) && trigger.dataset.c3NoScroll !== 'true') c3FocusProbeGrid(gridKey);
+    if (c3ApplyProbeContext(gridKey, context, { noScroll: noScroll }) && !noScroll) c3FocusProbeGrid(gridKey);
   }
 
   function initC3LinkedFilters() {
@@ -2230,13 +2235,13 @@
       });
     }
     table._c3ProbeGrid = {
-      applyLinkedFilter: function(context) {
+      applyLinkedFilter: function(context, options) {
         linkedContext = context || null;
         clearManualFilters();
         window.requestAnimationFrame(function(){
           applyFilters();
           var first = rows.find(function(row){ return !row.hidden; });
-          if (first) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          if (first && !(options && options.noScroll)) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
         });
       },
       clearLinkedFilter: function() {
