@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Schedule - Calendario{% endblock %}
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Calendario" icon="bi-calendar3" %}
+{% include "partials/_filters_bar.html" %}
+<div class="card card-body shadow-sm">
+  <div id="calendar"></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/locales/pt-br.global.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var el = document.getElementById('calendar');
+  var cal = new FullCalendar.Calendar(el, {
+    locale: 'pt-br',
+    initialView: 'dayGridMonth',
+    headerToolbar: {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek',
+    },
+    events: function (info, success, failure) {
+      var params = new URLSearchParams(window.location.search);
+      params.set('start_at_after', info.startStr.slice(0,10));
+      params.set('start_at_before', info.endStr.slice(0,10));
+      fetch('{% url "schedule:calendar_events" %}?' + params.toString())
+        .then(r => r.json()).then(success).catch(failure);
+    },
+    eventClick: function (info) {
+      window.location = "/schedule/eventos/" + info.event.id + "/";
+    },
+    height: 720,
+  });
+  cal.render();
+});
+</script>
+{% endblock %}

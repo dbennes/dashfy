@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Historico de exportacoes" icon="bi-cloud-arrow-down-fill" %}
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-sm table-striped">
+      <thead><tr><th>Data</th><th>Arquivo</th><th>Formato</th><th>Modulo</th><th>Linhas</th><th>Usuario</th></tr></thead>
+      <tbody>
+        {% for l in page_obj %}
+        <tr>
+          <td>{{ l.created_at|date:"d/m/Y H:i" }}</td>
+          <td><code>{{ l.filename }}</code></td>
+          <td><span class="badge bg-light text-dark">{{ l.file_format|upper }}</span></td>
+          <td>{{ l.module|default:"-" }}</td>
+          <td>{{ l.rows }}</td>
+          <td>{{ l.user|default:"-" }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="6" class="empty-state">Sem exportacoes</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/_pagination.html" %}
+</div>
+{% endblock %}

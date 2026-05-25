@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}ECLIC - Documentos{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="ECLIC" subtitle="Documentos sincronizados via API" icon="bi-file-earmark-text-fill" %}
+{% include "partials/_filters_bar.html" %}
+
+<div class="row g-3 mb-3">
+  <div class="col-xl-2 col-md-4 col-6">{% include "partials/_kpi_card.html" with label="Total" value=kpis.total icon="bi-file-earmark" color="primary" %}</div>
+  <div class="col-xl-2 col-md-4 col-6">{% include "partials/_kpi_card.html" with label="Aprovados" value=kpis.approved icon="bi-check-circle-fill" color="success" %}</div>
+  <div class="col-xl-2 col-md-4 col-6">{% include "partials/_kpi_card.html" with label="Em revisao" value=kpis.review icon="bi-pencil-square" color="warning" %}</div>
+  <div class="col-xl-2 col-md-4 col-6">{% include "partials/_kpi_card.html" with label="Rascunho" value=kpis.draft icon="bi-file-earmark-richtext" color="info" %}</div>
+  <div class="col-xl-2 col-md-4 col-6">{% include "partials/_kpi_card.html" with label="Obsoletos" value=kpis.obsolete icon="bi-archive" color="danger" %}</div>
+  <div class="col-xl-2 col-md-4 col-6"><a class="kpi-card kpi-primary text-decoration-none" href="?ping=1"><div class="kpi-icon"><i class="bi bi-broadcast"></i></div><div class="kpi-body"><div class="kpi-label">API ECLIC</div><div class="kpi-value">{% if api_online == True %}<span class="text-success">online</span>{% elif api_online == False %}<span class="text-danger">offline</span>{% else %}testar{% endif %}</div></div></a></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-8">
+    <a class="btn btn-outline-primary" href="{% url 'eclic:document_list' %}?{{ request.GET.urlencode }}"><i class="bi bi-table"></i> Lista completa</a>
+    <a class="btn btn-outline-secondary" href="{% url 'eclic:sync_history' %}"><i class="bi bi-clock-history"></i> Historico de sincronizacao</a>
+  </div>
+  <div class="col-md-4">
+    {% if user.is_admin %}
+    <form method="post" action="{% url 'eclic:sync_now' %}" class="d-flex gap-2">
+      {% csrf_token %}
+      <select name="client" class="form-select" required>
+        <option value="">-- cliente --</option>
+        {% for c in request.user.client_set.all|default_if_none:"" %}<option value="{{ c.pk }}">{{ c.name }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="btn btn-warning"><i class="bi bi-cloud-arrow-down-fill"></i> Sincronizar</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-7">
+    <div class="card card-body">
+      <h6>Categorias</h6>
+      <div class="d-flex flex-wrap gap-2 mt-2">
+        {% for c in categories %}
+          <a class="badge text-decoration-none bg-light text-dark border" href="{% url 'eclic:document_list' %}?category={{ c.category }}">
+            {{ c.category }}
+          </a>
+        {% empty %}<small class="text-muted">Sem categorias.</small>{% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card card-body">
+      <h6>Ultimas sincronizacoes</h6>
+      <ul class="list-unstyled small mb-0">
+        {% for l in recent_logs %}
+          <li class="border-bottom py-1">
+            {{ l.created_at|date:"d/m/Y H:i" }} - <strong>{{ l.get_result_display }}</strong>
+            <span class="text-muted">+{{ l.documents_created }} ~{{ l.documents_updated }} !{{ l.documents_errored }}</span>
+          </li>
+        {% empty %}<li class="text-muted">Sem sincronizacoes ainda.</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

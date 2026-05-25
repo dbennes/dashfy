@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Busca - {{ APP_NAME }}{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Busca global" subtitle=q icon="bi-search" %}
+<div class="card card-body">
+  {% if results %}
+    <ul class="list-group">
+      {% for r in results %}
+        <li class="list-group-item"><a href="{{ r.url }}">{{ r.title }}</a> - <small class="text-muted">{{ r.module }}</small></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-search" style="font-size:3rem"></i>
+      <p class="mt-2">Nenhum resultado encontrado para "{{ q }}"</p>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

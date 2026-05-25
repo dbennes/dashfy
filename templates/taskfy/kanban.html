@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Taskfy - Status board{% endblock %}
+
+{% block content %}
+<div class="dx-dashboard">
+  <section class="dx-hero">
+    <div class="dx-hero-main">
+      <div class="dx-hero-eyebrow">TASKFY / Status board</div>
+      <h1 class="dx-hero-title">JobCards by status</h1>
+      <p class="dx-hero-sub">Colunas geradas diretamente do PostgreSQL do Taskfy.</p>
+    </div>
+    <div class="dx-hero-actions">
+      <a class="dx-btn" href="{% url 'taskfy:task_list' %}">
+        <i class="bi bi-table"></i> Lista
+      </a>
+    </div>
+  </section>
+
+  {% if not source.available %}
+    <div class="app-alert alert-danger">{{ source.error }}</div>
+  {% endif %}
+
+  <div class="kanban-board">
+    {% for col in columns %}
+      <div class="kanban-col">
+        <div class="kanban-col-head">
+          <span>{{ col.label }}</span>
+          <span class="badge bg-secondary">{{ col.total|intcomma }}</span>
+        </div>
+        {% for jc in col.cards %}
+          <div class="kanban-card">
+            <div class="code">{{ jc.job_card_number }}</div>
+            <div class="title">{{ jc.activity_id|default:"-" }}</div>
+            <div class="dx-sub">{{ jc.tag|default:"-"|truncatechars:60 }}</div>
+            <div class="d-flex justify-content-between align-items-center mt-2 small text-muted">
+              <span class="dx-pill">{{ jc.discipline_code|default:"-" }}</span>
+              <span class="dx-mono">{{ jc.finish|default:"" }}</span>
+            </div>
+          </div>
+        {% empty %}
+          <small class="text-muted">vazio</small>
+        {% endfor %}
+      </div>
+    {% empty %}
+      <div class="empty-state">Nenhuma coluna encontrada.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

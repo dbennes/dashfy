@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% load crispy_forms_tags %}
+{% block title %}Meu perfil - {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+{% include "partials/_page_header.html" with title="Meu perfil" icon="bi-person-circle" %}
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card card-body text-center">
+      {% if user.avatar %}
+        <img src="{{ user.avatar.url }}" class="rounded-circle mx-auto mb-3" style="width:120px;height:120px;object-fit:cover">
+      {% else %}
+        <div class="rounded-circle mx-auto mb-3 d-flex align-items-center justify-content-center" style="width:120px;height:120px;background:var(--brand-primary);color:var(--brand-dark);font-size:48px;font-weight:800">
+          {{ user.username|first|upper }}
+        </div>
+      {% endif %}
+      <h5 class="mb-0">{{ user.get_full_name|default:user.username }}</h5>
+      <small class="text-muted">{{ user.email }}</small>
+      <hr>
+      <p class="small mb-1"><strong>Perfil:</strong> {{ user.get_role_display }}</p>
+      {% if user.client %}<p class="small mb-1"><strong>Cliente:</strong> {{ user.client.name }}</p>{% endif %}
+      <p class="small mb-0"><strong>Ultimo acesso:</strong> {{ user.last_seen|default:"-" }}</p>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card card-body">
+      <h5 class="mb-3">Editar dados</h5>
+      <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        {{ form|crispy }}
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+        <a href="{% url 'accounts:password_change' %}" class="btn btn-outline-secondary">Alterar senha</a>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

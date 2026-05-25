@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Minhas views salvas" subtitle="Filtros e dashboards favoritos" icon="bi-bookmark-star-fill" %}
+
+<div class="card card-body mb-3">
+  <h6>Salvar a view atual</h6>
+  <form method="post" action="{% url 'filters:save_view' %}" class="row g-2 align-items-end">
+    {% csrf_token %}
+    <div class="col-md-3"><label class="form-label small">Nome</label><input class="form-control" name="name" required></div>
+    <div class="col-md-2"><label class="form-label small">Modulo</label>
+      <select class="form-select" name="module">
+        <option value="datafy">Datafy</option><option value="taskfy">Taskfy</option>
+        <option value="schedule">Schedule</option><option value="eclic">ECLIC</option>
+      </select>
+    </div>
+    <div class="col-md-3"><label class="form-label small">Caminho</label><input class="form-control" name="path" placeholder="/datafy/registros/" required></div>
+    <div class="col-md-3"><label class="form-label small">Querystring</label><input class="form-control" name="querystring" placeholder="status=open&category=A"></div>
+    <div class="col-md-1 form-check pt-3"><input class="form-check-input" type="checkbox" name="is_shared" id="shared"><label class="form-check-label small" for="shared">Compart.</label></div>
+    <div class="col-12"><button class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button></div>
+  </form>
+</div>
+
+<div class="row g-3">
+  {% for v in views %}
+    <div class="col-md-6 col-xl-4">
+      <div class="card card-body h-100">
+        <div class="d-flex justify-content-between">
+          <h6 class="mb-0">{{ v.name }}</h6>
+          <span class="badge bg-secondary">{{ v.module }}</span>
+        </div>
+        <small class="text-muted text-truncate">{{ v.full_url }}</small>
+        <hr>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-primary" href="{{ v.full_url }}"><i class="bi bi-eye"></i> Abrir</a>
+          {% if v.user_id == user.id %}
+          <form method="post" action="{% url 'filters:delete_view' v.pk %}">
+            {% csrf_token %}
+            <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Remover?')"><i class="bi bi-trash"></i></button>
+          </form>
+          {% endif %}
+          {% if v.is_shared %}<span class="badge bg-info ms-auto">compartilhada</span>{% endif %}
+        </div>
+      </div>
+    </div>
+  {% empty %}
+    <div class="col-12 empty-state"><i class="bi bi-bookmark"></i><br>Nenhuma view salva ainda</div>
+  {% endfor %}
+</div>
+{% endblock %}

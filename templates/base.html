@@ -1,0 +1,252 @@
+{% load static humanize %}
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
+  <link rel="icon" href="{% static 'img/favicon.svg' %}" type="image/svg+xml">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Inter:wght@400;450;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+  {% block vendor_css %}{% endblock %}
+
+  <link href="{% static 'css/shellbi.css' %}?v=20260523-chart-speed-v1" rel="stylesheet">
+  <link href="{% static 'css/cockpit-v3.css' %}?v=20260523-3d-line-demo-v2" rel="stylesheet">
+
+  <style>
+    :root {
+      --brand-primary: {{ APP_BRAND_PRIMARY }};
+      --brand-secondary: {{ APP_BRAND_SECONDARY }};
+      --brand-dark: {{ APP_BRAND_DARK }};
+    }
+  </style>
+  {% block extra_css %}{% endblock %}
+</head>
+<body class="cockpit-v3{% if show_login_boot %} has-login-boot{% endif %}" data-theme="dark">
+<script>(function(){try{document.body.dataset.theme=localStorage.getItem('c3-theme')||'dark';}catch(e){}})();</script>
+{% if user.is_authenticated and show_login_boot %}
+  {% include "partials/_login_boot.html" %}
+  <script src="{% static 'js/login-boot.js' %}?v=20260523-fast-v1"></script>
+{% endif %}
+
+{% if user.is_authenticated %}
+  <div class="shell">
+
+    {# ---------- SIDEBAR slim (hover-expand) ---------- #}
+    <aside class="sidebar" id="c3-sidebar">
+      <div class="sb-brand" title="DASHFY">
+        <div class="sb-brand-tile">D</div>
+        <span class="sb-brand-name">DASHFY</span>
+      </div>
+      <nav class="sb-nav">
+        <div class="sb-section-label">WS</div>
+        <a class="sb-item {% if request.resolver_match.namespace == 'core' %}active{% endif %} {% if not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
+           {% if user.is_admin or user.is_superuser %}href="{% url 'core:home' %}" title="Cockpit"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          <span class="sb-label">Cockpit</span>
+        </a>
+        <a class="sb-item {% if 'datafy' in request.resolver_match.namespace %}active{% endif %} {% if not DASHFY_ENABLE_LEGACY_MODULES or not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
+           {% if DASHFY_ENABLE_LEGACY_MODULES %}{% if user.is_admin or user.is_superuser %}href="{% url 'datafy:home' %}" title="Datafy / SPDM"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}{% else %}role="link" aria-disabled="true" tabindex="-1" title="Disabled in SQLite-only deployment"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 11v6c0 1.7 4 3 9 3s9-1.3 9-3v-6"/></svg>
+          <span class="sb-label">DATAFY / SPDM</span>
+        </a>
+        <a class="sb-item {% if 'taskfy' in request.resolver_match.namespace %}active{% endif %} {% if not DASHFY_ENABLE_LEGACY_MODULES or not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
+           {% if DASHFY_ENABLE_LEGACY_MODULES %}{% if user.is_admin or user.is_superuser %}href="{% url 'taskfy:home' %}" title="Taskfy"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}{% else %}role="link" aria-disabled="true" tabindex="-1" title="Disabled in SQLite-only deployment"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 10l2 2 4-4"/><path d="M8 16h8"/></svg>
+          <span class="sb-label">Taskfy</span>
+        </a>
+
+        <div class="sb-section-label">DATA</div>
+        <a class="sb-item {% if not DASHFY_ENABLE_LEGACY_MODULES or not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
+           {% if DASHFY_ENABLE_LEGACY_MODULES %}{% if user.is_admin or user.is_superuser %}href="{% url 'datafy:entries' %}" title="Documents"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}{% else %}role="link" aria-disabled="true" tabindex="-1" title="Disabled in SQLite-only deployment"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="sb-label">Documents</span>
+        </a>
+        <a class="sb-item {% if not DASHFY_ENABLE_LEGACY_MODULES or not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
+           {% if DASHFY_ENABLE_LEGACY_MODULES %}{% if user.is_admin or user.is_superuser %}href="{% url 'taskfy:task_list' %}" title="JobCards"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}{% else %}role="link" aria-disabled="true" tabindex="-1" title="Disabled in SQLite-only deployment"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          <span class="sb-label">JobCards</span>
+        </a>
+        <a class="sb-item {% if not DASHFY_ENABLE_LEGACY_MODULES or not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
+           {% if DASHFY_ENABLE_LEGACY_MODULES %}{% if user.is_admin or user.is_superuser %}href="{% url 'taskfy:kanban' %}" title="Status board"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}{% else %}role="link" aria-disabled="true" tabindex="-1" title="Disabled in SQLite-only deployment"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="14"/><rect x="11" y="3" width="6" height="10"/><rect x="19" y="3" width="2" height="6"/></svg>
+          <span class="sb-label">Status board</span>
+        </a>
+
+        <div class="sb-section-label">TOOLS</div>
+        <a class="sb-item {% if not DASHFY_ENABLE_LEGACY_MODULES or not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
+           {% if DASHFY_ENABLE_LEGACY_MODULES %}{% if user.is_admin or user.is_superuser %}href="{% url 'filters:saved_views' %}" title="My Views"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}{% else %}role="link" aria-disabled="true" tabindex="-1" title="Disabled in SQLite-only deployment"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          <span class="sb-label">My Views</span>
+        </a>
+        <a class="sb-item {% if not DASHFY_ENABLE_LEGACY_MODULES or not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
+           {% if DASHFY_ENABLE_LEGACY_MODULES %}{% if user.is_admin or user.is_superuser %}href="{% url 'exports:history' %}" title="Exports"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}{% else %}role="link" aria-disabled="true" tabindex="-1" title="Disabled in SQLite-only deployment"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span class="sb-label">Exports</span>
+        </a>
+
+        {% if user.is_admin or user.is_superuser %}
+          <div class="sb-section-label">SYS</div>
+          <a class="sb-item" href="/admin/" title="Admin Django">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span class="sb-label">Admin</span>
+          </a>
+        {% endif %}
+      </nav>
+      <div class="sb-spacer"></div>
+      <div class="sb-foot">
+        <div class="sb-avatar" title="{{ user.username }}">{{ user.username|slice:":2"|upper }}</div>
+        <div class="sb-user">
+          <strong>{{ user.username }}</strong>
+          <small>{% if user.is_superuser %}ADMIN{% else %}USER{% endif %}</small>
+        </div>
+      </div>
+    </aside>
+
+    {# ---------- TOPBAR with tickers ---------- #}
+    <header class="topbar">
+      <div class="tb-crumbs">
+        <span>DASHFY</span>
+        <span class="sep">/</span>
+        <span>WS</span>
+        <span class="sep">/</span>
+        <span class="current">{% block crumb_current %}COCKPIT{% endblock %}</span>
+      </div>
+
+      <div class="tb-project">
+        <span class="code">{% block project_code %}BN-EPC1{% endblock %}</span>
+        <span class="name">{% block project_name %}Bonga North Project{% endblock %}</span>
+        <span class="horiz mono">{% block project_horiz %}Jun-2024 → Jun-2027{% endblock %}</span>
+      </div>
+
+      <div class="tb-tickers">
+        {% block tickers %}
+        <div class="tb-ticker" title="P6 physical vs planned">
+          <span class="lbl">PHYS</span>
+          <span class="val">39,31</span>
+          <span class="delta dn">-4,48</span>
+        </div>
+        <div class="tb-ticker" title="Total documents">
+          <span class="lbl">DOCS</span>
+          <span class="val">2.811</span>
+          <span class="delta up">+12</span>
+        </div>
+        <div class="tb-ticker" title="PO coverage">
+          <span class="lbl">PO</span>
+          <span class="val">27,0%</span>
+          <span class="delta dn">-0,8</span>
+        </div>
+        <div class="tb-ticker" title="Items without PO">
+          <span class="lbl">TBE</span>
+          <span class="val">4.358</span>
+          <span class="delta up">+34</span>
+        </div>
+        <div class="tb-ticker" title="Packages finishing in 90 days">
+          <span class="lbl">PKG·90D</span>
+          <span class="val">704</span>
+          <span class="delta flat">±0</span>
+        </div>
+        {% endblock %}
+      </div>
+
+      <div class="tb-status">
+        <span class="tb-pill" title="Taskfy"><span class="dot {% if not sources.taskfy.available %}off{% endif %}"></span> TASKFY</span>
+        <span class="tb-pill" title="Datafy"><span class="dot {% if not sources.datafy.available %}off{% endif %}"></span> DATAFY</span>
+        <span class="tb-pill" title="P6"><span class="dot {% if not sources.p6.available %}off{% endif %}"></span> P6</span>
+      </div>
+
+      <div class="tb-tools">
+        <button class="icon-btn" title="Refresh" onclick="location.reload()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+        <a class="icon-btn" href="{% url 'core:search' %}" title="Search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </a>
+        <button class="icon-btn" id="c3-theme-toggle" title="Toggle theme">
+          <svg id="c3-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <svg id="c3-icon-sun" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        </button>
+        <form class="tb-logout-form" action="{% url 'accounts:logout' %}" method="post">
+          {% csrf_token %}
+          <button class="icon-btn is-logout" type="submit" title="Log out" aria-label="Log out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </form>
+      </div>
+
+      <div class="tb-clock mono" id="c3-clock">--:--:-- BRT</div>
+    </header>
+
+    {# ---------- MAIN ---------- #}
+    <main class="shell-main">
+      {% include "partials/_messages.html" %}
+{% else %}
+  {# Unauthenticated: plain centered content area (login screens etc.) #}
+  <main style="min-height:100vh; background:var(--bg-0); padding:24px; display:flex; align-items:center; justify-content:center;">
+    <div style="width:100%; max-width:420px;">
+      {% include "partials/_messages.html" %}
+{% endif %}
+
+      {% block content %}{% endblock %}
+
+{% if user.is_authenticated %}
+    </main>
+  </div>
+{% else %}
+    </div>
+  </main>
+{% endif %}
+
+<script>
+  // Theme toggle
+  (function(){
+    var btn = document.getElementById('c3-theme-toggle');
+    if (!btn) return;
+    var moon = document.getElementById('c3-icon-moon');
+    var sun  = document.getElementById('c3-icon-sun');
+    function refresh(){
+      var t = document.body.dataset.theme;
+      if (moon) moon.style.display = (t === 'dark') ? '' : 'none';
+      if (sun)  sun.style.display  = (t === 'dark') ? 'none' : '';
+    }
+    refresh();
+    btn.addEventListener('click', function(){
+      var cur = document.body.dataset.theme || 'dark';
+      var next = cur === 'dark' ? 'light' : 'dark';
+      document.body.dataset.theme = next;
+      try { localStorage.setItem('c3-theme', next); } catch(e){}
+      refresh();
+    });
+  })();
+  // Clock
+  (function(){
+    var el = document.getElementById('c3-clock');
+    if (!el) return;
+    function pad(n){return String(n).padStart(2,'0');}
+    function tick(){ var d=new Date(); el.textContent = pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())+' BRT'; }
+    tick(); setInterval(tick, 1000);
+  })();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/pt.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net@1.13.7/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/datatables.net-bs5@1.13.7/js/dataTables.bootstrap5.min.js"></script>
+<script async src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<script async src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+{% block vendor_js %}{% endblock %}
+<script src="{% static 'js/shellbi.js' %}?v=20260523-3d-line-demo-v2"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

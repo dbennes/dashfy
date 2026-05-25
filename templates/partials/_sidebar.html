@@ -1,0 +1,77 @@
+{% load static %}
+<aside class="app-sidebar" id="app-sidebar">
+  <div class="sidebar-brand">
+    <a href="{% url 'core:home' %}" class="brand-row text-decoration-none">
+      <span class="brand-tile">{{ APP_BRAND_MARK }}</span>
+      <span class="brand-mark">{{ APP_NAME }}</span>
+      <span class="org-pill">Eng <i class="bi bi-chevron-down"></i></span>
+    </a>
+    <button class="collapse-btn d-lg-none ms-auto" id="sidebar-close" type="button" aria-label="Fechar menu">
+      <i class="bi bi-x-lg"></i>
+    </button>
+  </div>
+
+  <a class="app-hub" href="{% url 'core:search' %}">
+    <i class="bi bi-search"></i>
+    <span>Busca</span>
+    <span class="kbd"><kbd>Ctrl</kbd><kbd>K</kbd></span>
+  </a>
+
+  <nav>
+    <div class="nav-group">
+      <div class="group-label">Workspace real</div>
+      <a class="side-item {% if request.resolver_match.namespace == 'core' %}active{% endif %}"
+         href="{% url 'core:home' %}" title="Dashboard">
+        <i class="bi bi-grid-1x2"></i><span class="nav-label">Dashboard</span>
+      </a>
+      <a class="side-item {% if 'datafy' in request.resolver_match.namespace %}active{% endif %}"
+         href="{% url 'datafy:home' %}" title="Datafy">
+        <i class="bi bi-clipboard-data"></i><span class="nav-label">Datafy / SPDM</span>
+      </a>
+      <a class="side-item {% if 'taskfy' in request.resolver_match.namespace %}active{% endif %}"
+         href="{% url 'taskfy:home' %}" title="Taskfy">
+        <i class="bi bi-card-checklist"></i><span class="nav-label">Taskfy</span>
+      </a>
+    </div>
+
+    <div class="nav-group">
+      <div class="group-label">Dados reais</div>
+      <a class="side-item" href="{% url 'datafy:entries' %}" title="Documents">
+        <i class="bi bi-file-earmark-text"></i><span class="nav-label">Documents</span>
+      </a>
+      <a class="side-item" href="{% url 'taskfy:task_list' %}" title="JobCards">
+        <i class="bi bi-list-check"></i><span class="nav-label">JobCards</span>
+      </a>
+      <a class="side-item" href="{% url 'taskfy:kanban' %}" title="Status board">
+        <i class="bi bi-columns-gap"></i><span class="nav-label">Status board</span>
+      </a>
+    </div>
+
+    <div class="nav-group">
+      <div class="group-label">Ferramentas</div>
+      <a class="side-item" href="{% url 'filters:saved_views' %}">
+        <i class="bi bi-bookmark"></i><span class="nav-label">Minhas Views</span>
+      </a>
+      <a class="side-item" href="{% url 'exports:history' %}">
+        <i class="bi bi-cloud-arrow-down"></i><span class="nav-label">Exports</span>
+      </a>
+    </div>
+
+    {% if user.is_admin or user.is_superuser %}
+      <div class="nav-group">
+        <div class="group-label">Settings</div>
+        <a class="side-item" href="/admin/">
+          <i class="bi bi-gear"></i><span class="nav-label">Admin Django</span>
+        </a>
+      </div>
+    {% endif %}
+  </nav>
+
+  <div class="sidebar-footer">
+    <div class="provider-chip"><i class="bi bi-database-check"></i><span class="nav-label">Somente bases reais</span></div>
+    <div class="user-chip">
+      <span class="user-avatar">{{ user.username|slice:":2"|upper }}</span>
+      <span class="nav-label">{{ user.username }}</span>
+    </div>
+  </div>
+</aside>

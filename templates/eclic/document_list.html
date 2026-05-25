@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}ECLIC - Documentos{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Documentos ECLIC" icon="bi-files" %}
+{% include "partials/_filters_bar.html" %}
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr><th>Codigo</th><th>Titulo</th><th>Categoria</th><th>Tipo</th><th>Rev.</th><th>Status</th><th>Emissao</th><th>Cliente</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for d in page_obj %}
+        <tr>
+          <td><code>{{ d.code }}</code></td>
+          <td>{{ d.title|truncatechars:80 }}</td>
+          <td>{{ d.category|default:"-" }}</td>
+          <td>{{ d.document_type|default:"-" }}</td>
+          <td>{{ d.revision|default:"-" }}</td>
+          <td>
+            {% if d.status == "approved" %}<span class="badge bg-success">{{ d.get_status_display }}</span>
+            {% elif d.status == "review" %}<span class="badge bg-warning text-dark">{{ d.get_status_display }}</span>
+            {% elif d.status == "obsolete" %}<span class="badge bg-secondary">{{ d.get_status_display }}</span>
+            {% elif d.status == "rejected" %}<span class="badge bg-danger">{{ d.get_status_display }}</span>
+            {% else %}<span class="badge bg-info">{{ d.get_status_display }}</span>{% endif %}
+          </td>
+          <td>{{ d.issued_at|date:"d/m/Y"|default:"-" }}</td>
+          <td>{{ d.client.name }}</td>
+          <td>
+            <a class="btn btn-sm btn-outline-primary" href="{% url 'eclic:document_detail' d.pk %}"><i class="bi bi-eye"></i></a>
+            {% if d.url %}<a class="btn btn-sm btn-outline-secondary" href="{{ d.url }}" target="_blank"><i class="bi bi-box-arrow-up-right"></i></a>{% endif %}
+          </td>
+        </tr>
+        {% empty %}<tr><td colspan="9" class="empty-state">Sem documentos</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/_pagination.html" %}
+</div>
+{% endblock %}

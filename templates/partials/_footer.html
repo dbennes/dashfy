@@ -1,0 +1,10 @@
+{% load humanize %}
+<footer class="app-footer">
+  <div>
+    &copy; {% now "Y" %} {{ APP_NAME }} - Plataforma de BI corporativo
+  </div>
+  <div class="text-muted small">
+    Logado como <strong>{{ user.username }}</strong>
+    {% if user.client %} - {{ user.client.name }}{% endif %}
+  </div>
+</footer>

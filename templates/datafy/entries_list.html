@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Datafy - Documentos reais{% endblock %}
+
+{% block content %}
+<div class="dx-dashboard">
+  <section class="dx-hero">
+    <div class="dx-hero-main">
+      <div class="dx-hero-eyebrow">DATAFY / SPDM</div>
+      <h1 class="dx-hero-title">Documents</h1>
+      <p class="dx-hero-sub">{{ source.total|default:0|intcomma }} documento(s) na base real</p>
+    </div>
+    <div class="dx-hero-actions">
+      <a class="dx-btn" href="{{ source.base_url }}/documents/" target="_blank">
+        <i class="bi bi-box-arrow-up-right"></i> Abrir no DATAFY
+      </a>
+    </div>
+  </section>
+
+  {% if not source.available %}
+    <div class="app-alert alert-danger">{{ source.error }}</div>
+  {% endif %}
+
+  <div class="dx-card dx-operational-card">
+    <div class="dx-table-control-bar">
+      <div class="dx-table-tabs">
+        <span class="active"><i class="bi bi-table"></i> Drawings</span>
+        <span><i class="bi bi-diagram-3"></i> Disciplinas</span>
+        <span><i class="bi bi-clock-history"></i> Revisoes</span>
+      </div>
+      <div class="dx-table-chipline">
+        <span>{{ page_obj.object_list|length|intcomma }} visiveis</span>
+        <span>{{ source.total|default:0|intcomma }} documentos</span>
+        {% if source.filters.q or source.filters.priority or source.filters.revision or source.filters.discipline or source.filters.status %}
+          <a href="{% url 'datafy:entries' %}"><i class="bi bi-x-lg"></i> Reset</a>
+        {% endif %}
+      </div>
+    </div>
+    <form method="get" class="dx-card-table-form">
+      <button class="visually-hidden" type="submit">Filtrar</button>
+      <div class="dx-table-wrap dx-datafy-table-wrap dx-datafy-table-wrap-full">
+        <table class="dx-table dx-table-dense dx-table-filtered dx-datafy-documents-table">
+          <thead>
+            <tr class="dx-column-header-row">
+              <th>Prior... <span class="dx-sort-hint">&lt;&gt;</span></th>
+              <th>Drawing <span class="dx-sort-hint">&lt;&gt;</span></th>
+              <th>Revision... <span class="dx-sort-hint">&lt;&gt;</span></th>
+              <th>Discipline <span class="dx-sort-hint">&lt;&gt;</span></th>
+              <th>Status <span class="dx-sort-hint">&lt;&gt;</span></th>
+              <th>Tables <span class="dx-sort-hint">&lt;&gt;</span></th>
+              <th>Material rows <span class="dx-sort-hint">&lt;&gt;</span></th>
+              <th>Uploaded <span class="dx-sort-hint">&lt;&gt;</span></th>
+            </tr>
+            <tr class="dx-column-filter-row">
+              <th>
+                <select class="dx-column-filter-control dx-column-filter" name="priority" aria-label="Filtrar prioridade">
+                  <option value="">All</option>
+                  {% for p in source.choices.priorities %}
+                    <option value="{{ p.value }}" {% if source.filters.priority == p.value %}selected{% endif %}>{{ p.label }}</option>
+                  {% endfor %}
+                </select>
+              </th>
+              <th>
+                <input class="dx-column-filter-control dx-column-filter" type="search" name="q" value="{{ source.filters.q }}" placeholder="All" aria-label="Filtrar drawing">
+              </th>
+              <th>
+                <select class="dx-column-filter-control dx-column-filter" name="revision" aria-label="Filtrar revision">
+                  <option value="">All</option>
+                  {% for r in source.choices.revisions %}
+                    <option value="{{ r.value }}" {% if source.filters.revision == r.value %}selected{% endif %}>{{ r.label }}</option>
+                  {% endfor %}
+                </select>
+              </th>
+              <th>
+                <select class="dx-column-filter-control dx-column-filter" name="discipline" aria-label="Filtrar discipline">
+                  <option value="">All</option>
+                  {% for d in source.choices.disciplines %}
+                    <option value="{{ d.value }}" {% if source.filters.discipline == d.value %}selected{% endif %}>{{ d.label }}</option>
+                  {% endfor %}
+                </select>
+              </th>
+              <th>
+                <select class="dx-column-filter-control dx-column-filter" name="status" aria-label="Filtrar status">
+                  <option value="">All</option>
+                  {% for s in source.choices.statuses %}
+                    <option value="{{ s.value }}" {% if source.filters.status == s.value %}selected{% endif %}>{{ s.label }}</option>
+                  {% endfor %}
+                </select>
+              </th>
+              <th><select class="dx-column-filter-control" disabled><option>All</option></select></th>
+              <th><select class="dx-column-filter-control" disabled><option>All</option></select></th>
+              <th><select class="dx-column-filter-control" disabled><option>All</option></select></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for doc in page_obj %}
+              <tr class="{% if doc.status == 'success' %}dx-document-row-ok{% else %}dx-document-row-watch{% endif %}">
+                <td class="dx-mono">{{ doc.priority }}</td>
+                <td>
+                  <a class="dx-cell-link" href="{{ source.base_url }}/documents/{{ doc.id }}/" target="_blank">
+                    {{ doc.drawing_number|default:doc.original_filename }}
+                  </a>
+                  <div class="dx-sub">{{ doc.title|default:"-"|truncatechars:90 }}</div>
+                </td>
+                <td class="dx-mono">{{ doc.revision|default:"-" }}</td>
+                <td><span class="dx-pill">{{ doc.discipline|default:"-" }}</span></td>
+                <td><span class="dx-status">{{ doc.status }}</span></td>
+                <td class="dx-mono">{{ doc.tables_count|default:0 }}</td>
+                <td class="dx-mono">{{ doc.material_count|default:0|intcomma }}</td>
+                <td class="dx-mono">{{ doc.uploaded_at|slice:":10" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="8" class="empty-state">Nenhum documento encontrado na base real.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </form>
+    {% include "partials/_pagination.html" %}
+  </div>
+</div>
+{% endblock %}

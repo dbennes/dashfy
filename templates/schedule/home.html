@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Schedule - Dashboard{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Schedule" subtitle="Cronogramas, marcos e calendario" icon="bi-calendar3" %}
+{% include "partials/_filters_bar.html" %}
+
+<div class="row g-3 mb-4">
+  <div class="col-xl-3 col-md-6">{% include "partials/_kpi_card.html" with label="Eventos" value=kpis.total icon="bi-calendar-event" color="primary" %}</div>
+  <div class="col-xl-3 col-md-6">{% include "partials/_kpi_card.html" with label="Planejados" value=kpis.planned icon="bi-clock" color="info" %}</div>
+  <div class="col-xl-3 col-md-6">{% include "partials/_kpi_card.html" with label="Em andamento" value=kpis.in_progress icon="bi-arrow-repeat" color="warning" %}</div>
+  <div class="col-xl-3 col-md-6">{% include "partials/_kpi_card.html" with label="Atrasados" value=kpis.delayed icon="bi-exclamation-triangle-fill" color="danger" %}</div>
+</div>
+
+<div class="d-flex gap-2 mb-3">
+  <a class="btn btn-outline-primary" href="{% url 'schedule:calendar' %}?{{ request.GET.urlencode }}"><i class="bi bi-calendar3"></i> Calendario</a>
+  <a class="btn btn-outline-primary" href="{% url 'schedule:event_list' %}?{{ request.GET.urlencode }}"><i class="bi bi-list-ul"></i> Lista de eventos</a>
+</div>
+
+<div class="row g-3">
+  {% for s in schedules %}
+    <div class="col-xl-4 col-md-6">
+      <div class="card card-body h-100">
+        <h6 class="mb-1">{{ s.name }}</h6>
+        <small class="text-muted">{{ s.client.name }}{% if s.project %} - {{ s.project.code }}{% endif %}</small>
+        <p class="small mt-2 mb-0">{{ s.description|truncatechars:120|default:"Sem descricao." }}</p>
+        <hr>
+        <div class="d-flex justify-content-between small">
+          <span><i class="bi bi-play-circle"></i> {{ s.start_date|date:"d/m/Y" }}</span>
+          <span><i class="bi bi-flag"></i> {{ s.end_date|date:"d/m/Y" }}</span>
+        </div>
+      </div>
+    </div>
+  {% empty %}
+    <div class="col-12"><div class="empty-state"><i class="bi bi-calendar-x"></i><br>Nenhum cronograma ativo</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

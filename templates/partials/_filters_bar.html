@@ -1,0 +1,35 @@
+{% comment %}
+Barra de filtros reutilizavel.
+Pass:
+  - filter_form (django-filter form)
+  - export_url (opcional, prefixo: ?{...filters} & format=csv|xlsx|pdf)
+{% endcomment %}
+<form method="get" class="filters-bar mb-3" id="filters-bar">
+  <div class="row g-2 align-items-end">
+    {% for field in filter_form %}
+      <div class="col-xl-3 col-md-4 col-sm-6">
+        <label class="form-label small text-muted">{{ field.label }}</label>
+        {{ field }}
+      </div>
+    {% endfor %}
+    <div class="col-xl-3 col-md-4 col-sm-6 filter-actions">
+      <button type="submit" class="btn btn-primary"><i class="bi bi-funnel-fill me-1"></i>Filtrar</button>
+      <a class="btn btn-outline-secondary" href="?" title="Limpar filtros" aria-label="Limpar filtros">
+        <i class="bi bi-arrow-counterclockwise"></i>
+      </a>
+      {% if export_url %}
+        <div class="dropdown ms-auto">
+          <button class="btn btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i class="bi bi-download me-1"></i>Exportar
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="{{ export_url }}&format=csv">CSV</a></li>
+            <li><a class="dropdown-item" href="{{ export_url }}&format=xlsx">Excel (XLSX)</a></li>
+            <li><a class="dropdown-item" href="{{ export_url }}&format=pdf">PDF</a></li>
+            <li><a class="dropdown-item" href="{{ export_url }}&format=json">JSON</a></li>
+          </ul>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</form>

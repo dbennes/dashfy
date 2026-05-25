@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Datafy - Base real{% endblock %}
+
+{% block content %}
+<div class="dx-dashboard">
+  <section class="dx-hero">
+    <div class="dx-hero-main">
+      <div class="dx-hero-eyebrow">DATAFY / SPDM</div>
+      <h1 class="dx-hero-title">Operational control for daily alignment</h1>
+      <p class="dx-hero-sub">
+        Base real: {{ source.source_name }}{% if not source.available %} indisponivel{% endif %}
+      </p>
+    </div>
+    <div class="dx-hero-actions">
+      <a class="dx-btn dx-btn-primary" href="{{ source.base_url }}/" target="_blank">
+        <i class="bi bi-box-arrow-up-right"></i> Abrir DATAFY
+      </a>
+      <a class="dx-btn" href="{% url 'datafy:entries' %}">
+        <i class="bi bi-table"></i> Documentos
+      </a>
+    </div>
+  </section>
+
+  {% if not source.available %}
+    <div class="app-alert alert-danger">{{ source.error }}</div>
+  {% endif %}
+
+  <section class="dx-procure-strip">
+    <div class="dx-pc dx-pc-good">
+      <div class="dx-pc-icon"><i class="bi bi-clipboard-check"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">Drawing coverage</div>
+        <div class="dx-pc-value">{{ kpis.coverage_pct|default:0 }}<span class="dx-pc-unit">%</span></div>
+      </div>
+    </div>
+    <div class="dx-pc dx-pc-muted">
+      <div class="dx-pc-icon"><i class="bi bi-file-earmark-text"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">Documents</div>
+        <div class="dx-pc-value">{{ kpis.documents|default:0|intcomma }}</div>
+      </div>
+    </div>
+    <div class="dx-pc dx-pc-info">
+      <div class="dx-pc-icon"><i class="bi bi-receipt"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">POs</div>
+        <div class="dx-pc-value">{{ kpis.pos|default:0|intcomma }}</div>
+      </div>
+    </div>
+    <div class="dx-pc dx-pc-warn">
+      <div class="dx-pc-icon"><i class="bi bi-box-seam"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">Stock pieces</div>
+        <div class="dx-pc-value">{{ kpis.stock_pieces|default:0|intcomma }}</div>
+      </div>
+    </div>
+    <div class="dx-pc dx-pc-danger">
+      <div class="dx-pc-icon"><i class="bi bi-exclamation-triangle"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">Missing material rows</div>
+        <div class="dx-pc-value">{{ kpis.missing_materials|default:0|intcomma }}</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="row g-3">
+    <div class="col-xl-4">
+      <div class="dx-card">
+        <div class="dx-card-head">
+          <div>
+            <div class="dx-card-eyebrow">Documents</div>
+            <h2 class="dx-card-title">Status de extracao</h2>
+          </div>
+        </div>
+        <div class="dx-card-body"><div id="chart-status"></div></div>
+      </div>
+    </div>
+    <div class="col-xl-4">
+      <div class="dx-card">
+        <div class="dx-card-head">
+          <div>
+            <div class="dx-card-eyebrow">Engineering</div>
+            <h2 class="dx-card-title">Disciplinas</h2>
+          </div>
+        </div>
+        <div class="dx-card-body"><div id="chart-disciplines"></div></div>
+      </div>
+    </div>
+    <div class="col-xl-4">
+      <div class="dx-card">
+        <div class="dx-card-head">
+          <div>
+            <div class="dx-card-eyebrow">Procurement</div>
+            <h2 class="dx-card-title">Status de POs</h2>
+          </div>
+        </div>
+        <div class="dx-card-body"><div id="chart-pos"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-xl-7">
+      <div class="dx-card dx-operational-card">
+        <div class="dx-card-head">
+          <div>
+            <div class="dx-card-eyebrow">Priority queue</div>
+            <h2 class="dx-card-title">Documentos filtraveis</h2>
+          </div>
+          <a class="dx-link-static" href="{% url 'datafy:entries' %}">Ver todos</a>
+        </div>
+        <div class="dx-table-control-bar">
+          <div class="dx-table-tabs">
+            <span class="active"><i class="bi bi-table"></i> Drawings</span>
+            <span><i class="bi bi-diagram-3"></i> Disciplinas</span>
+            <span><i class="bi bi-clock-history"></i> Revisoes</span>
+          </div>
+          <div class="dx-table-chipline">
+            <span>{{ documents_source.rows|length|intcomma }} visiveis</span>
+            <span>{{ documents_source.total|default:0|intcomma }} documentos</span>
+            {% if documents_source.filters.q or documents_source.filters.priority or documents_source.filters.revision or documents_source.filters.discipline or documents_source.filters.status %}
+              <a href="{% url 'datafy:home' %}"><i class="bi bi-x-lg"></i> Reset</a>
+            {% endif %}
+          </div>
+        </div>
+        <form method="get" class="dx-card-table-form">
+          <button class="visually-hidden" type="submit">Filtrar</button>
+          <div class="dx-table-wrap dx-datafy-table-wrap">
+            <table class="dx-table dx-table-dense dx-table-filtered dx-datafy-documents-table">
+              <thead>
+                <tr class="dx-column-header-row">
+                  <th>Prior... <span class="dx-sort-hint">&lt;&gt;</span></th>
+                  <th>Drawing <span class="dx-sort-hint">&lt;&gt;</span></th>
+                  <th>Revision... <span class="dx-sort-hint">&lt;&gt;</span></th>
+                  <th>Discipline <span class="dx-sort-hint">&lt;&gt;</span></th>
+                  <th>Status <span class="dx-sort-hint">&lt;&gt;</span></th>
+                  <th>Tables <span class="dx-sort-hint">&lt;&gt;</span></th>
+                  <th>Rows <span class="dx-sort-hint">&lt;&gt;</span></th>
+                </tr>
+                <tr class="dx-column-filter-row">
+                  <th>
+                    <select class="dx-column-filter-control dx-column-filter" name="priority" aria-label="Filtrar prioridade">
+                      <option value="">All</option>
+                      {% for p in documents_source.choices.priorities %}
+                        <option value="{{ p.value }}" {% if documents_source.filters.priority == p.value %}selected{% endif %}>{{ p.label }}</option>
+                      {% endfor %}
+                    </select>
+                  </th>
+                  <th>
+                    <input class="dx-column-filter-control dx-column-filter" type="search" name="q" value="{{ documents_source.filters.q }}" placeholder="All" aria-label="Filtrar drawing">
+                  </th>
+                  <th>
+                    <select class="dx-column-filter-control dx-column-filter" name="revision" aria-label="Filtrar revision">
+                      <option value="">All</option>
+                      {% for r in documents_source.choices.revisions %}
+                        <option value="{{ r.value }}" {% if documents_source.filters.revision == r.value %}selected{% endif %}>{{ r.label }}</option>
+                      {% endfor %}
+                    </select>
+                  </th>
+                  <th>
+                    <select class="dx-column-filter-control dx-column-filter" name="discipline" aria-label="Filtrar discipline">
+                      <option value="">All</option>
+                      {% for d in documents_source.choices.disciplines %}
+                        <option value="{{ d.value }}" {% if documents_source.filters.discipline == d.value %}selected{% endif %}>{{ d.label }}</option>
+                      {% endfor %}
+                    </select>
+                  </th>
+                  <th>
+                    <select class="dx-column-filter-control dx-column-filter" name="status" aria-label="Filtrar status">
+                      <option value="">All</option>
+                      {% for s in documents_source.choices.statuses %}
+                        <option value="{{ s.value }}" {% if documents_source.filters.status == s.value %}selected{% endif %}>{{ s.label }}</option>
+                      {% endfor %}
+                    </select>
+                  </th>
+                  <th><select class="dx-column-filter-control" disabled><option>All</option></select></th>
+                  <th><select class="dx-column-filter-control" disabled><option>All</option></select></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for doc in documents_source.rows %}
+                  <tr class="{% if doc.status == 'success' %}dx-document-row-ok{% else %}dx-document-row-watch{% endif %}">
+                    <td class="dx-mono">{{ doc.priority }}</td>
+                    <td>
+                      <a class="dx-cell-link" href="{{ source.base_url }}/documents/{{ doc.id }}/" target="_blank">
+                        {{ doc.drawing_number|default:doc.original_filename }}
+                      </a>
+                      <div class="dx-sub">{{ doc.title|default:"-"|truncatechars:72 }}</div>
+                    </td>
+                    <td class="dx-mono">{{ doc.revision|default:"-" }}</td>
+                    <td><span class="dx-pill">{{ doc.discipline|default:"-" }}</span></td>
+                    <td><span class="dx-status">{{ doc.status|default:"-" }}</span></td>
+                    <td class="dx-mono">{{ doc.tables_count|default:0 }}</td>
+                    <td class="dx-mono">{{ doc.material_count|default:0|intcomma }}</td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="7" class="empty-state">Nenhum documento encontrado na base real.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="col-xl-5">
+      <div class="dx-card">
+        <div class="dx-card-head">
+          <div>
+            <div class="dx-card-eyebrow">Purchase orders</div>
+            <h2 class="dx-card-title">Ultimas POs</h2>
+          </div>
+        </div>
+        <div class="dx-list">
+          {% for po in source.recent_pos %}
+            <a class="dx-list-row" href="{{ source.base_url }}/purchase-orders/{{ po.id }}/" target="_blank">
+              <span>
+                <strong>{{ po.po_number|default:"PO sem numero" }}</strong>
+                <small>{{ po.supplier_name|default:"Fornecedor nao informado" }}</small>
+              </span>
+              <span class="dx-status">{{ po.status }}</span>
+            </a>
+          {% empty %}
+            <div class="empty-state">Nenhuma PO encontrada.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  renderShellChart('chart-status', {{ chart_status|safe }});
+  renderShellChart('chart-disciplines', {{ chart_disciplines|safe }});
+  renderShellChart('chart-pos', {{ chart_pos|safe }});
+});
+</script>
+{% endblock %}

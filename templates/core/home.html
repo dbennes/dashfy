@@ -1,0 +1,2393 @@
+{% extends "base.html" %}
+{% load humanize static %}
+{% block title %}Cockpit · {{ APP_NAME }}{% endblock %}
+{% block crumb_current %}COCKPIT{% endblock %}
+{% block project_code %}BN-EPC1{% endblock %}
+{% block project_name %}Bonga North Project{% endblock %}
+{% block project_horiz %}{{ manager.p6.kpis.start_label|default:"31/05/24" }} → {{ manager.p6.kpis.finish_label|default:"30/06/27" }}{% endblock %}
+
+{% block tickers %}
+<div class="tb-ticker" title="P6 physical progress against the current planned baseline">
+  <span class="lbl">PHYSICAL</span>
+  <span class="val">{{ manager.p6.kpis.physical_pct|default:0|floatformat:2 }}%</span>
+  <span class="delta {% if manager.p6.kpis.delta_pct < 0 %}dn{% elif manager.p6.kpis.delta_pct > 0 %}up{% else %}flat{% endif %}">{{ manager.p6.kpis.delta_pct|default:0|floatformat:2 }} p.p.</span>
+</div>
+<div class="tb-ticker" title="Current cumulative planned progress in P6">
+  <span class="lbl">PLAN</span>
+  <span class="val">{{ manager.p6.kpis.planned_today_pct|default:0|floatformat:2 }}%</span>
+</div>
+<div class="tb-ticker" title="DED documents in AFC / revision C">
+  <span class="lbl">AFC</span>
+  <span class="val">{{ manager.construction.engineering_flow.afc_pct|default:0|floatformat:1 }}%</span>
+  <span class="delta flat">{{ manager.construction.engineering_flow.afc|default:0|intcomma }}</span>
+</div>
+<div class="tb-ticker" title="Issued / released DED documents">
+  <span class="lbl">ISSUED</span>
+  <span class="val">{{ manager.construction.engineering_flow.issued_pct|default:0|floatformat:1 }}%</span>
+  <span class="delta flat">{{ manager.construction.engineering_flow.issued|default:0|intcomma }}</span>
+</div>
+<div class="tb-ticker" title="Supply items with linked purchase order">
+  <span class="lbl">WITH PO</span>
+  <span class="val">{{ manager.material.material_flow.covered_pct|default:0|floatformat:1 }}%</span>
+  <span class="delta flat">{{ manager.material.material_flow.covered|default:0|intcomma }}</span>
+</div>
+<div class="tb-ticker" title="Supply items still without linked purchase order">
+  <span class="lbl">WITHOUT PO</span>
+  <span class="val">{{ manager.material.material_flow.tbe|default:0|intcomma }}</span>
+  <span class="delta {% if manager.material.material_flow.tbe %}dn{% else %}flat{% endif %}">{{ manager.material.material_flow.tbe_pct|default:0|floatformat:1 }}%</span>
+</div>
+<div class="tb-ticker" title="Physical workload planned for the next 90 days">
+  <span class="lbl">90 DAYS</span>
+  <span class="val">{{ manager.p6.management.kpis.next_90_units_label|default:"0" }}</span>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{# ===== FILTERBAR (sticky) ===== #}
+<form method="get" class="filterbar" id="filters-bar" data-c3-filterbar data-c3-auto-submit>
+  <div class="fb-cell" style="min-width:130px">
+    <label>From</label>
+    <input type="date" name="date_from" value="{{ manager.filters.date_from }}">
+  </div>
+  <div class="fb-cell" style="min-width:130px">
+    <label>To</label>
+    <input type="date" name="date_to" value="{{ manager.filters.date_to }}">
+  </div>
+  <div class="fb-cell" style="min-width:130px">
+    <label>Discipline</label>
+    <select name="discipline" class="{% if manager.filters.discipline %}is-active{% endif %}">
+      <option value="">ALL</option>
+      {% for d in manager.construction.choices.disciplines %}
+        <option value="{{ d.value }}" {% if manager.filters.discipline == d.value %}selected{% endif %}>{{ d.value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="fb-cell" style="min-width:120px">
+    <label>Campaign</label>
+    <select name="campaign" class="{% if manager.filters.campaign %}is-active{% endif %}">
+      <option value="">ALL</option>
+      {% for c in manager.construction.choices.campaigns %}
+        <option value="{{ c.value }}" {% if manager.filters.campaign == c.value %}selected{% endif %}>{{ c.value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="fb-cell" style="min-width:110px">
+    <label>Week</label>
+    <select name="contract_week" class="{% if manager.filters.contract_week %}is-active{% endif %}">
+      <option value="">ALL</option>
+      {% for w in manager.construction.choices.weeks %}
+        <option value="{{ w.value }}" {% if manager.filters.contract_week == w.value %}selected{% endif %}>{{ w.value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="fb-cell" style="min-width:110px">
+    <label>Readiness</label>
+    <select name="min_readiness" class="{% if manager.filters.min_readiness %}is-active{% endif %}">
+      <option value="0" {% if manager.filters.min_readiness == 0 %}selected{% endif %}>ALL</option>
+      <option value="25" {% if manager.filters.min_readiness == 25 %}selected{% endif %}>≥ 25%</option>
+      <option value="50" {% if manager.filters.min_readiness == 50 %}selected{% endif %}>≥ 50%</option>
+      <option value="80" {% if manager.filters.min_readiness == 80 %}selected{% endif %}>≥ 80%</option>
+      <option value="100" {% if manager.filters.min_readiness == 100 %}selected{% endif %}>100%</option>
+    </select>
+  </div>
+  <div class="fb-actions">
+    <a class="btn" href="{% url 'core:home' %}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      Clear
+    </a>
+    <button class="btn primary" type="submit">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+      Apply
+    </button>
+  </div>
+</form>
+
+{# ===== SECTION NAV ===== #}
+<nav class="section-nav" id="c3-section-nav">
+  <a class="sn-tab active" data-target="s00" href="#s00">
+    <span class="num">S00</span><span>P6 Schedule</span>
+    <span class="chip amber">{{ manager.p6.kpis.physical_pct|default:0|floatformat:2 }}%</span>
+  </a>
+  <a class="sn-tab" data-target="s01" href="#s01">
+    <span class="num">S01</span><span>Engineering</span>
+    <span class="chip">{{ manager.construction.engineering_flow.total|default:0|intcomma }}</span>
+  </a>
+  <a class="sn-tab" data-target="s02" href="#s02">
+    <span class="num">S02</span><span>Supply</span>
+    <span class="chip green" title="Coverage with linked purchase order">{{ manager.material.material_flow.covered_pct|default:0|floatformat:1 }}%</span>
+  </a>
+  <a class="sn-tab" data-target="s03" href="#s03">
+    <span class="num">S03</span><span>3D Model</span>
+    <span class="chip">GLB local</span>
+  </a>
+  <span class="sn-spacer"></span>
+  <span class="sn-meta">
+    <span>Source · <b>{% if manager.p6.curves_file_name %}{{ manager.p6.curves_file_name }}{% else %}Annex III{% endif %}</b></span>
+    <span>·</span>
+    <span><b>{{ manager.p6.kpis.total_rows|default:0|intcomma }}</b> PMS · <b>{{ manager.p6.kpis.curve_points|default:0|intcomma }}</b> points</span>
+  </span>
+</nav>
+
+{# ===== Source health (only if any source down) ===== #}
+{% if not sources.datafy.available %}
+  <div class="c3-msg" style="border-left-color: var(--signal-red);">DATAFY unavailable: {{ sources.datafy.error }}</div>
+{% endif %}
+{% if not sources.taskfy.available %}
+  <div class="c3-msg" style="border-left-color: var(--signal-red);">Taskfy unavailable: {{ sources.taskfy.error }}</div>
+{% endif %}
+{% if not sources.p6.available %}
+  <div class="c3-msg" style="border-left-color: var(--signal-red);">P6 unavailable: {{ sources.p6.error }}</div>
+{% endif %}
+
+{# ===== S00 — P6 SCHEDULE ===== #}
+<section id="s00" class="section">
+  <div class="section-head">
+    <div>
+      <span class="tag">S00 · P6 Schedule</span>
+      <h2>Physical schedule curve</h2>
+    </div>
+    <div class="meta p6-source-meta c3-meta-inline">
+      <div class="c3-meta-line">
+        {% if manager.p6.curves_file_name %}{{ manager.p6.curves_file_name }}{% else %}Annex III · Progress PMS{% endif %}
+        · <b>{{ manager.p6.kpis.total_rows|default:0|intcomma }}</b> PMS
+        · <b>{{ manager.p6.kpis.curve_points|default:0|intcomma }}</b> weekly points
+        · <b>{{ manager.p6.kpis.executive_rows|default:0|intcomma }}</b> areas
+        · {% if manager.p6.curves_import_id %}import #{{ manager.p6.curves_import_id }} · {{ manager.p6.curves_imported_at|date:"d/m/Y H:i" }}{% else %}no active import{% endif %}
+      </div>
+      {% if request.user.is_admin %}
+        <form class="p6-import-form" action="{% url 'core:import_p6_curves' %}" method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <label class="p6-import-btn" title="Import Annex III P6 curves">
+            <input type="file" name="p6_curves_file" accept=".xlsx,.xlsm" onchange="this.form.submit()">
+            <span>Import XLSX</span>
+          </label>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="kpi-strip">
+    <div class="kpi kpi-amber">
+      <div class="lbl"><span class="marker"></span><span>P6 Physical</span></div>
+      <div class="val">{{ manager.p6.kpis.physical_pct|default:0|floatformat:2 }}<span class="unit">%</span></div>
+      <div class="sub">{{ manager.p6.kpis.actual_units|default:0|floatformat:0|intcomma }} / {{ manager.p6.kpis.budget_units|default:0|floatformat:0|intcomma }} units</div>
+    </div>
+    <div class="kpi kpi-cyan">
+      <div class="lbl"><span class="marker"></span><span>Planned Today</span></div>
+      <div class="val">{{ manager.p6.kpis.planned_today_pct|default:0|floatformat:2 }}<span class="unit">%</span></div>
+      <div class="sub">Delta {{ manager.p6.kpis.delta_pct|default:0|floatformat:2 }} p.p.</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl"><span class="marker"></span><span>Base PMS</span></div>
+      <div class="val">{{ manager.p6.kpis.total_rows|default:0|intcomma }}</div>
+      <div class="sub">{{ manager.p6.kpis.curve_points|default:0|intcomma }} imported weekly points</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl"><span class="marker"></span><span>Horizon</span></div>
+      <div class="val">{{ manager.p6.timeline.month_count|default:0|intcomma }}<span class="unit">mo</span></div>
+      <div class="sub">{{ manager.p6.kpis.start_label|default:"-" }} → {{ manager.p6.kpis.finish_label|default:"-" }}</div>
+    </div>
+  </div>
+
+  <div class="row-2 c3-p6-layout">
+    <div class="card c3-revision-card">
+      <div class="card-head">
+        <div class="lhs">
+          <span class="tag">CURVE</span>
+          <h3>Planned vs Actual cumulative</h3>
+        </div>
+        <div class="rhs">
+          <span>PMS · %</span>
+          <span class="pill">Imported source</span>
+        </div>
+      </div>
+      <div class="card-body flush">
+        <div id="chart-p6-physical-curve" class="curve-chart" data-c3-curve></div>
+        <div class="curve-legend" data-c3-curve-legend></div>
+      </div>
+    </div>
+
+    <div class="card c3-discipline-card">
+      <div class="card-head">
+        <div class="lhs">
+          <span class="tag">OUTLINE</span>
+          <h3>Imported PMS levels</h3>
+        </div>
+        <div class="rhs"><b>{{ manager.p6.executive_rows|length }}</b> areas</div>
+      </div>
+      <div class="card-body flush">
+        <div class="bar-list">
+          {% for row in manager.p6.executive_rows %}
+            <div class="bar-row is-{{ row.status|default:'on' }}" style="grid-template-columns: 1.5fr 1fr 90px">
+              <div class="main">
+                <strong>{{ row.label }}</strong>
+                <small>LEVEL {{ row.level }} · WEIGHT {{ row.weight_label }} · FINISH {{ row.finish_label|default:'-' }}</small>
+              </div>
+              <div class="bars" style="--plan-w: {{ row.planned_pct_css|default:'0' }}%; --actual-w: {{ row.actual_pct_css|default:'0' }}%;">
+                <div class="actual"></div>
+                <div class="plan-tick"></div>
+              </div>
+              <div class="delta-cell">
+                <span class="mono">{{ row.delta_label|default:'—' }}</span>
+                <small>{{ row.planned_label }} / {{ row.actual_label }}</small>
+              </div>
+            </div>
+          {% empty %}
+            <div class="card-body" style="text-align:center; color: var(--fg-3); padding: var(--s-5);">No executive areas found in the Progress PMS sheet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ===== S01 — ENGINEERING ===== #}
+<section id="s01" class="section">
+  <div class="section-head">
+    <div>
+      <span class="tag">S01 · Engineering</span>
+      <h2>Document register and revisions</h2>
+    </div>
+    <div class="meta p6-source-meta c3-meta-inline">
+      <div class="c3-meta-line">
+        <b>{{ manager.construction.engineering_flow.total|default:0|intcomma }}</b> docs · <b>{{ manager.construction.engineering_summary|length }}</b> disciplines
+        {% if manager.construction.engineering_source_mode == "sqlite_snapshot" %}
+          · DED XLSX · import #{{ manager.construction.engineering_import_id }} · {{ manager.construction.engineering_imported_at|date:"d/m/Y H:i" }}
+        {% else %}
+          · Source · <b>{{ manager.construction.engineering_source|default:"DATAFY / SPDM" }}</b>
+        {% endif %}
+        {% if manager.construction.engineering_source_file_name %}
+          · {{ manager.construction.engineering_source_file_name }} · {{ manager.construction.engineering_detail_sheet|default:"Sheet1" }} / {{ manager.construction.engineering_summary_sheet|default:"Sheet2" }}
+        {% endif %}
+      </div>
+      {% if request.user.is_admin %}
+        <form class="p6-import-form" action="{% url 'core:import_engineering_status' %}" method="post" enctype="multipart/form-data">
+          {% csrf_token %}
+          <label class="p6-import-btn" title="Import DED Status XLSX">
+            <input type="file" name="engineering_status_file" accept=".xlsx,.xlsm" onchange="this.form.submit()">
+            <span>Import DED</span>
+          </label>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% with ef=manager.construction.engineering_flow %}
+  <div class="kpi-strip">
+    <div class="kpi">
+      <div class="lbl"><span class="marker"></span><span>Documents</span></div>
+      <div class="val">{{ ef.total|default:0|intcomma }}</div>
+      <div class="sub">Total in selected document register</div>
+    </div>
+    <div class="kpi kpi-green">
+      <div class="lbl"><span class="marker"></span><span>AFC / Rev. C</span></div>
+      <div class="val">{{ ef.afc_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+      <div class="sub">{{ ef.afc|default:0|intcomma }} AFC documents</div>
+    </div>
+    <div class="kpi kpi-amber">
+      <div class="lbl"><span class="marker"></span><span>Under Review</span></div>
+      <div class="val">{{ ef.in_engineering_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+      <div class="sub">{{ ef.in_engineering|default:0|intcomma }} in engineering flow</div>
+    </div>
+    <div class="kpi kpi-cyan">
+      <div class="lbl"><span class="marker"></span><span>Issued</span></div>
+      <div class="val">{{ ef.issued_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+      <div class="sub">{{ ef.issued|default:0|intcomma }} released</div>
+    </div>
+  </div>
+
+  <div class="row-2 c3-engineering-layout">
+    <div class="card">
+      <div class="card-head">
+        <div class="lhs">
+          <span class="tag">REVISIONS</span>
+          <h3>Documents by revision</h3>
+        </div>
+        <div class="rhs">DOCS · R* · A* · C*</div>
+      </div>
+      <div class="card-body flush">
+        {% if ef.total %}
+        <div class="barchart">
+          <div class="yaxis">
+            <span>{{ ef.total|intcomma }}</span>
+            <span>{% widthratio ef.total 4 3 %}</span>
+            <span>{% widthratio ef.total 2 1 %}</span>
+            <span>{% widthratio ef.total 4 1 %}</span>
+            <span>0</span>
+          </div>
+          <div class="plot">
+            <div class="bar is-total" style="--h: 100%"><span class="dlabel">{{ ef.total|intcomma }}</span></div>
+            <div class="bar is-r" style="--h: {% widthratio ef.rev_r ef.total 100 %}%"><span class="dlabel">{{ ef.rev_r|default:0|intcomma }}</span></div>
+            <div class="bar is-a" style="--h: {% widthratio ef.rev_a ef.total 100 %}%"><span class="dlabel">{{ ef.rev_a|default:0|intcomma }}</span></div>
+            <div class="bar is-c" style="--h: {% widthratio ef.rev_c ef.total 100 %}%"><span class="dlabel">{{ ef.rev_c|default:0|intcomma }}</span></div>
+          </div>
+          <div class="xaxis">
+            <span>DOCS</span><span>R</span><span>A</span><span>C · AFC</span>
+          </div>
+        </div>
+        <div class="legend">
+          <span><i style="background: var(--fg-0)"></i>Total</span>
+          <span><i style="background: var(--signal-cyan)"></i>Rev R — preliminary</span>
+          <span><i style="background: var(--signal-amber)"></i>Rev A — issued</span>
+          <span><i style="background: var(--signal-green)"></i>Rev C — AFC</span>
+        </div>
+        {% else %}
+        <div class="card-body" style="text-align:center; color: var(--fg-3); padding: var(--s-5);">No engineering data for the current filters.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="lhs">
+          <span class="tag">DOCS</span>
+          <h3>Status by discipline</h3>
+        </div>
+        <div class="rhs">
+          <b>{{ manager.construction.engineering_summary|length }}</b> disciplines
+          {% if request.user.is_admin or request.user.can_export %}
+            <a class="c3-export-link" href="{% url 'core:export_engineering_status' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}" title="Export drawings and status to XLSX">
+              <i class="bi bi-download"></i><span>XLSX</span>
+            </a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="card-body flush">
+        <div class="scroll-y c3-discipline-scroll" style="--max-h: 360px">
+          <table class="tbl c3-discipline-table">
+            <thead>
+              <tr>
+                <th>Discipline</th>
+                <th class="num">Docs</th>
+                <th class="num">%</th>
+                <th class="num">NI</th>
+                <th class="num">IFR</th>
+                <th class="num">IFA</th>
+                <th class="num">AFC 1</th>
+                <th class="num">AFC 3</th>
+                <th class="num">UNDER REVIEW</th>
+                <th class="num">Obs.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in manager.construction.engineering_summary %}
+                <tr>
+                  <td>
+                    <button class="pill c3-filter-pill {% if manager.filters.discipline == row.discipline %}is-active{% endif %}" type="button" data-c3-filter-set="discipline" data-c3-filter-value="{{ row.discipline }}" data-c3-filter-anchor="#s01" title="Filter dashboard by {{ row.discipline }}">{{ row.discipline }}</button>
+                  </td>
+                  <td class="num"><b>{{ row.total|intcomma }}</b></td>
+                  <td class="num dim">{{ row.pct_total|floatformat:1 }}%</td>
+                  <td class="num"><span class="rev-tag r">{{ row.not_issued|default:0 }}</span></td>
+                  <td class="num"><span class="rev-tag r">{{ row.ifr|default:0 }}</span></td>
+                  <td class="num"><span class="rev-tag a">{{ row.ifa|default:0 }}</span></td>
+                  <td class="num"><span class="rev-tag c">{{ row.afc_code1|default:0 }}</span></td>
+                  <td class="num"><span class="rev-tag a">{{ row.afc_code3|default:0 }}</span></td>
+                  <td class="num"><span class="rev-tag c">{{ row.under_review|default:0 }}</span></td>
+                  <td class="num c3-note-cell">
+                    {% if row.remarks %}
+                      <button class="c3-note-popover" type="button" aria-label="Note for {{ row.discipline }}" aria-expanded="false">
+                        <i class="bi bi-chat-left-text"></i>
+                        <span class="c3-note-tooltip" role="tooltip">
+                          <b>{{ row.discipline }}</b>
+                          <small>DED note</small>
+                          <em>{{ row.remarks }}</em>
+                        </span>
+                      </button>
+                    {% else %}
+                      <span class="c3-note-empty" aria-label="No note"><i class="bi bi-chat-left-text"></i></span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="10" style="text-align:center; color:var(--fg-3); padding: var(--s-4);">No documents.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% endwith %}
+</section>
+
+{# ===== S02 — SUPPLY ===== #}
+<section id="s02" class="section">
+  <div class="section-head">
+    <div>
+      <span class="tag">S02 · Supply</span>
+      <h2>Supply register by campaign</h2>
+    </div>
+    <div class="meta p6-source-meta c3-meta-inline">
+      <div class="c3-meta-line">
+        <b>{{ manager.material.material_flow.total|default:0|intcomma }}</b> items · <b>{{ manager.material.material_flow.covered_pct|default:0|floatformat:1 }}%</b> coverage
+        {% if manager.material.source_mode == "sqlite_snapshot" %}
+          · DATAFY · snapshot #{{ manager.material.snapshot_id }} · {{ manager.material.snapshot_refreshed_at|date:"d/m/Y H:i" }}
+        {% else %}
+          · DATAFY · pending snapshot{% if manager.material.snapshot_missing %} · refresh source{% endif %}
+        {% endif %}
+      </div>
+      {% if request.user.is_admin %}
+        <form class="p6-import-form" action="{% url 'core:refresh_datafy_supply' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}" method="post">
+          {% csrf_token %}
+          <button class="source-refresh-btn" type="submit">Update DATAFY</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="kpi-strip">
+    <div class="kpi">
+      <div class="lbl"><span class="marker"></span><span>Total Scope</span></div>
+      <div class="val">{{ manager.material.material_flow.total|default:0|intcomma }}</div>
+      <div class="sub">Items in selected scope</div>
+    </div>
+    <div class="kpi kpi-green">
+      <div class="lbl"><span class="marker"></span><span>With PO</span></div>
+      <div class="val">{{ manager.material.material_flow.covered_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+      <div class="sub">{{ manager.material.material_flow.covered|default:0|intcomma }} linked to a PO</div>
+    </div>
+    <div class="kpi kpi-red">
+      <div class="lbl"><span class="marker"></span><span>Without PO</span></div>
+      <div class="val">{{ manager.material.material_flow.tbe_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+      <div class="sub">{{ manager.material.material_flow.tbe|default:0|intcomma }} without linked PO</div>
+    </div>
+    <div class="kpi kpi-amber">
+      <div class="lbl"><span class="marker"></span><span>At Yard</span></div>
+      <div class="val">{{ manager.material.material_flow.at_aveon_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+      <div class="sub">{{ manager.material.material_flow.at_aveon|default:0|intcomma }} received at yard</div>
+    </div>
+  </div>
+
+  {% if manager.material.supply_campaign_views %}
+
+    {# ===== PO PLACED: stacked columns + pending table by campaign ===== #}
+    <div class="card" style="margin-bottom: var(--s-3);" data-supply-campaign-panel>
+      <div class="card-head">
+        <div class="lhs">
+          <span class="tag">STATUS PO</span>
+          <h3>Campaigns, POs and yard receipt</h3>
+        </div>
+        <div class="rhs">
+          <div class="scope-switch" data-supply-scope-switch>
+            {% for view in manager.material.supply_campaign_views %}
+              <button type="button" class="{% if forloop.first %}active{% endif %}" data-supply-mode="{{ view.key }}">{{ view.label|upper }}</button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      {% for view in manager.material.supply_campaign_views %}
+        <div class="dx-supply-scope-view {% if forloop.first %}is-active{% endif %}" data-supply-scope="{{ view.key }}">
+          <div class="card-body" style="padding-bottom: 0;">
+            <div class="kpi-strip tight" style="border: 1px solid var(--line-1); margin-bottom: var(--s-3);">
+              <div class="kpi">
+                <div class="lbl"><span class="marker"></span><span>Scope</span></div>
+                <div class="val">{{ view.totals.total|intcomma }}</div>
+                <div class="sub">items in selected scope</div>
+              </div>
+              <div class="kpi kpi-green">
+                <div class="lbl"><span class="marker"></span><span>At Yard</span></div>
+                <div class="val">{{ view.totals.yard|intcomma }}</div>
+                <div class="sub">{{ view.executive.yard_pct|floatformat:1 }}% of scope at yard</div>
+              </div>
+              <div class="kpi kpi-amber">
+                <div class="lbl"><span class="marker"></span><span>PO not arrived</span></div>
+                <div class="val">{{ view.executive.yard_gap|intcomma }}</div>
+                <div class="sub">purchased, awaiting arrival</div>
+              </div>
+              <div class="kpi kpi-red">
+                <div class="lbl"><span class="marker"></span><span>Awaiting PO</span></div>
+                <div class="val">{{ view.executive.po_gap|intcomma }}</div>
+                <div class="sub">items without linked PO</div>
+              </div>
+            </div>
+          </div>
+
+          <script id="c3-poplaced-data-{{ view.key }}" type="application/json" data-c3-poplaced-data="{{ view.key }}">{{ view.chart_payload_json|safe }}</script>
+
+          <div class="row-2 c3-poplaced-row" style="padding: 0 var(--s-4) var(--s-4); margin: 0; gap: var(--s-3);">
+            <div class="card">
+              <div class="card-head">
+                <div class="lhs">
+                  <span class="tag">STATUS PO</span>
+                  <h3>Total · With PO · Without PO · PO not arrived · At Yard</h3>
+                </div>
+                <div class="rhs">{{ view.label|upper }} · ITEMS BY CAMPAIGN</div>
+              </div>
+              <div class="card-body" style="padding: 0;">
+                <div class="c3-poplaced-chart" data-c3-poplaced-chart="{{ view.key }}"></div>
+              </div>
+              <div class="legend" data-c3-poplaced-legend="{{ view.key }}"></div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <div class="lhs">
+                  <span class="tag">PENDING</span>
+                  <h3>Finalized drawings and material pending items</h3>
+                </div>
+                <div class="rhs">
+                  <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
+                  {% if request.user.is_admin or request.user.can_export %}
+                    <button class="c3-export-link" type="button" data-c3-export-pending="{{ view.key }}" title="Export drawing list for the current pending condition">
+                      <i class="bi bi-download"></i> Export
+                    </button>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="card-body" style="padding: 0;">
+                <div data-c3-poplaced-table="{{ view.key }}"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+  {% endif %}
+
+  {# DATAFY operational grid — Excel-like filters, adapted to cockpit v3 #}
+  <div class="card c3-probe-card" data-c3-probe>
+    <div class="card-head">
+      <div class="lhs">
+        <span class="tag">Imported source</span>
+        <h3>Drawing -> line number -> missing material -> PO -> CPMTO</h3>
+      </div>
+      <div class="rhs">
+        <span class="chip green">{{ manager.material.material_status_counts.covered|default:0|intcomma }} covered</span>
+        <span class="chip amber">{{ manager.material.material_status_counts.partial|default:0|intcomma }} partial</span>
+        <span class="chip red">{{ manager.material.material_status_counts.missing|default:0|intcomma }} missing</span>
+        <span class="chip">{{ manager.material.material_status_counts.unknown|default:0|intcomma }} check</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="c3-probe-tabs" data-c3-probe-tabs>
+        <button class="c3-probe-tab is-active" type="button" data-c3-probe-tab="materials" aria-selected="true">
+          <i class="bi bi-table"></i> Material rows
+        </button>
+        <button class="c3-probe-tab" type="button" data-c3-probe-tab="drawing-lines" aria-selected="false">
+          <i class="bi bi-diagram-3"></i> Drawing lines
+        </button>
+      </div>
+
+      <div class="c3-probe-view is-active" data-c3-probe-view="materials">
+        <div class="c3-probe-result-head">
+          <div class="c3-probe-result-title">
+            <strong>{{ manager.material.material_rows|length|intcomma }}</strong> item(s) found
+            <span>all loaded material rows</span>
+          </div>
+          <div class="c3-probe-badges">
+            <span class="is-ok">Covered {{ manager.material.material_status_counts.covered|default:0|intcomma }}</span>
+            <span class="is-partial">Partial {{ manager.material.material_status_counts.partial|default:0|intcomma }}</span>
+            <span class="is-missing">Missing {{ manager.material.material_status_counts.missing|default:0|intcomma }}</span>
+            <span class="is-unknown">Check {{ manager.material.material_status_counts.unknown|default:0|intcomma }}</span>
+          </div>
+        </div>
+
+        <div class="c3-grid-toolbar" data-c3-grid-controls="materials">
+          <label class="c3-grid-search">
+            <i class="bi bi-search"></i>
+            <input type="search" data-grid-search placeholder="Filter loaded rows">
+          </label>
+          <select class="c3-grid-select" data-grid-status aria-label="Status filter">
+            <option value="">All status</option>
+            <option value="missing">Missing</option>
+            <option value="partial">Partial</option>
+            <option value="ok">Covered</option>
+            <option value="unknown">Check unit</option>
+          </select>
+          <button class="c3-grid-tool" type="button" data-grid-density title="Toggle compact table"><i class="bi bi-layout-three-columns"></i> Dense</button>
+          <button class="c3-grid-tool" type="button" data-grid-copy title="Copy visible rows"><i class="bi bi-clipboard"></i> Copy visible</button>
+          <button class="c3-grid-tool c3-grid-export" type="button" data-grid-export title="Export visible rows to CSV"><i class="bi bi-download"></i> Export selection</button>
+          <details class="c3-col-menu">
+            <summary class="c3-grid-tool"><i class="bi bi-view-list"></i> Columns</summary>
+            <div class="c3-col-panel">
+              <label><input type="checkbox" data-grid-col-toggle value="priority" checked> Priority</label>
+              <label><input type="checkbox" data-grid-col-toggle value="drawing" checked> Drawing</label>
+              <label><input type="checkbox" data-grid-col-toggle value="revision" checked> Revision</label>
+              <label><input type="checkbox" data-grid-col-toggle value="discipline" checked> Discipline</label>
+              <label><input type="checkbox" data-grid-col-toggle value="line" checked> Line</label>
+              <label><input type="checkbox" data-grid-col-toggle value="table" checked> Table</label>
+              <label><input type="checkbox" data-grid-col-toggle value="page" checked> Page</label>
+              <label><input type="checkbox" data-grid-col-toggle value="item" checked> Item</label>
+              <label><input type="checkbox" data-grid-col-toggle value="family" checked> Family</label>
+              <label><input type="checkbox" data-grid-col-toggle value="code" checked> CPMTO/code</label>
+              <label><input type="checkbox" data-grid-col-toggle value="description" checked> Description</label>
+              <label><input type="checkbox" data-grid-col-toggle value="requested" checked> Requested</label>
+              <label><input type="checkbox" data-grid-col-toggle value="allocated" checked> Allocated</label>
+              <label><input type="checkbox" data-grid-col-toggle value="missing" checked> Missing</label>
+              <label><input type="checkbox" data-grid-col-toggle value="stock" checked> Stock</label>
+              <label><input type="checkbox" data-grid-col-toggle value="po" checked> POs</label>
+            </div>
+          </details>
+          <button class="c3-grid-tool" type="button" data-grid-clear title="Clear table filters"><i class="bi bi-x-lg"></i> Reset</button>
+          <span class="c3-grid-context" data-grid-context hidden></span>
+          <span class="c3-grid-visible" data-grid-count>0 visible</span>
+        </div>
+
+        <div class="c3-probe-table-wrap">
+          <table class="c3-probe-table" data-c3-probe-grid="materials">
+            <thead>
+              <tr class="c3-column-header-row">
+                <th data-col="priority" data-sort="number">Priority <span>&lt;&gt;</span></th>
+                <th data-col="drawing" data-sort="text">Drawing <span>&lt;&gt;</span></th>
+                <th data-col="revision" data-sort="text">Revision <span>&lt;&gt;</span></th>
+                <th data-col="discipline" data-sort="text">Discipline <span>&lt;&gt;</span></th>
+                <th data-col="line" data-sort="text">Line <span>&lt;&gt;</span></th>
+                <th data-col="table" data-sort="text">Table <span>&lt;&gt;</span></th>
+                <th data-col="page" data-sort="number">Page <span>&lt;&gt;</span></th>
+                <th data-col="item" data-sort="text">Item <span>&lt;&gt;</span></th>
+                <th data-col="family" data-sort="text">Family <span>&lt;&gt;</span></th>
+                <th data-col="code" data-sort="text">CPMTO / code <span>&lt;&gt;</span></th>
+                <th data-col="description" data-sort="text">Description (text) <span>&lt;&gt;</span></th>
+                <th data-col="requested" data-sort="number">Requested <span>&lt;&gt;</span></th>
+                <th data-col="allocated" data-sort="number">Allocated <span>&lt;&gt;</span></th>
+                <th data-col="missing" data-sort="number">Missing <span>&lt;&gt;</span></th>
+                <th data-col="stock" data-sort="number">Stock free <span>&lt;&gt;</span></th>
+                <th data-col="po" data-sort="text">PO covering <span>&lt;&gt;</span></th>
+              </tr>
+              <tr class="c3-column-filter-row">
+                <th data-col="priority"><div class="c3-filter-cell"><input type="search" data-col-filter="priority" placeholder="Prio"><select data-col-select="priority"><option value="">All</option></select></div></th>
+                <th data-col="drawing"><div class="c3-filter-cell"><input type="search" data-col-filter="drawing" placeholder="Type"><select data-col-select="drawing"><option value="">All</option></select></div></th>
+                <th data-col="revision"><div class="c3-filter-cell"><input type="search" data-col-filter="revision" placeholder="Rev"><select data-col-select="revision"><option value="">All</option></select></div></th>
+                <th data-col="discipline"><div class="c3-filter-cell"><input type="search" data-col-filter="discipline" placeholder="Disc"><select data-col-select="discipline"><option value="">All</option></select></div></th>
+                <th data-col="line"><div class="c3-filter-cell"><input type="search" data-col-filter="line" placeholder="Type"><select data-col-select="line"><option value="">All</option></select></div></th>
+                <th data-col="table"><div class="c3-filter-cell"><input type="search" data-col-filter="table" placeholder="Type"><select data-col-select="table"><option value="">All</option></select></div></th>
+                <th data-col="page"><div class="c3-filter-cell"><input type="search" data-col-filter="page" placeholder="Pg"><select data-col-select="page"><option value="">All</option></select></div></th>
+                <th data-col="item"><div class="c3-filter-cell"><input type="search" data-col-filter="item" placeholder="Item"><select data-col-select="item"><option value="">All</option></select></div></th>
+                <th data-col="family"><div class="c3-filter-cell"><input type="search" data-col-filter="family" placeholder="Family"><select data-col-select="family"><option value="">All</option></select></div></th>
+                <th data-col="code"><div class="c3-filter-cell"><input type="search" data-col-filter="code" placeholder="Code"><select data-col-select="code"><option value="">All</option></select></div></th>
+                <th data-col="description"><div class="c3-filter-cell"><input type="search" data-col-filter="description" placeholder="Type"><select data-col-select="description"><option value="">All</option></select></div></th>
+                <th data-col="requested"><div class="c3-filter-cell"><input type="search" data-col-filter="requested" placeholder="Qty"><select data-col-select="requested"><option value="">All</option></select></div></th>
+                <th data-col="allocated"><div class="c3-filter-cell"><input type="search" data-col-filter="allocated" placeholder="Alloc"><select data-col-select="allocated"><option value="">All</option></select></div></th>
+                <th data-col="missing"><div class="c3-filter-cell"><input type="search" data-col-filter="missing" placeholder="Missing"><select data-col-select="missing"><option value="">All</option></select></div></th>
+                <th data-col="stock"><div class="c3-filter-cell"><input type="search" data-col-filter="stock" placeholder="Stock"><select data-col-select="stock"><option value="">All</option></select></div></th>
+                <th data-col="po"><div class="c3-filter-cell"><input type="search" data-col-filter="po" placeholder="Type"><select data-col-select="po"><option value="">All</option></select></div></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in manager.material.material_rows %}
+                <tr class="c3-probe-row-{{ row.status|default:'unknown' }}" data-grid-row data-status="{{ row.status|default:'unknown' }}" data-campaign="{{ row.campaign|default:'-' }}" data-scope="{{ row.scope|default:'fabrication' }}" data-has-po="{{ row.has_po|default:0 }}" data-with-po="{{ row.has_po|default:0 }}" data-without-po="{% if row.has_po %}0{% else %}1{% endif %}" data-po-not-arrived="{% if row.has_po and not row.yard_actual %}1{% else %}0{% endif %}" data-yard-actual="{{ row.yard_actual|default:0 }}" data-drawing="{{ row.drawing_number|default:row.original_filename|default:'-' }}" data-missing-qty="{{ row.missing_qty|default:0 }}">
+                  <td data-col="priority" data-sort-value="{{ row.priority|default:999999 }}" class="mono">{{ row.priority|default:"-" }}</td>
+                  <td data-col="drawing"><span class="c3-local-ref c3-3d-click-hint" data-c3-3d-line-trigger data-c3-3d-line="{{ row.line|default:'' }}" data-c3-3d-drawing="{{ row.drawing_number|default:row.original_filename|default:'-' }}" title="Show linked line in 3D">{{ row.drawing_number|default:row.original_filename|default:"-" }}</span></td>
+                  <td data-col="revision" class="mono">{{ row.revision|default:"-" }}</td>
+                  <td data-col="discipline"><span class="pill">{{ row.discipline|default:"-" }}</span></td>
+                  <td data-col="line" class="mono">{% with line_value=row.line|default:"-" %}{% if line_value != "-" and line_value != "N/A" %}<button type="button" class="c3-line-3d-link" data-c3-3d-line-trigger data-c3-3d-line="{{ line_value }}" data-c3-3d-drawing="{{ row.drawing_number|default:row.original_filename|default:'-' }}" title="Show line in 3D"><i class="bi bi-bounding-box"></i><span>{{ line_value }}</span></button>{% else %}{{ line_value }}{% endif %}{% endwith %}</td>
+                  <td data-col="table">{{ row.table_name|default:"-" }}</td>
+                  <td data-col="page" data-sort-value="{{ row.page_number|default:0 }}" class="mono">{{ row.page_number|default:"-" }}</td>
+                  <td data-col="item" class="mono">{{ row.item_number|default:"-" }}</td>
+                  <td data-col="family" class="mono">{{ row.family|default:"-" }}</td>
+                  <td data-col="code"><span class="c3-code">{{ row.cpmtocode|default:"-" }}</span></td>
+                  <td data-col="description" class="c3-desc">{{ row.description|default:"-" }}</td>
+                  <td data-col="requested" data-sort-value="{{ row.requested_qty|default:0 }}"><b>{{ row.requested_qty|default:0|floatformat:2 }}</b> {{ row.unit|default:"" }}</td>
+                  <td data-col="allocated" data-sort-value="{{ row.allocated_qty|default:0 }}"><b>{{ row.allocated_qty|default:0|floatformat:2 }}</b> {{ row.unit|default:"" }}</td>
+                  <td data-col="missing" data-sort-value="{{ row.missing_qty|default:0 }}"><b>{{ row.missing_qty|default:0|floatformat:2 }}</b> {{ row.unit|default:"" }}</td>
+                  <td data-col="stock" data-sort-value="{{ row.stock_free_qty|default:0 }}">{% if row.stock_free_na %}n/a{% else %}<b>{{ row.stock_free_qty|default:0|floatformat:2 }}</b> {{ row.unit|default:"" }}{% endif %}</td>
+                  <td data-col="po"><span class="c3-po">{{ row.po_covering|default:"No linked PO" }}</span></td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="16" class="c3-grid-empty">No material rows in the imported source.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="c3-probe-view" data-c3-probe-view="drawing-lines">
+        <div class="c3-probe-result-head">
+          <div class="c3-probe-result-title">
+            <strong>{{ manager.material.drawing_line_rows|length|intcomma }}</strong> drawing(s)
+            <span>linked to material status and campaign</span>
+          </div>
+        </div>
+        <div class="c3-grid-toolbar" data-c3-grid-controls="drawing-lines">
+          <label class="c3-grid-search"><i class="bi bi-search"></i><input type="search" data-grid-search placeholder="Filter loaded rows"></label>
+          <select class="c3-grid-select" data-grid-status aria-label="Status filter">
+            <option value="">All status</option>
+            <option value="missing">Missing</option>
+            <option value="partial">Partial</option>
+            <option value="ok">Covered</option>
+          </select>
+          <button class="c3-grid-tool" type="button" data-grid-density title="Toggle compact table"><i class="bi bi-layout-three-columns"></i> Dense</button>
+          <button class="c3-grid-tool" type="button" data-grid-copy title="Copy visible rows"><i class="bi bi-clipboard"></i> Copy visible</button>
+          <button class="c3-grid-tool c3-grid-export" type="button" data-grid-export title="Export visible rows to CSV"><i class="bi bi-download"></i> Export selection</button>
+          <details class="c3-col-menu">
+            <summary class="c3-grid-tool"><i class="bi bi-view-list"></i> Columns</summary>
+            <div class="c3-col-panel">
+              <label><input type="checkbox" data-grid-col-toggle value="row-no" checked> #</label>
+              <label><input type="checkbox" data-grid-col-toggle value="priority" checked> Priority</label>
+              <label><input type="checkbox" data-grid-col-toggle value="drawing" checked> Drawing</label>
+              <label><input type="checkbox" data-grid-col-toggle value="revision" checked> Revision</label>
+              <label><input type="checkbox" data-grid-col-toggle value="revision-detail" checked> Revision detail</label>
+              <label><input type="checkbox" data-grid-col-toggle value="discipline" checked> Discipline</label>
+              <label><input type="checkbox" data-grid-col-toggle value="line" checked> Line</label>
+              <label><input type="checkbox" data-grid-col-toggle value="scope" checked> Scope</label>
+              <label><input type="checkbox" data-grid-col-toggle value="total" checked> Total</label>
+              <label><input type="checkbox" data-grid-col-toggle value="covered" checked> Covered</label>
+              <label><input type="checkbox" data-grid-col-toggle value="missing" checked> Pending</label>
+              <label><input type="checkbox" data-grid-col-toggle value="coverage" checked> Coverage</label>
+              <label><input type="checkbox" data-grid-col-toggle value="yard-actual" checked> Yard actual</label>
+              <label><input type="checkbox" data-grid-col-toggle value="yard-pct" checked> Yard %</label>
+            </div>
+          </details>
+          <button class="c3-grid-tool" type="button" data-grid-clear title="Clear table filters"><i class="bi bi-x-lg"></i> Reset</button>
+          <span class="c3-grid-context" data-grid-context hidden></span>
+          <span class="c3-grid-visible" data-grid-count>0 visible</span>
+        </div>
+        <div class="c3-probe-table-wrap">
+          <table class="c3-probe-table" data-c3-probe-grid="drawing-lines">
+            <thead>
+              <tr class="c3-column-header-row">
+                <th data-col="row-no" data-sort="number">#</th>
+                <th data-col="priority" data-sort="number">Priority <span>&lt;&gt;</span></th>
+                <th data-col="drawing" data-sort="text">Drawing <span>&lt;&gt;</span></th>
+                <th data-col="revision" data-sort="text">Revision <span>&lt;&gt;</span></th>
+                <th data-col="revision-detail" data-sort="text">Revision detail <span>&lt;&gt;</span></th>
+                <th data-col="discipline" data-sort="text">Discipline <span>&lt;&gt;</span></th>
+                <th data-col="line" data-sort="text">Line <span>&lt;&gt;</span></th>
+                <th data-col="scope" data-sort="text">Scope <span>&lt;&gt;</span></th>
+                <th data-col="total" data-sort="number">Total items <span>&lt;&gt;</span></th>
+                <th data-col="covered" data-sort="number">Covered <span>&lt;&gt;</span></th>
+                <th data-col="missing" data-sort="number">Pending <span>&lt;&gt;</span></th>
+                <th data-col="coverage" data-sort="number">Coverage (%) <span>&lt;&gt;</span></th>
+                <th data-col="yard-actual" data-sort="number">Delivery At Yard Actual <span>&lt;&gt;</span></th>
+                <th data-col="yard-pct" data-sort="number">At Yard (%) <span>&lt;&gt;</span></th>
+              </tr>
+              <tr class="c3-column-filter-row">
+                <th data-col="row-no"><span class="c3-filter-lock">row</span></th>
+                <th data-col="priority"><div class="c3-filter-cell"><input type="search" data-col-filter="priority" placeholder="Prio"><select data-col-select="priority"><option value="">All</option></select></div></th>
+                <th data-col="drawing"><div class="c3-filter-cell"><input type="search" data-col-filter="drawing" placeholder="Drawing"><select data-col-select="drawing"><option value="">All</option></select></div></th>
+                <th data-col="revision"><div class="c3-filter-cell"><input type="search" data-col-filter="revision" placeholder="Rev"><select data-col-select="revision"><option value="">All</option></select></div></th>
+                <th data-col="revision-detail"><div class="c3-filter-cell"><input type="search" data-col-filter="revision-detail" placeholder="Detail"><select data-col-select="revision-detail"><option value="">All</option></select></div></th>
+                <th data-col="discipline"><div class="c3-filter-cell"><input type="search" data-col-filter="discipline" placeholder="Disc"><select data-col-select="discipline"><option value="">All</option></select></div></th>
+                <th data-col="line"><div class="c3-filter-cell"><input type="search" data-col-filter="line" placeholder="Line"><select data-col-select="line"><option value="">All</option></select></div></th>
+                <th data-col="scope"><div class="c3-filter-cell"><input type="search" data-col-filter="scope" placeholder="Scope"><select data-col-select="scope"><option value="">All</option></select></div></th>
+                <th data-col="total"><div class="c3-filter-cell"><input type="search" data-col-filter="total" placeholder="Total"><select data-col-select="total"><option value="">All</option></select></div></th>
+                <th data-col="covered"><div class="c3-filter-cell"><input type="search" data-col-filter="covered" placeholder="Covered"><select data-col-select="covered"><option value="">All</option></select></div></th>
+                <th data-col="missing"><div class="c3-filter-cell"><input type="search" data-col-filter="missing" placeholder="Pending"><select data-col-select="missing"><option value="">All</option></select></div></th>
+                <th data-col="coverage"><div class="c3-filter-cell"><input type="search" data-col-filter="coverage" placeholder="%"><select data-col-select="coverage"><option value="">All</option></select></div></th>
+                <th data-col="yard-actual"><div class="c3-filter-cell"><input type="search" data-col-filter="yard-actual" placeholder="Yard"><select data-col-select="yard-actual"><option value="">All</option></select></div></th>
+                <th data-col="yard-pct"><div class="c3-filter-cell"><input type="search" data-col-filter="yard-pct" placeholder="%"><select data-col-select="yard-pct"><option value="">All</option></select></div></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in manager.material.drawing_line_rows %}
+                <tr class="c3-probe-row-{{ row.status|default:'missing' }}" data-grid-row data-status="{{ row.status|default:'missing' }}" data-campaign="{{ row.campaign|default:'-' }}" data-scope="{{ row.scope|default:'fabrication' }}" data-pending-bucket="{{ row.pending_bucket|default:0 }}" data-line-pending-bucket="{{ row.line_pending_bucket|default:row.pending_bucket|default:0 }}" data-drawing-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-has-po="{{ row.has_po|default:0 }}" data-with-po="{{ row.with_po|default:0 }}" data-without-po="{{ row.without_po|default:0 }}" data-po-not-arrived="{{ row.po_not_arrived|default:0 }}" data-yard-actual="{{ row.yard_actual|default:0 }}" data-drawing-finalized="{{ row.drawing_finalized|default:0 }}" data-stage-total-items="{{ row.stage_total_items|default:row.total_items|default:0 }}" data-stage-total-pending-bucket="{{ row.stage_total_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-po-items="{{ row.stage_po_items|default:row.with_po|default:0 }}" data-stage-po-pending-bucket="{{ row.stage_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-po-items="{{ row.stage_no_po_items|default:row.without_po|default:0 }}" data-stage-no-po-pending-bucket="{{ row.stage_no_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-yard-items="{{ row.stage_no_yard_items|default:row.po_not_arrived|default:0 }}" data-stage-no-yard-pending-bucket="{{ row.stage_no_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-yard-items="{{ row.stage_yard_items|default:row.yard_actual|default:0 }}" data-stage-yard-pending-bucket="{{ row.stage_yard_pending_bucket|default:row.pending_bucket|default:0 }}">
+                  <td data-col="row-no" data-sort-value="{{ row.row_no }}" class="mono">{{ row.row_no }}</td>
+                  <td data-col="priority" data-sort-value="{{ row.priority|default:999999 }}" class="mono">{{ row.priority|default:"-" }}</td>
+                  <td data-col="drawing"><span class="c3-local-ref c3-3d-click-hint" data-c3-3d-line-trigger data-c3-3d-line="{{ row.lines_full|default:row.line|default:'' }}" data-c3-3d-drawing="{{ row.drawing_number|default:'-' }}" title="Show linked line in 3D">{{ row.drawing_number|default:"-" }}</span></td>
+                  <td data-col="revision" class="mono">{{ row.revision|default:"-" }}</td>
+                  <td data-col="revision-detail">{{ row.revision_detail|default:"-" }}</td>
+                  <td data-col="discipline"><span class="pill">{{ row.discipline|default:"-" }}</span></td>
+                  <td data-col="line" class="mono">{% with line_value=row.line|default:"-" model_lines=row.lines_full|default:row.line|default:"" %}{% if line_value != "-" and line_value != "N/A" %}<button type="button" class="c3-line-3d-link" data-c3-3d-line-trigger data-c3-3d-line="{{ model_lines }}" data-c3-3d-drawing="{{ row.drawing_number|default:'-' }}" title="Show line in 3D"><i class="bi bi-bounding-box"></i><span>{{ line_value }}</span></button>{% else %}{{ line_value }}{% endif %}{% endwith %}</td>
+                  <td data-col="scope"><span class="c3-scope-pill is-{{ row.scope|default:'fabrication' }}">{{ row.scope_label|default:"Fabrication" }}</span></td>
+                  <td data-col="total" data-sort-value="{{ row.total_items|default:0 }}" class="mono">{{ row.total_items|default:0|intcomma }}</td>
+                  <td data-col="covered" data-sort-value="{{ row.covered|default:0 }}" class="mono">{{ row.covered|default:0|intcomma }}</td>
+                  <td data-col="missing" data-sort-value="{{ row.pending|default:0 }}" class="mono">{{ row.pending|default:0|intcomma }}</td>
+                  <td data-col="coverage" data-sort-value="{{ row.coverage_pct|default:0 }}">
+                    <div class="c3-coverage-cell"><i style="--w: {{ row.coverage_pct|default:0|floatformat:0 }}%;"></i><span>{{ row.coverage_pct|default:0|floatformat:1 }}%</span></div>
+                  </td>
+                  <td data-col="yard-actual" data-sort-value="{{ row.yard_actual|default:0 }}" class="mono">{{ row.yard_actual|default:0|intcomma }}</td>
+                  <td data-col="yard-pct" data-sort-value="{{ row.yard_pct|default:0 }}" class="mono">{{ row.yard_pct|default:0|floatformat:1 }}%</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="14" class="c3-grid-empty">No grouped drawing lines in the imported source.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{# ===== S03 — 3D MODEL ===== #}
+<section id="s03" class="section" style="border-bottom: none;">
+  <div class="section-head">
+    <div>
+      <span class="tag">S03 · 3D Model</span>
+      <h2>Project visual review</h2>
+    </div>
+    <div class="meta p6-source-meta c3-meta-inline">
+      <div class="c3-meta-line">Bonga North Project · Local GLB model · 3D hierarchy · Fast preview + HQ refinement</div>
+    </div>
+  </div>
+
+  <div class="card c3-model-card">
+    <div class="card-head">
+      <div class="lhs"><span class="tag">3D REVIEW</span><h3>Hierarchy and model</h3></div>
+      <div class="rhs"><span class="pill">Progressive LOD</span></div>
+    </div>
+    <div class="card-body">
+      <section class="dx-project-consult" data-project-3d data-project-default-tab="model" data-model-autoload="true" data-model-auto-refine="true" data-model-url="{% static 'models/bonga-2-overview.glb' %}" data-model-detail-url="{% static 'models/bonga-2-refined-hq.glb' %}" data-model-hierarchy-url="{% static 'models/bonga-2-hierarchy.json' %}" data-model-selection-url="{% url 'core:model_node_glb' 0 %}">
+        <div class="dx-project-consult-shell">
+          <aside class="dx-project-tree-panel">
+            <div class="dx-project-search">
+              <i class="bi bi-search"></i>
+              <input type="search" placeholder="Search by name, tag or node ID" data-project-query>
+            </div>
+            <div class="dx-project-lod-strip">
+              <span><strong>1.9 MB</strong><small>Fast preview</small></span>
+              <span><strong>46.9 MB</strong><small>HQ</small></span>
+              <span><strong>331 MB</strong><small>Source</small></span>
+            </div>
+            <div class="dx-project-tree-status" data-project-status>Local 3D hierarchy ready for review.</div>
+            <div class="dx-project-tree-list" data-project-tree="model"></div>
+          </aside>
+          <div class="dx-project-viewer-panel">
+            <div class="dx-project-viewer" data-model-canvas>
+              <div class="dx-project-viewer-empty" data-model-empty>
+                <i class="bi bi-bounding-box"></i>
+                <strong>Preparing fast preview</strong>
+                <span>The viewer uses a lightweight LOD to open without blocking the rest of the dashboard.</span>
+              </div>
+            </div>
+            <div class="dx-project-selection" data-project-selection>
+              <div class="dx-project-selection-copy" data-project-selection-copy>
+                <span>Selection</span>
+                <strong>No item selected</strong>
+                <small>Use the 3D hierarchy or click the model for visual review.</small>
+              </div>
+              <div class="dx-project-selection-actions" aria-label="3D selection actions">
+                <button class="dx-project-selection-action" type="button" data-model-isolate aria-pressed="false" disabled>
+                  <i class="bi bi-box-seam"></i>
+                  <span data-model-isolate-label>Isolate selection</span>
+                </button>
+                <button class="dx-project-selection-action" type="button" data-model-clear disabled>
+                  <i class="bi bi-x-lg"></i>
+                  <span>Clear</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block vendor_js %}
+{{ block.super }}
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+  // ===== Industrial SVG charts (curve / area-perf / monthly load) =====
+  var C3_CURVE_PAYLOAD = {{ chart_p6_physical_curve|safe }};
+  var C3_AREAPERF_PAYLOAD = {{ chart_p6_area_performance|safe }};
+  var C3_MONTHLOAD_PAYLOAD = {{ chart_p6_monthly_units|safe }};
+
+  function fmtPct(v, d) { d = (d == null ? 2 : d); return (v == null ? '—' : v.toFixed(d).replace('.', ',') + '%'); }
+  function fmtInt(v) { return (v == null ? '—' : Math.round(v).toLocaleString('pt-BR')); }
+  function shortMonthLabel(iso) {
+    if (!iso) return '';
+    // accept "YYYY-MM-DD" or already formatted
+    var raw = String(iso).trim();
+    var m = /^(\d{4})-(\d{2})/.exec(iso);
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    if (m) return months[+m[2]-1] + m[1].slice(2);
+    var monthMap = {
+      jan: 'Jan', fev: 'Feb', feb: 'Feb', mar: 'Mar', abr: 'Apr', apr: 'Apr',
+      mai: 'May', may: 'May', jun: 'Jun', jul: 'Jul', ago: 'Aug', aug: 'Aug',
+      set: 'Sep', sep: 'Sep', out: 'Oct', oct: 'Oct', nov: 'Nov', dez: 'Dec', dec: 'Dec'
+    };
+    var key = raw.slice(0, 3).toLowerCase();
+    if (monthMap[key]) {
+      var year = raw.match(/(\d{2,4})$/);
+      return monthMap[key] + (year ? year[1].slice(-2) : '');
+    }
+    return raw.slice(0, 6);
+  }
+
+  var c3PoPayloadCache = {};
+  function c3Idle(fn) {
+    if (window.requestIdleCallback) return window.requestIdleCallback(fn, { timeout: 900 });
+    return window.setTimeout(fn, 16);
+  }
+  function c3WhenVisible(el, fn, options) {
+    if (!el) return;
+    var done = false;
+    function run() {
+      if (done) return;
+      done = true;
+      c3Idle(fn);
+    }
+    var rect = el.getBoundingClientRect();
+    if (rect.top < window.innerHeight + 320 && rect.bottom > -160) {
+      run();
+      return;
+    }
+    if (!('IntersectionObserver' in window)) {
+      run();
+      return;
+    }
+    var observer = new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if (!entry.isIntersecting) return;
+        observer.disconnect();
+        run();
+      });
+    }, Object.assign({ root: null, rootMargin: '520px 0px', threshold: 0.01 }, options || {}));
+    observer.observe(el);
+  }
+  function c3PrepareChart(el) {
+    if (!el) return;
+    el.classList.remove('c3-chart-ready');
+    el.classList.add('c3-chart-rendering');
+  }
+  function c3MarkChartReady(el) {
+    if (!el) return;
+    window.requestAnimationFrame(function(){
+      el.classList.remove('c3-chart-rendering');
+      el.classList.add('c3-chart-ready');
+    });
+  }
+
+  function renderC3Curve(el, payload) {
+    if (!el) return;
+    c3PrepareChart(el);
+    el.innerHTML = '';
+    var data = (payload && payload.data) || [];
+    var planned = data.find(function(d){ return /planej/i.test(d.name||''); }) || data[0];
+    var actual  = data.find(function(d){ return /real|earn|avan|advance/i.test(d.name||''); }) || data[1];
+    if (!planned || !planned.x || !planned.y || !planned.x.length) {
+      el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--fg-3);font-family:var(--font-mono);font-size:11px;">No curve data.</div>';
+      return;
+    }
+    var labels = planned.x;
+    var planY = planned.y.map(function(v){ return v == null ? null : +v; });
+    var actY  = (actual && actual.y) ? actual.y.map(function(v){ return v == null ? null : +v; }) : [];
+    var n = labels.length;
+
+    // today index = last non-null in actual
+    var todayIdx = -1;
+    for (var i = actY.length - 1; i >= 0; i--) if (actY[i] != null) { todayIdx = i; break; }
+    if (todayIdx < 0) todayIdx = Math.min(n - 1, Math.floor(n / 2));
+
+    var W = 1000, H = 280, P = { l: 40, r: 20, t: 16, b: 28 };
+    var innerW = W - P.l - P.r, innerH = H - P.t - P.b;
+    var xs = function(idx){ return P.l + (idx / (n - 1)) * innerW; };
+    var ys = function(v){ return P.t + innerH - (v / 100) * innerH; };
+
+    var planPts = planY.map(function(v, i){ return v == null ? null : xs(i) + ',' + ys(v); }).filter(Boolean).join(' ');
+    var actPts  = actY.map(function(v, i){ return v == null ? null : xs(i) + ',' + ys(v); }).filter(Boolean).join(' ');
+
+    // areas (fill polygons)
+    var planArea = P.l + ',' + ys(0) + ' ' + planY.map(function(v, i){ return xs(i) + ',' + ys(v == null ? 0 : v); }).join(' ') + ' ' + xs(n-1) + ',' + ys(0);
+    var actValid = actY.map(function(v, i){ return v == null ? null : { x: xs(i), y: ys(v) }; }).filter(Boolean);
+    var actArea = actValid.length ? actValid[0].x + ',' + ys(0) + ' ' + actValid.map(function(p){ return p.x + ',' + p.y; }).join(' ') + ' ' + actValid[actValid.length-1].x + ',' + ys(0) : '';
+
+    var todayX = xs(todayIdx);
+    var todayPlan = planY[todayIdx] || 0;
+    var todayAct  = actY[todayIdx] || 0;
+
+    // X label ticks: show every ~n/10
+    var step = Math.max(1, Math.round(n / 12));
+    var xticks = [];
+    for (var k = 0; k < n; k += step) xticks.push(k);
+    if (xticks[xticks.length-1] !== n-1) xticks.push(n-1);
+
+    var svgParts = [];
+    svgParts.push('<svg class="c3-svg-chart c3-curve-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">');
+    svgParts.push('<defs>');
+    svgParts.push('<linearGradient id="c3planGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(255,255,255,0.10)"/><stop offset="100%" stop-color="rgba(255,255,255,0)"/></linearGradient>');
+    svgParts.push('<linearGradient id="c3actGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--signal-amber)" stop-opacity="0.35"/><stop offset="100%" stop-color="var(--signal-amber)" stop-opacity="0"/></linearGradient>');
+    svgParts.push('</defs>');
+    // gridlines
+    [0, 25, 50, 75, 100].forEach(function(g){
+      svgParts.push('<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + ys(g) + '" y2="' + ys(g) + '" stroke="var(--line-1)" stroke-width="1"/>');
+      svgParts.push('<text x="' + (P.l - 8) + '" y="' + (ys(g) + 3) + '" text-anchor="end" font-size="10" font-family="var(--font-mono)" fill="var(--fg-3)">' + g + '</text>');
+    });
+    // x labels
+    xticks.forEach(function(i){
+      svgParts.push('<text x="' + xs(i) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" font-family="var(--font-mono)" fill="var(--fg-3)" style="letter-spacing:0.04em">' + shortMonthLabel(labels[i]) + '</text>');
+    });
+    // planned area + line (dashed)
+    svgParts.push('<polygon class="c3-anim-area" points="' + planArea + '" fill="url(#c3planGrad)" style="animation-delay:.04s"/>');
+    svgParts.push('<polyline points="' + planPts + '" fill="none" stroke="var(--fg-2)" stroke-width="1.5" stroke-dasharray="4 3"/>');
+    // actual area + line
+    if (actArea) svgParts.push('<polygon class="c3-anim-area" points="' + actArea + '" fill="url(#c3actGrad)" style="animation-delay:.12s"/>');
+    if (actPts)  svgParts.push('<polyline class="c3-anim-line" points="' + actPts + '" fill="none" stroke="var(--signal-amber)" stroke-width="2" style="animation-delay:.14s"/>');
+    // today vertical line
+    svgParts.push('<line x1="' + todayX + '" x2="' + todayX + '" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="var(--signal-amber)" stroke-width="1" stroke-dasharray="2 3" opacity="0.6"/>');
+    var todayLbl = shortMonthLabel(labels[todayIdx]);
+    svgParts.push('<text x="' + (todayX + 4) + '" y="' + (P.t + 10) + '" font-size="9" font-family="var(--font-mono)" fill="var(--signal-amber)" style="letter-spacing:0.08em">TODAY · ' + todayLbl + '</text>');
+    // today markers
+    svgParts.push('<circle class="c3-anim-pop" cx="' + todayX + '" cy="' + ys(todayPlan) + '" r="3" fill="var(--bg-1)" stroke="var(--fg-2)" stroke-width="1.5" style="animation-delay:.58s"/>');
+    svgParts.push('<circle class="c3-anim-pop" cx="' + todayX + '" cy="' + ys(todayAct) + '" r="4" fill="var(--signal-amber)" stroke="var(--bg-1)" stroke-width="1.5" style="animation-delay:.62s"/>');
+    // value labels at today
+    svgParts.push('<rect x="' + (todayX - 48) + '" y="' + (ys(todayPlan) - 22) + '" width="44" height="16" rx="2" fill="var(--bg-3)" stroke="var(--line-2)"/>');
+    svgParts.push('<text x="' + (todayX - 26) + '" y="' + (ys(todayPlan) - 10) + '" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="var(--fg-2)">' + todayPlan.toFixed(2) + '%</text>');
+    svgParts.push('<rect x="' + (todayX + 6) + '" y="' + (ys(todayAct) - 8) + '" width="48" height="16" rx="2" fill="var(--signal-amber)"/>');
+    svgParts.push('<text x="' + (todayX + 30) + '" y="' + (ys(todayAct) + 4) + '" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="#0a0b0d" font-weight="600">' + todayAct.toFixed(2) + '%</text>');
+    // axes
+    svgParts.push('<line x1="' + P.l + '" x2="' + P.l + '" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="var(--line-2)" stroke-width="1"/>');
+    svgParts.push('<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + (H - P.b) + '" y2="' + (H - P.b) + '" stroke="var(--line-2)" stroke-width="1"/>');
+    svgParts.push('</svg>');
+    el.innerHTML = svgParts.join('');
+    c3MarkChartReady(el);
+
+    // legend
+    var legend = document.querySelector('[data-c3-curve-legend]');
+    if (legend) {
+      var delta = (todayAct - todayPlan);
+      legend.innerHTML =
+        '<span><i style="background:var(--fg-2);height:0;border-top:1.5px dashed var(--fg-2);width:18px"></i> Planned · ' + todayPlan.toFixed(2).replace('.', ',') + '%</span>' +
+        '<span><i style="background:var(--signal-amber)"></i> Actual · ' + todayAct.toFixed(2).replace('.', ',') + '%</span>' +
+        '<span style="margin-left:auto;color:' + (delta < 0 ? 'var(--signal-red)' : 'var(--signal-green)') + '">Δ ' + (delta >= 0 ? '+' : '') + delta.toFixed(2).replace('.', ',') + ' p.p.</span>';
+    }
+  }
+
+  function renderC3AreaPerf(el, payload) {
+    if (!el) return;
+    c3PrepareChart(el);
+    el.innerHTML = '';
+    var data = (payload && payload.data) || [];
+    var planned = data[0] || {}; // x = planned values, y = labels (orientation h)
+    var actual  = data[1] || {};
+    var labels = planned.y || [];
+    var planVals = (planned.x || []).map(Number);
+    var actVals  = (actual.x || []).map(Number);
+    var deltas   = (actual.customdata || []).map(Number);
+    var n = labels.length;
+    if (!n) {
+      el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--fg-3);font-family:var(--font-mono);font-size:11px;">No executive areas.</div>';
+      return;
+    }
+    var W = 1000, H = 280, P = { l: 130, r: 70, t: 12, b: 24 };
+    var innerW = W - P.l - P.r;
+    var rowH = (H - P.t - P.b) / n;
+
+    var parts = [];
+    parts.push('<svg class="c3-svg-chart c3-area-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">');
+    // x gridlines
+    [0, 25, 50, 75, 100].forEach(function(g){
+      var x = P.l + (g / 100) * innerW;
+      parts.push('<line x1="' + x + '" x2="' + x + '" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="var(--line-1)" stroke-width="1" stroke-dasharray="' + (g === 0 ? 'none' : '2 4') + '"/>');
+      parts.push('<text x="' + x + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" font-family="var(--font-mono)" fill="var(--fg-3)">' + g + '%</text>');
+    });
+
+    for (var i = 0; i < n; i++) {
+      var y = P.t + i * rowH + 2;
+      var h = rowH - 4;
+      var pl = planVals[i] || 0;
+      var ac = actVals[i] || 0;
+      var dl = deltas[i] || (ac - pl);
+      var planW = (pl / 100) * innerW;
+      var actW = (ac / 100) * innerW;
+      var color = dl < -1 ? 'var(--signal-red)' : dl > 1 ? 'var(--signal-green)' : 'var(--signal-amber)';
+
+      parts.push('<text x="' + (P.l - 8) + '" y="' + (y + h/2 + 4) + '" text-anchor="end" font-size="11" font-family="var(--font-sans)" fill="var(--fg-1)" font-weight="500">' + (labels[i] || '') + '</text>');
+      // plan (light)
+      parts.push('<rect class="c3-anim-hbar" x="' + P.l + '" y="' + (y + h/2 - 7) + '" width="' + Math.max(0, planW) + '" height="6" fill="var(--line-2)" style="animation-delay:' + (i * 0.035) + 's"/>');
+      parts.push('<text x="' + (P.l + planW + 4) + '" y="' + (y + h/2 - 2) + '" font-size="9" font-family="var(--font-mono)" fill="var(--fg-3)">' + pl.toFixed(1) + '</text>');
+      // actual
+      parts.push('<rect class="c3-anim-hbar" x="' + P.l + '" y="' + (y + h/2 + 2) + '" width="' + Math.max(0, actW) + '" height="6" fill="' + color + '" style="animation-delay:' + (0.06 + i * 0.035) + 's"/>');
+      parts.push('<text x="' + (P.l + actW + 4) + '" y="' + (y + h/2 + 8) + '" font-size="10" font-family="var(--font-mono)" fill="' + color + '" font-weight="600">' + ac.toFixed(1) + '</text>');
+      // delta on right
+      var sign = dl > 0 ? '+' : '';
+      parts.push('<text x="' + (W - 8) + '" y="' + (y + h/2 + 4) + '" text-anchor="end" font-size="11" font-family="var(--font-mono)" fill="' + color + '" font-weight="600">' + sign + dl.toFixed(2).replace('.', ',') + ' p.p.</text>');
+    }
+    parts.push('<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + (H - P.b) + '" y2="' + (H - P.b) + '" stroke="var(--line-2)" stroke-width="1"/>');
+    parts.push('<line x1="' + P.l + '" x2="' + P.l + '" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="var(--line-2)" stroke-width="1"/>');
+    parts.push('</svg>');
+    el.innerHTML = parts.join('');
+    c3MarkChartReady(el);
+  }
+
+  function renderC3MonthLoad(el, payload) {
+    if (!el) return;
+    c3PrepareChart(el);
+    el.innerHTML = '';
+    var data = (payload && payload.data) || [];
+    var planTrace = data.find(function(d){ return d.type === 'bar'; }) || data[0];
+    var actTrace = data.find(function(d){ return d.type === 'scatter'; }) || data[1];
+    if (!planTrace || !planTrace.x || !planTrace.x.length) {
+      el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--fg-3);font-family:var(--font-mono);font-size:11px;">No monthly distribution.</div>';
+      return;
+    }
+    var labels = planTrace.x;
+    var vals = (planTrace.y || []).map(Number);
+    var actVals = (actTrace && actTrace.y) ? actTrace.y.map(Number) : [];
+    var n = labels.length;
+    var max = Math.max.apply(null, vals.concat([1]));
+
+    // today index = last non-zero in actVals (or n/2 fallback)
+    var todayIdx = -1;
+    for (var i = actVals.length - 1; i >= 0; i--) if (actVals[i] && actVals[i] > 0) { todayIdx = i; break; }
+    if (todayIdx < 0) todayIdx = Math.floor(n / 2);
+
+    var W = 1000, H = 250, P = { l: 36, r: 16, t: 16, b: 30 };
+    var innerW = W - P.l - P.r;
+    var innerH = H - P.t - P.b;
+    var barW = innerW / n;
+
+    var parts = [];
+    parts.push('<svg class="c3-svg-chart c3-month-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">');
+    parts.push('<defs>');
+    parts.push('<linearGradient id="c3loadFut" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--signal-cyan)" stop-opacity="1"/><stop offset="100%" stop-color="var(--signal-cyan)" stop-opacity="0.4"/></linearGradient>');
+    parts.push('<linearGradient id="c3loadPast" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="var(--signal-amber)" stop-opacity="1"/><stop offset="100%" stop-color="var(--signal-amber)" stop-opacity="0.4"/></linearGradient>');
+    parts.push('</defs>');
+    // gridlines
+    [0, 0.25, 0.5, 0.75, 1].forEach(function(g){
+      var y = P.t + innerH - g * innerH;
+      parts.push('<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y + '" y2="' + y + '" stroke="var(--line-1)" stroke-width="1" stroke-dasharray="' + (g === 0 ? 'none' : '2 4') + '"/>');
+      var lbl = Math.round(g * max);
+      parts.push('<text x="' + (P.l - 6) + '" y="' + (y + 3) + '" text-anchor="end" font-size="9" font-family="var(--font-mono)" fill="var(--fg-3)">' + lbl + '</text>');
+    });
+    // bars
+    for (var i2 = 0; i2 < n; i2++) {
+      var v = vals[i2] || 0;
+      var x = P.l + i2 * barW + 1;
+      var h = (v / max) * innerH;
+      var y = P.t + innerH - h;
+      var past = i2 <= todayIdx;
+      var fill = past ? 'url(#c3loadPast)' : 'url(#c3loadFut)';
+      parts.push('<rect class="c3-anim-vbar" x="' + x + '" y="' + y + '" width="' + Math.max(1, barW - 2) + '" height="' + h + '" fill="' + fill + '" opacity="' + (past ? 1 : 0.9) + '" style="animation-delay:' + Math.min(0.42, i2 * 0.012) + 's"><title>' + labels[i2] + ' · ' + fmtInt(v) + '</title></rect>');
+    }
+    // year separators + labels: scan labels for year change
+    var lastYr = null;
+    for (var i3 = 0; i3 < n; i3++) {
+      var yr = String(labels[i3]).match(/(20\d\d)/);
+      yr = yr ? yr[1] : null;
+      if (yr && yr !== lastYr) {
+        var sx = P.l + i3 * barW;
+        if (i3 > 0) parts.push('<line x1="' + sx + '" x2="' + sx + '" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="var(--line-2)" stroke-width="1"/>');
+        parts.push('<text x="' + (sx + 4) + '" y="' + (P.t + 12) + '" font-size="10" font-family="var(--font-mono)" fill="var(--fg-2)" style="letter-spacing:0.06em">' + yr + '</text>');
+        lastYr = yr;
+      }
+    }
+    // x ticks: every ~3 months
+    for (var i4 = 0; i4 < n; i4 += 3) {
+      var tx = P.l + (i4 + 0.5) * barW;
+      var monLbl = shortMonthLabel(labels[i4]).slice(0, 3);
+      parts.push('<text x="' + tx + '" y="' + (H - 14) + '" text-anchor="middle" font-size="9" font-family="var(--font-mono)" fill="var(--fg-3)">' + monLbl + '</text>');
+    }
+    // today line + pill
+    var tdx = P.l + (todayIdx + 0.5) * barW;
+    parts.push('<line x1="' + tdx + '" x2="' + tdx + '" y1="' + P.t + '" y2="' + (H - P.b) + '" stroke="var(--signal-amber)" stroke-width="1.5" stroke-dasharray="3 3"/>');
+    parts.push('<rect x="' + (tdx - 18) + '" y="' + (H - P.b + 2) + '" width="36" height="14" fill="var(--signal-amber)" rx="2"/>');
+    parts.push('<text x="' + tdx + '" y="' + (H - P.b + 12) + '" text-anchor="middle" font-size="9" font-family="var(--font-mono)" font-weight="600" fill="#0a0b0d">TODAY</text>');
+    // axis line
+    parts.push('<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + (H - P.b) + '" y2="' + (H - P.b) + '" stroke="var(--line-2)" stroke-width="1"/>');
+    parts.push('</svg>');
+    el.innerHTML = parts.join('');
+    c3MarkChartReady(el);
+  }
+
+  // ===== PO Placed stacked columns + Pending table =====
+  // Dashfy campaign palette — vibrant industrial, NO RED (red = atraso, evitar conotação)
+  var DASHFY_CAMPAIGNS = {
+    '1st': '#0ea5e9', '1': '#0ea5e9',
+    '2nd': '#06b6d4', '2': '#06b6d4',
+    '3rd': '#84cc16', '3': '#84cc16',
+    '4th': '#fbbf24', '4': '#fbbf24',
+    'TAM 20206': '#a78bfa',
+    '-': '#6b7280'
+  };
+  // fallback palette for extra campaigns: tones without red
+  var FALLBACK_CAMP_PALETTE = ['#0ea5e9','#06b6d4','#84cc16','#fbbf24','#a78bfa','#ec4899','#14b8a6','#6b7280'];
+  function campColor(c, i) {
+    if (!c) return '#6b7280';
+    return DASHFY_CAMPAIGNS[c.label] || FALLBACK_CAMP_PALETTE[(i||0) % FALLBACK_CAMP_PALETTE.length];
+  }
+
+  function attachC3PoPlacedHover(el) {
+    if (!el || el._c3HoverBound) return;
+    el._c3HoverBound = true;
+    el.addEventListener('mouseover', function(e){
+      var seg = e.target.closest('.c3-camp-seg');
+      if (!seg) return;
+      var key = seg.getAttribute('data-camp');
+      el.classList.add('has-hover');
+      el.querySelectorAll('.c3-camp-seg').forEach(function(s){
+        s.classList.toggle('is-hover', s.getAttribute('data-camp') === key);
+      });
+    });
+    el.addEventListener('mouseleave', function(){
+      el.classList.remove('has-hover');
+      el.querySelectorAll('.c3-camp-seg').forEach(function(s){ s.classList.remove('is-hover'); });
+    });
+  }
+
+  function c3Attr(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function c3Norm(value) {
+    return String(value == null ? '' : value)
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function c3Same(value, expected) {
+    return c3Norm(value) === c3Norm(expected);
+  }
+
+  function c3Flag(value) {
+    var text = String(value == null ? '' : value).trim().toLowerCase();
+    if (!text) return false;
+    if (['1', 'true', 'yes', 'sim', 'y'].indexOf(text) >= 0) return true;
+    var parsed = parseFloat(text.replace(',', '.'));
+    return Number.isFinite(parsed) && parsed > 0;
+  }
+
+  function c3StageLabel(stage) {
+    var labels = {
+      total: 'Total',
+      po: 'With PO',
+      no_po: 'Without PO',
+      no_yard: 'PO not arrived',
+      yard: 'At Yard'
+    };
+    return labels[stage] || stage || 'Selection';
+  }
+
+  function c3PendingLabel(bucket) {
+    var value = String(bucket);
+    if (value === '-1') return 'finished';
+    if (value === '8') return '8+ pending';
+    if (value === '0') return '0 pending';
+    return value + ' pending';
+  }
+
+  function c3ContextLabel(ctx) {
+    var parts = [];
+    if (ctx.scopeLabel) parts.push(ctx.scopeLabel);
+    if (ctx.campaign) parts.push(ctx.campaign);
+    if (ctx.stage) parts.push(c3StageLabel(ctx.stage));
+    if (ctx.pendingBucket != null) parts.push(c3PendingLabel(ctx.pendingBucket));
+    return parts.join(' · ') || 'Linked selection';
+  }
+
+  function c3DatasetHas(row, key) {
+    return !!(row && Object.prototype.hasOwnProperty.call(row.dataset || {}, key));
+  }
+
+  function c3DatasetNumber(row, key) {
+    if (!row || !c3DatasetHas(row, key)) return 0;
+    var parsed = Number(String(row.dataset[key] || '0').replace(',', '.'));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function c3StageItems(row, stage) {
+    if (!row) return 0;
+    if (stage === 'total') {
+      return c3DatasetHas(row, 'stageTotalItems') ? c3DatasetNumber(row, 'stageTotalItems') : 1;
+    }
+    if (stage === 'po') {
+      return c3DatasetHas(row, 'stagePoItems')
+        ? c3DatasetNumber(row, 'stagePoItems')
+        : ((c3Flag(row.dataset.hasPo) || c3Flag(row.dataset.withPo)) ? 1 : 0);
+    }
+    if (stage === 'no_po') {
+      return c3DatasetHas(row, 'stageNoPoItems')
+        ? c3DatasetNumber(row, 'stageNoPoItems')
+        : (c3Flag(row.dataset.withoutPo) || !c3Flag(row.dataset.hasPo) ? 1 : 0);
+    }
+    if (stage === 'no_yard') {
+      return c3DatasetHas(row, 'stageNoYardItems')
+        ? c3DatasetNumber(row, 'stageNoYardItems')
+        : (c3Flag(row.dataset.poNotArrived) || (c3Flag(row.dataset.hasPo) && !c3Flag(row.dataset.yardActual)) ? 1 : 0);
+    }
+    if (stage === 'yard') {
+      return c3DatasetHas(row, 'stageYardItems')
+        ? c3DatasetNumber(row, 'stageYardItems')
+        : (c3Flag(row.dataset.yardActual) ? 1 : 0);
+    }
+    return 1;
+  }
+
+  function c3StagePendingBucket(row, stage) {
+    var keys = {
+      total: 'stageTotalPendingBucket',
+      po: 'stagePoPendingBucket',
+      no_po: 'stageNoPoPendingBucket',
+      no_yard: 'stageNoYardPendingBucket',
+      yard: 'stageYardPendingBucket'
+    };
+    var key = keys[stage || 'total'];
+    if (key && c3DatasetHas(row, key)) return String(row.dataset[key] || '0');
+    return String(row?.dataset?.pendingBucket || '0');
+  }
+
+  function c3RowMatchesLinkedContext(row, ctx) {
+    if (!row || !ctx) return true;
+    if (ctx.scope && row.dataset.scope && !c3Same(row.dataset.scope, ctx.scope)) return false;
+    if (ctx.campaign && row.dataset.campaign && !c3Same(row.dataset.campaign, ctx.campaign)) return false;
+    if (ctx.stage && c3StageItems(row, ctx.stage) <= 0) return false;
+    if (ctx.pendingBucket != null) {
+      var expectedBucket = String(ctx.pendingBucket);
+      if (expectedBucket === '-1') {
+        if (!c3Flag(row.dataset.drawingFinalized) && String(row.dataset.pendingBucket || '') !== '-1') return false;
+      } else if (c3StagePendingBucket(row, ctx.stage || 'total') !== expectedBucket) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function renderC3PoPlacedChart(scopeKey, payload) {
+    var el = document.querySelector('[data-c3-poplaced-chart="' + scopeKey + '"]');
+    if (!el || !payload) return;
+    c3PrepareChart(el);
+    var camps = payload.campaigns || [];
+    if (!camps.length) { el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--fg-3)">No campaigns</div>'; return; }
+
+    var stages = [
+      { key: 'total',   label: 'TOTAL',     field: 'total'   },
+      { key: 'po',      label: 'WITH PO',     field: 'po'      },
+      { key: 'no_po',   label: 'WITHOUT PO',  field: 'no_po'   },
+      { key: 'no_yard', label: 'PO NOT ARRIVED', field: 'no_yard' },
+      { key: 'yard',    label: 'AT YARD',     field: 'yard'    }
+    ];
+    var totalsByStage = stages.map(function(s){ return camps.reduce(function(a,c){ return a + (c[s.field]||0); }, 0); });
+    var maxStage = Math.max.apply(null, totalsByStage.concat([1]));
+
+    // dynamic viewBox = container size so SVG fills 100% w/h without distortion
+    var rect = el.getBoundingClientRect();
+    var W = Math.max(420, Math.floor(rect.width || el.clientWidth || 640));
+    var H = Math.max(280, Math.floor(rect.height || el.clientHeight || 380));
+    var P = { l: 56, r: 16, t: 36, b: 44 };
+    var innerW = W - P.l - P.r, innerH = H - P.t - P.b;
+    var slotW = innerW / stages.length;
+    var colW = Math.min(slotW * 0.64, 122);
+
+    var ys = function(v){ return P.t + innerH - (v / maxStage) * innerH; };
+    var fmtInt = function(n){ return (n || 0).toLocaleString('pt-BR'); };
+
+    var parts = ['<svg class="c3-svg-chart c3-po-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" width="100%" height="100%" style="display:block;">'];
+
+    // Y axis gridlines + labels (5 marks)
+    for (var g = 0; g <= 4; g++) {
+      var val = Math.round(maxStage * g / 4);
+      var y = ys(val);
+      parts.push('<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + y + '" y2="' + y + '" stroke="var(--line-1)" stroke-width="1"' + (g === 0 ? '' : ' stroke-dasharray="2 4"') + '/>');
+      parts.push('<text x="' + (P.l - 8) + '" y="' + (y + 3) + '" text-anchor="end" font-size="10" font-family="var(--font-mono)" fill="var(--fg-3)">' + fmtInt(val) + '</text>');
+    }
+
+    // Columns (stacked) — wrapped in <g class="c3-camp-seg" data-camp> for hover
+    stages.forEach(function(stage, si){
+      var colTotal = totalsByStage[si];
+      var colCenterX = P.l + (si + 0.5) * slotW;
+      var colX = colCenterX - colW / 2;
+      var colTopY = ys(colTotal);
+
+      parts.push('<g class="c3-stage-hit" data-c3-linked-filter="supply-stage" data-grid-target="materials" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '" data-stage="' + c3Attr(stage.key) + '" tabindex="0" role="button" aria-label="' + c3Attr('All campaigns · ' + stage.label + ': ' + fmtInt(colTotal)) + '">');
+      parts.push('<rect x="' + (colCenterX - slotW * 0.46) + '" y="' + (P.t - 18) + '" width="' + (slotW * 0.92) + '" height="' + (innerH + P.b + 8) + '" fill="transparent" pointer-events="all"><title>All campaigns · ' + stage.label + ': ' + fmtInt(colTotal) + '</title></rect>');
+      parts.push('</g>');
+
+      // total label above
+      parts.push('<text class="c3-anim-label" x="' + colCenterX + '" y="' + (colTopY - 10) + '" text-anchor="middle" font-size="14" font-weight="700" font-family="var(--font-mono)" fill="var(--fg-0)" pointer-events="none" style="animation-delay:.24s">' + fmtInt(colTotal) + '</text>');
+
+      // stack segments bottom-up — each segment in a <g> for hover grouping
+      var accum = 0;
+      camps.forEach(function(c, ci){
+        var v = c[stage.field] || 0;
+        if (v <= 0) return;
+        var segTopVal = accum + v;
+        var yTop = ys(segTopVal);
+        var yBot = ys(accum);
+        var segH = yBot - yTop;
+        accum = segTopVal;
+        var col = campColor(c, ci);
+
+        parts.push('<g class="c3-camp-seg" data-c3-linked-filter="supply-stage" data-grid-target="materials" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '" data-campaign="' + c3Attr(c.label) + '" data-stage="' + c3Attr(stage.key) + '" data-camp="' + c3Attr(c.key) + '" data-camp-label="' + c3Attr(c.label) + '" tabindex="0" role="button" aria-label="' + c3Attr(c.label + ' · ' + stage.label + ': ' + fmtInt(v)) + '">');
+        parts.push('<rect class="c3-anim-vbar" x="' + colX + '" y="' + yTop + '" width="' + colW + '" height="' + segH + '" fill="' + col + '" stroke="var(--bg-0)" stroke-width="1" style="animation-delay:' + Math.min(0.42, (si * 0.04) + (ci * 0.025)) + 's"><title>' + c.label + ' · ' + stage.label + ': ' + fmtInt(v) + '</title></rect>');
+        if (segH >= 20) {
+          parts.push('<text x="' + colCenterX + '" y="' + (yTop + segH/2 + 4) + '" text-anchor="middle" font-size="12" font-weight="700" font-family="var(--font-mono)" fill="#0a0b0d" pointer-events="none">' + fmtInt(v) + '</text>');
+        }
+        parts.push('</g>');
+      });
+
+      // X-axis label
+      parts.push('<text x="' + colCenterX + '" y="' + (H - 14) + '" text-anchor="middle" font-size="12" font-weight="600" font-family="var(--font-mono)" fill="var(--fg-1)" pointer-events="none" style="letter-spacing:0.08em">' + stage.label + '</text>');
+    });
+
+    // axes
+    parts.push('<line x1="' + P.l + '" x2="' + (W - P.r) + '" y1="' + ys(0) + '" y2="' + ys(0) + '" stroke="var(--line-2)" stroke-width="1"/>');
+    parts.push('<line x1="' + P.l + '" x2="' + P.l + '" y1="' + P.t + '" y2="' + ys(0) + '" stroke="var(--line-2)" stroke-width="1"/>');
+
+    parts.push('</svg>');
+    el.innerHTML = parts.join('');
+    el.dataset.c3Rendered = '1';
+    c3MarkChartReady(el);
+    attachC3PoPlacedHover(el);
+
+    // legend
+    var legend = document.querySelector('[data-c3-poplaced-legend="' + scopeKey + '"]');
+    if (legend) {
+      legend.innerHTML = camps.map(function(c, i){
+        return '<span><i style="background:' + campColor(c, i) + '"></i>' + c.label + '</span>';
+      }).join('');
+    }
+  }
+
+  function c3Number(value) {
+    var normalized = String(value == null ? '0' : value).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+    var parsed = parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function c3OriginalPoPayload(scopeKey) {
+    if (c3PoPayloadCache[scopeKey]) return c3PoPayloadCache[scopeKey];
+    var node = document.querySelector('[data-c3-poplaced-data="' + scopeKey + '"]');
+    if (!node) return null;
+    try {
+      c3PoPayloadCache[scopeKey] = JSON.parse(node.textContent);
+      return c3PoPayloadCache[scopeKey];
+    } catch (error) {
+      console.warn('PoPlaced parse error', error);
+      return null;
+    }
+  }
+
+  function c3MaterialRowMissing(row) {
+    return c3Number(row.getAttribute('data-missing-qty') || row.querySelector('[data-col="missing"]')?.getAttribute('data-sort-value') || 0);
+  }
+
+  function c3BuildPendingPayload(scopeKey, payload, context) {
+    if (!context || !context.stage) return payload;
+    var campaigns = payload.campaigns || [];
+    var groups = new Map();
+    var rows = Array.from(document.querySelectorAll('[data-c3-probe-grid="materials"] tbody tr[data-grid-row]'))
+      .filter(function(row){ return c3RowMatchesLinkedContext(row, context); });
+    rows.forEach(function(row){
+      var campaign = row.dataset.campaign || '-';
+      var drawing = row.dataset.drawing || row.querySelector('[data-col="drawing"]')?.textContent.trim() || '-';
+      var key = c3Norm(campaign) + '|' + drawing;
+      if (!groups.has(key)) {
+        groups.set(key, { campaign: campaign, drawing: drawing, pending: 0, total: 0 });
+      }
+      var group = groups.get(key);
+      group.total += 1;
+      if (c3MaterialRowMissing(row) > 0) group.pending += 1;
+    });
+
+    var bucketOrder = [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8];
+    var bucketMap = {};
+    bucketOrder.forEach(function(bucket){
+      bucketMap[bucket] = {
+        pending: bucket,
+        label: c3PendingLabel(bucket),
+        total: 0,
+        segments: campaigns.map(function(c){
+          return {
+            key: c.key,
+            label: c.label,
+            detail: c.detail,
+            value: 0,
+            color: c.color,
+            accent: c.accent,
+            width_css: '0.00'
+          };
+        })
+      };
+    });
+    var campaignIndex = {};
+    campaigns.forEach(function(c, index){ campaignIndex[c3Norm(c.label)] = index; });
+    groups.forEach(function(group){
+      var bucket = group.pending >= 8 ? 8 : group.pending;
+      var row = bucketMap[bucket] || bucketMap[8];
+      var index = campaignIndex[c3Norm(group.campaign)];
+      if (index == null) return;
+      row.segments[index].value += 1;
+      row.total += 1;
+    });
+
+    var filteredRows = bucketOrder
+      .map(function(bucket){ return bucketMap[bucket]; })
+      .filter(function(row){ return row.total > 0 || row.pending !== -1; });
+    return {
+      scope: payload.scope || scopeKey,
+      label: payload.label || scopeKey,
+      totals: Object.assign({}, payload.totals || {}, {
+        drawings: filteredRows.reduce(function(total, row){ return total + (row.pending === -1 ? 0 : row.total); }, 0),
+      }),
+      campaigns: campaigns,
+      pending_rows: filteredRows,
+      filtered_context: context,
+      filtered_count: rows.length,
+    };
+  }
+
+  function renderC3PoPlacedTable(scopeKey, payload, context) {
+    var el = document.querySelector('[data-c3-poplaced-table="' + scopeKey + '"]');
+    if (!el || !payload) return;
+    payload = c3BuildPendingPayload(scopeKey, payload, context || null);
+    var camps = payload.campaigns || [];
+    var buckets = payload.pending_rows || [];
+    if (!camps.length || !buckets.length) { el.innerHTML = ''; return; }
+
+    var fmtInt = function(n){ return (n || 0).toLocaleString('pt-BR'); };
+    var bucketLabel = function(b){
+      if (b.pending === -1) return 'finished';
+      if (b.pending === 0) return '0 pending';
+      if (b.pending === 8) return '8+ pending';
+      return b.pending + ' pending';
+    };
+    var bucketTone = function(b){
+      if (b.pending === -1) return 'finished';
+      if (b.pending === 0) return 'clean';
+      if (b.pending <= 2) return 'low';
+      if (b.pending <= 4) return 'medium';
+      if (b.pending <= 7) return 'high';
+      return 'critical';
+    };
+    // build column totals
+    var campTotals = camps.map(function(c){
+      var sum = 0;
+      buckets.forEach(function(b){ var seg = b.segments.find(function(s){return s.key===c.key;}); if (seg) sum += seg.value||0; });
+      return sum;
+    });
+    var grandTotal = campTotals.reduce(function(a,b){return a+b;}, 0);
+    var hasRowsCache = {};
+    var hasDrawingRows = function(extraContext){
+      var base = payload.filtered_context || {};
+      var context = Object.assign({}, base, {
+        scope: payload.scope || scopeKey,
+        scopeLabel: payload.label || scopeKey
+      }, extraContext || {});
+      var key = JSON.stringify({
+        scope: context.scope || '',
+        campaign: context.campaign || '',
+        stage: context.stage || '',
+        pendingBucket: context.pendingBucket == null ? '' : String(context.pendingBucket)
+      });
+      if (hasRowsCache[key] == null) {
+        hasRowsCache[key] = c3DrawingRowsForExport(scopeKey, payload, context).length > 0;
+      }
+      return hasRowsCache[key];
+    };
+
+    var html = ['<div class="c3-pending-table-wrap">'];
+    if (context && context.stage) {
+      html.push('<div class="c3-pending-context"><span>' + c3Attr(c3ContextLabel(context)) + '</span><b>' + fmtInt(payload.filtered_count || 0) + ' linked item(s)</b></div>');
+    }
+    html.push('<table class="c3-pending-table">');
+    // header
+    html.push('<thead><tr><th class="row-head">Pending</th>');
+    camps.forEach(function(c, i){
+      if (hasDrawingRows({ campaign: c.label })) {
+        html.push('<th><button type="button" class="c3-pending-head-filter" data-c3-linked-filter="pending-campaign" data-grid-target="drawing-lines" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '" data-campaign="' + c3Attr(c.label) + '"><span class="c3-camp-dot" style="background:' + campColor(c, i) + '"></span>' + c.label + '</button></th>');
+      } else {
+        html.push('<th><span class="c3-pending-head-filter is-muted"><span class="c3-camp-dot" style="background:' + campColor(c, i) + '"></span>' + c.label + '</span></th>');
+      }
+    });
+    if (hasDrawingRows({})) {
+      html.push('<th class="col-total"><button type="button" class="c3-pending-total-filter" data-c3-linked-filter="pending-total" data-grid-target="drawing-lines" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '">Total</button></th></tr></thead>');
+    } else {
+      html.push('<th class="col-total"><span class="c3-pending-total-filter is-muted">Total</span></th></tr></thead>');
+    }
+    // body
+    html.push('<tbody>');
+    buckets.forEach(function(b){
+      var tone = bucketTone(b);
+      var bucketHasRows = b.total > 0 && hasDrawingRows({ pendingBucket: b.pending });
+      if (bucketHasRows) {
+        html.push('<tr class="tone-' + tone + '"><th class="row-head"><button type="button" class="c3-pending-label" data-c3-linked-filter="pending-bucket" data-grid-target="drawing-lines" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '" data-pending-bucket="' + c3Attr(b.pending) + '">' + bucketLabel(b) + '</button></th>');
+      } else {
+        html.push('<tr class="tone-' + tone + '"><th class="row-head"><span class="c3-pending-label is-muted">' + bucketLabel(b) + '</span></th>');
+      }
+      camps.forEach(function(c){
+        var seg = b.segments.find(function(s){return s.key===c.key;});
+        var v = seg ? seg.value : 0;
+        if (v > 0 && hasDrawingRows({ campaign: c.label, pendingBucket: b.pending })) {
+          html.push('<td><button type="button" class="c3-cell-chip" data-c3-linked-filter="pending-cell" data-grid-target="drawing-lines" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '" data-campaign="' + c3Attr(c.label) + '" data-pending-bucket="' + c3Attr(b.pending) + '">' + fmtInt(v) + '</button></td>');
+        } else if (v > 0) {
+          html.push('<td><span class="c3-cell-chip is-muted">' + fmtInt(v) + '</span></td>');
+        } else {
+          html.push('<td class="zero">—</td>');
+        }
+      });
+      if (bucketHasRows) {
+        html.push('<td class="col-total"><button type="button" class="c3-pending-total-filter" data-c3-linked-filter="pending-bucket-total" data-grid-target="drawing-lines" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '" data-pending-bucket="' + c3Attr(b.pending) + '">' + fmtInt(b.total) + '</button></td></tr>');
+      } else if (b.total > 0) {
+        html.push('<td class="col-total"><span class="c3-pending-total-filter is-muted">' + fmtInt(b.total) + '</span></td></tr>');
+      } else {
+        html.push('<td class="col-total zero">—</td></tr>');
+      }
+    });
+    html.push('</tbody>');
+    // footer
+    html.push('<tfoot><tr><th class="row-head">TOTAL</th>');
+    camps.forEach(function(c, i){
+      if (campTotals[i] > 0 && hasDrawingRows({ campaign: c.label })) {
+        html.push('<td><button type="button" class="c3-pending-total-filter" data-c3-linked-filter="pending-campaign-total" data-grid-target="drawing-lines" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '" data-campaign="' + c3Attr(c.label) + '">' + fmtInt(campTotals[i]) + '</button></td>');
+      } else if (campTotals[i] > 0) {
+        html.push('<td><span class="c3-pending-total-filter is-muted">' + fmtInt(campTotals[i]) + '</span></td>');
+      } else {
+        html.push('<td class="zero">—</td>');
+      }
+    });
+    if (grandTotal > 0 && hasDrawingRows({})) {
+      html.push('<td class="col-total"><button type="button" class="c3-pending-total-filter" data-c3-linked-filter="pending-grand-total" data-grid-target="drawing-lines" data-scope="' + c3Attr(payload.scope || scopeKey) + '" data-scope-label="' + c3Attr(payload.label || scopeKey) + '">' + fmtInt(grandTotal) + '</button></td></tr></tfoot>');
+    } else if (grandTotal > 0) {
+      html.push('<td class="col-total"><span class="c3-pending-total-filter is-muted">' + fmtInt(grandTotal) + '</span></td></tr></tfoot>');
+    } else {
+      html.push('<td class="col-total zero">—</td></tr></tfoot>');
+    }
+    html.push('</table></div>');
+
+    el.innerHTML = html.join('');
+    el._c3CurrentPayload = payload;
+  }
+
+  function c3CsvCell(value) {
+    var text = String(value == null ? '' : value);
+    return '"' + text.replace(/"/g, '""') + '"';
+  }
+
+  function c3DownloadCsv(filename, rows) {
+    var csv = '\ufeff' + rows.map(function(row){
+      return row.map(c3CsvCell).join(';');
+    }).join('\r\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function c3GridCell(row, col) {
+    var cell = row ? row.querySelector('[data-col="' + col + '"]') : null;
+    return cell ? cell.textContent.replace(/\s+/g, ' ').trim() : '';
+  }
+
+  function c3ContextFromLinkedTrigger(trigger, fallback) {
+    var context = Object.assign({}, fallback || {});
+    if (!trigger) return context;
+    var tableHost = trigger.closest('[data-c3-poplaced-table]');
+    if (tableHost && tableHost._c3CurrentPayload && tableHost._c3CurrentPayload.filtered_context) {
+      context = Object.assign({}, tableHost._c3CurrentPayload.filtered_context, context);
+    }
+    if (trigger.dataset.scope) context.scope = trigger.dataset.scope;
+    if (trigger.dataset.scopeLabel) context.scopeLabel = trigger.dataset.scopeLabel;
+    if (trigger.dataset.campaign) context.campaign = trigger.dataset.campaign;
+    if (trigger.dataset.stage) context.stage = trigger.dataset.stage;
+    if (trigger.dataset.pendingBucket != null) context.pendingBucket = trigger.dataset.pendingBucket;
+    return context;
+  }
+
+  function c3ActiveLinkedContextForScope(scopeKey, payload) {
+    var scope = payload?.scope || scopeKey;
+    var baseContext = payload?.filtered_context || null;
+    var active = Array.from(document.querySelectorAll('[data-c3-linked-filter].is-linked-active')).find(function(trigger){
+      var triggerScope = trigger.dataset.scope || '';
+      var tableHost = trigger.closest('[data-c3-poplaced-table]');
+      var tableScope = tableHost ? tableHost.getAttribute('data-c3-poplaced-table') : '';
+      return c3Same(triggerScope || tableScope, scope) || tableScope === scopeKey;
+    });
+    return c3ContextFromLinkedTrigger(active, baseContext);
+  }
+
+  function c3DrawingRowsForExport(scopeKey, payload, context) {
+    var scope = context?.scope || payload?.scope || scopeKey;
+    return Array.from(document.querySelectorAll('[data-c3-probe-grid="drawing-lines"] tbody tr[data-grid-row]'))
+      .filter(function(row){
+        if (scope && row.dataset.scope && !c3Same(row.dataset.scope, scope)) return false;
+        return context ? c3RowMatchesLinkedContext(row, context) : true;
+      });
+  }
+
+  function c3ExportConditionSlug(context, payload, scopeKey) {
+    var label = context ? c3ContextLabel(context) : (payload?.label || scopeKey || 'all');
+    return String(label || 'selection')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9_-]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase()
+      .slice(0, 90) || 'selection';
+  }
+
+  function c3DrawingLinePoState(row) {
+    if (!row) return '';
+    if (c3Flag(row.dataset.drawingFinalized)) return 'Finalized';
+    if (c3DatasetNumber(row, 'withPo') <= 0) return 'Without PO';
+    if (c3DatasetNumber(row, 'poNotArrived') > 0) return 'PO not arrived';
+    if (c3DatasetNumber(row, 'yardActual') > 0) return 'At Yard';
+    return 'PO not arrived';
+  }
+
+  function exportC3PendingMatrix(scopeKey, button) {
+    var node = document.querySelector('[data-c3-poplaced-data="' + scopeKey + '"]');
+    var tableNode = document.querySelector('[data-c3-poplaced-table="' + scopeKey + '"]');
+    if (!node && !tableNode?._c3CurrentPayload) return;
+    var payload = tableNode?._c3CurrentPayload || null;
+    try {
+      if (!payload) payload = JSON.parse(node.textContent);
+    } catch (error) {
+      console.warn('Pending export parse error', error);
+      return;
+    }
+    var context = c3ActiveLinkedContextForScope(scopeKey, payload);
+    var hasContext = !!(context && (context.scope || context.campaign || context.stage || context.pendingBucket != null));
+    if (!hasContext) context = null;
+    var drawingRows = c3DrawingRowsForExport(scopeKey, payload, context);
+    var condition = context ? c3ContextLabel(context) : ((payload.label || scopeKey) + ' · all drawing lines');
+    var rows = [[
+      'condition',
+      'scope',
+      'campaign',
+      'drawing',
+      'discipline',
+      'revision',
+      'revision_detail',
+      'status',
+      'po_state',
+      'priority',
+      'total_items',
+      'covered',
+      'pending_items',
+      'coverage_pct',
+      'yard_actual',
+      'yard_pct'
+    ]];
+    if (!drawingRows.length) {
+      rows.push([
+        condition,
+        payload.scope || scopeKey,
+        context?.campaign || '',
+        'No drawing lines matched this condition',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        ''
+      ]);
+    } else {
+      drawingRows.forEach(function(row){
+        rows.push([
+          condition,
+          c3GridCell(row, 'scope') || payload.label || scopeKey,
+          row.dataset.campaign || c3GridCell(row, 'campaign') || '',
+          c3GridCell(row, 'drawing'),
+          c3GridCell(row, 'discipline'),
+          c3GridCell(row, 'revision'),
+          c3GridCell(row, 'revision-detail'),
+          row.dataset.status || '',
+          c3DrawingLinePoState(row),
+          c3GridCell(row, 'priority'),
+          c3GridCell(row, 'total'),
+          c3GridCell(row, 'covered'),
+          c3GridCell(row, 'missing'),
+          c3GridCell(row, 'coverage'),
+          c3GridCell(row, 'yard-actual'),
+          c3GridCell(row, 'yard-pct')
+        ]);
+      });
+    }
+    var date = new Date().toISOString().slice(0, 10);
+    var fileScope = c3ExportConditionSlug(context, payload, scopeKey);
+    c3DownloadCsv('bonga-north-pending-drawings-' + fileScope + '-' + date + '.csv', rows);
+    if (button) {
+      button.classList.add('is-exported');
+      window.setTimeout(function(){ button.classList.remove('is-exported'); }, 1000);
+    }
+  }
+
+  function initC3PendingExports() {
+    document.addEventListener('click', function(event){
+      var button = event.target.closest('[data-c3-export-pending]');
+      if (!button) return;
+      event.preventDefault();
+      exportC3PendingMatrix(button.getAttribute('data-c3-export-pending'), button);
+    });
+  }
+
+  function c3RenderPoPlacedScope(key, context) {
+    var payload = c3OriginalPoPayload(key);
+    if (!payload) return;
+    renderC3PoPlacedChart(key, payload);
+    renderC3PoPlacedTable(key, payload, context || null);
+  }
+
+  function renderAllPoPlaced() {
+    document.querySelectorAll('[data-c3-poplaced-data]').forEach(function(node, index){
+      var key = node.dataset.c3PoplacedData;
+      var chart = document.querySelector('[data-c3-poplaced-chart="' + key + '"]');
+      var scopeView = chart ? chart.closest('[data-supply-scope]') : null;
+      var isActive = scopeView ? scopeView.classList.contains('is-active') : index === 0;
+      var render = function(){
+        c3RenderPoPlacedScope(key);
+      };
+      if (isActive) c3WhenVisible(chart, render);
+    });
+  }
+  // Re-render chart on container resize (so it always fills 100%)
+  function setupPoPlacedResize() {
+    if (typeof ResizeObserver === 'undefined') return;
+    var ro = new ResizeObserver(function(entries){
+      entries.forEach(function(e){
+        var el = e.target;
+        var key = el.getAttribute('data-c3-poplaced-chart');
+        if (!key) return;
+        if (el.dataset.c3Rendered !== '1') return;
+        if (el._c3ResizeFrame) window.cancelAnimationFrame(el._c3ResizeFrame);
+        el._c3ResizeFrame = window.requestAnimationFrame(function(){
+          var payload = c3OriginalPoPayload(key);
+          if (!payload) return;
+          renderC3PoPlacedChart(key, payload);
+          el._c3ResizeFrame = null;
+        });
+      });
+    });
+    document.querySelectorAll('[data-c3-poplaced-chart]').forEach(function(el){ ro.observe(el); });
+  }
+
+  function initC3ProbeTabs() {
+    document.querySelectorAll('[data-c3-probe]').forEach(function(root){
+      var buttons = Array.from(root.querySelectorAll('[data-c3-probe-tab]'));
+      var views = Array.from(root.querySelectorAll('[data-c3-probe-view]'));
+      buttons.forEach(function(btn){
+        btn.addEventListener('click', function(){
+          var key = btn.getAttribute('data-c3-probe-tab');
+          buttons.forEach(function(item){
+            var active = item === btn;
+            item.classList.toggle('is-active', active);
+            item.setAttribute('aria-selected', active ? 'true' : 'false');
+          });
+          views.forEach(function(view){
+            view.classList.toggle('is-active', view.getAttribute('data-c3-probe-view') === key);
+          });
+        });
+      });
+    });
+  }
+
+  function c3SetProbeTab(key) {
+    var root = document.querySelector('[data-c3-probe]');
+    if (!root || !key) return;
+    var button = root.querySelector('[data-c3-probe-tab="' + key + '"]');
+    if (button) button.click();
+  }
+
+  function c3ApplyProbeContext(gridKey, context) {
+    var table = document.querySelector('[data-c3-probe-grid="' + gridKey + '"]');
+    if (table && !table._c3ProbeGrid) initC3ProbeGrid(table);
+    if (!table || !table._c3ProbeGrid) return false;
+    table._c3ProbeGrid.applyLinkedFilter(context || {});
+    return true;
+  }
+
+  function c3UpdatePendingMatrix(scopeKey, context) {
+    var payload = c3OriginalPoPayload(scopeKey);
+    if (!payload) return;
+    var el = document.querySelector('[data-c3-poplaced-table="' + scopeKey + '"]');
+    var wrap = el ? el.querySelector('.c3-pending-table-wrap') : null;
+    if (wrap) wrap.classList.add('is-updating');
+    window.requestAnimationFrame(function(){
+      renderC3PoPlacedTable(scopeKey, payload, context || null);
+      var nextWrap = el ? el.querySelector('.c3-pending-table-wrap') : null;
+      if (nextWrap) {
+        nextWrap.classList.add('is-entering');
+        window.requestAnimationFrame(function(){ nextWrap.classList.remove('is-entering', 'is-updating'); });
+      }
+    });
+  }
+
+  function c3ResetPendingMatrices() {
+    document.querySelectorAll('[data-c3-poplaced-data]').forEach(function(node){
+      var key = node.dataset.c3PoplacedData;
+      var payload = c3OriginalPoPayload(key);
+      if (payload) renderC3PoPlacedTable(key, payload, null);
+    });
+  }
+
+  function c3FocusProbeGrid(gridKey) {
+    var table = document.querySelector('[data-c3-probe-grid="' + gridKey + '"]');
+    var card = table ? table.closest('.c3-probe-card') : document.querySelector('[data-c3-probe]');
+    if (!card) return;
+    var y = card.getBoundingClientRect().top + window.scrollY - 112;
+    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+  }
+
+  function c3ApplyLinkedFilterTrigger(trigger) {
+    if (!trigger) return;
+    var gridKey = trigger.dataset.gridTarget || 'materials';
+    var context = c3ContextFromLinkedTrigger(trigger, null);
+    document.querySelectorAll('[data-c3-linked-filter].is-linked-active').forEach(function(item){
+      item.classList.remove('is-linked-active');
+    });
+    trigger.classList.add('is-linked-active');
+    if (trigger.dataset.c3LinkedFilter === 'supply-stage') {
+      c3UpdatePendingMatrix(context.scope, context);
+    }
+    c3SetProbeTab(gridKey);
+    if (c3ApplyProbeContext(gridKey, context)) c3FocusProbeGrid(gridKey);
+  }
+
+  function initC3LinkedFilters() {
+    document.addEventListener('click', function(event){
+      var trigger = event.target.closest('[data-c3-linked-filter]');
+      if (!trigger) return;
+      event.preventDefault();
+      event.stopPropagation();
+      c3ApplyLinkedFilterTrigger(trigger);
+    });
+    document.addEventListener('keydown', function(event){
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      var trigger = event.target.closest('[data-c3-linked-filter]');
+      if (!trigger) return;
+      event.preventDefault();
+      c3ApplyLinkedFilterTrigger(trigger);
+    });
+  }
+
+  function initC3ProbeGrid(table) {
+    if (!table || !table.tBodies.length) return;
+    var key = table.getAttribute('data-c3-probe-grid') || '';
+    var controls = document.querySelector('[data-c3-grid-controls="' + key + '"]');
+    if (!controls) return;
+
+    var tbody = table.tBodies[0];
+    var rows = Array.from(tbody.querySelectorAll('[data-grid-row]'));
+    var searchInput = controls.querySelector('[data-grid-search]');
+    var statusSelect = controls.querySelector('[data-grid-status]');
+    var countEl = controls.querySelector('[data-grid-count]');
+    var densityBtn = controls.querySelector('[data-grid-density]');
+    var copyBtn = controls.querySelector('[data-grid-copy]');
+    var exportBtn = controls.querySelector('[data-grid-export]');
+    var clearBtn = controls.querySelector('[data-grid-clear]');
+    var contextEl = controls.querySelector('[data-grid-context]');
+    var colToggles = Array.from(controls.querySelectorAll('[data-grid-col-toggle]'));
+    var filterInputs = Array.from(table.querySelectorAll('[data-col-filter]'));
+    var filterSelects = Array.from(table.querySelectorAll('[data-col-select]'));
+    var headers = Array.from(table.querySelectorAll('.c3-column-header-row th[data-sort]'));
+    var collator = new Intl.Collator('pt-BR', { numeric: true, sensitivity: 'base' });
+    var currentSort = { col: null, dir: 1, type: 'text' };
+    var linkedContext = null;
+    var tableWrap = table.closest('.c3-probe-table-wrap');
+
+    function cellText(row, col) {
+      var cell = row.querySelector('[data-col="' + col + '"]');
+      return cell ? cell.textContent.replace(/\s+/g, ' ').trim() : '';
+    }
+
+    function numericValue(row, col) {
+      var cell = row.querySelector('[data-col="' + col + '"]');
+      if (!cell) return 0;
+      var raw = cell.getAttribute('data-sort-value') || cell.textContent || '0';
+      var normalized = String(raw).replace(/\./g, '').replace(',', '.').replace(/[^\d.-]/g, '');
+      var value = parseFloat(normalized);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function populateSelects() {
+      filterSelects.forEach(function(select){
+        var col = select.getAttribute('data-col-select');
+        var values = [];
+        var seen = {};
+        rows.forEach(function(row){
+          var value = cellText(row, col);
+          if (!value || seen[value]) return;
+          seen[value] = true;
+          values.push(value);
+        });
+        values.sort(function(a, b){ return collator.compare(a, b); });
+        values.slice(0, 140).forEach(function(value){
+          var option = document.createElement('option');
+          option.value = value;
+          option.textContent = value.length > 34 ? value.slice(0, 31) + '...' : value;
+          select.appendChild(option);
+        });
+      });
+    }
+
+    function rowMatches(row) {
+      if (linkedContext && !c3RowMatchesLinkedContext(row, linkedContext)) return false;
+      var q = searchInput ? searchInput.value.trim().toLowerCase() : '';
+      if (q && !row.textContent.toLowerCase().includes(q)) return false;
+      if (statusSelect && statusSelect.value && row.getAttribute('data-status') !== statusSelect.value) return false;
+      for (var i = 0; i < filterInputs.length; i++) {
+        var input = filterInputs[i];
+        var col = input.getAttribute('data-col-filter');
+        var value = input.value.trim().toLowerCase();
+        if (value && !cellText(row, col).toLowerCase().includes(value)) return false;
+      }
+      for (var j = 0; j < filterSelects.length; j++) {
+        var select = filterSelects[j];
+        var selected = select.value;
+        if (selected && cellText(row, select.getAttribute('data-col-select')) !== selected) return false;
+      }
+      return true;
+    }
+
+    function applyFilters() {
+      table.classList.add('is-updating');
+      if (tableWrap) tableWrap.classList.add('is-updating');
+      var visible = 0;
+      rows.forEach(function(row){
+        var show = rowMatches(row);
+        row.hidden = !show;
+        row.classList.toggle('is-linked-match', !!linkedContext && show);
+        if (show) visible += 1;
+      });
+      var label = linkedContext ? 'rows from selection' : 'visible rows';
+      if (countEl) countEl.innerHTML = '<b>' + visible.toLocaleString('pt-BR') + '</b> ' + label;
+      if (contextEl) {
+        contextEl.hidden = !linkedContext;
+        contextEl.innerHTML = linkedContext ? '<b>Selection</b><span>' + c3Attr(c3ContextLabel(linkedContext)) + '</span>' : '';
+      }
+      table.classList.toggle('has-linked-context', !!linkedContext);
+      controls.classList.toggle('has-linked-context', !!linkedContext);
+      window.requestAnimationFrame(function(){
+        table.classList.remove('is-updating');
+        if (tableWrap) tableWrap.classList.remove('is-updating');
+      });
+    }
+
+    function clearManualFilters() {
+      if (searchInput) searchInput.value = '';
+      if (statusSelect) statusSelect.value = '';
+      filterInputs.forEach(function(input){ input.value = ''; });
+      filterSelects.forEach(function(select){ select.value = ''; });
+    }
+
+    function applyColumnVisibility() {
+      colToggles.forEach(function(toggle){
+        var col = toggle.value;
+        var hidden = !toggle.checked;
+        table.querySelectorAll('[data-col="' + col + '"]').forEach(function(cell){
+          cell.style.display = hidden ? 'none' : '';
+        });
+      });
+    }
+
+    function sortBy(header) {
+      var col = header.getAttribute('data-col');
+      var type = header.getAttribute('data-sort') || 'text';
+      if (currentSort.col === col) {
+        currentSort.dir = currentSort.dir * -1;
+      } else {
+        currentSort = { col: col, dir: 1, type: type };
+      }
+      rows.sort(function(a, b){
+        if (type === 'number') return (numericValue(a, col) - numericValue(b, col)) * currentSort.dir;
+        return collator.compare(cellText(a, col), cellText(b, col)) * currentSort.dir;
+      });
+      rows.forEach(function(row){ tbody.appendChild(row); });
+      applyFilters();
+    }
+
+    function visibleRows() {
+      return rows.filter(function(row){ return !row.hidden; });
+    }
+
+    function visibleColumnKeys() {
+      return Array.from(table.querySelectorAll('.c3-column-header-row th[data-col]'))
+        .filter(function(th){ return th.style.display !== 'none'; })
+        .map(function(th){ return th.getAttribute('data-col'); });
+    }
+
+    function visibleColumnLabels(columns) {
+      return columns.map(function(col){
+        var th = table.querySelector('.c3-column-header-row th[data-col="' + col + '"]');
+        return th ? th.textContent.replace('<>', '').replace(/\s+/g, ' ').trim() : col;
+      });
+    }
+
+    function copyVisible() {
+      var visibleColumns = visibleColumnKeys();
+      var labels = visibleColumnLabels(visibleColumns);
+      var lines = [labels.join('\t')];
+      visibleRows().forEach(function(row){
+        lines.push(visibleColumns.map(function(col){ return cellText(row, col); }).join('\t'));
+      });
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(lines.join('\n')).then(function(){
+          if (!copyBtn) return;
+          copyBtn.classList.add('is-copied');
+          window.setTimeout(function(){ copyBtn.classList.remove('is-copied'); }, 900);
+        });
+      }
+    }
+
+    function exportVisible() {
+      var visibleColumns = visibleColumnKeys();
+      var labels = visibleColumnLabels(visibleColumns);
+      var selection = linkedContext ? c3ContextLabel(linkedContext) : 'All visible rows';
+      var csvRows = [linkedContext ? ['selection_context'].concat(labels) : labels];
+      visibleRows().forEach(function(row){
+        var values = visibleColumns.map(function(col){ return cellText(row, col); });
+        csvRows.push(linkedContext ? [selection].concat(values) : values);
+      });
+      if (csvRows.length === 1) {
+        csvRows.push(linkedContext ? [selection].concat(['No visible rows']) : ['No visible rows']);
+      }
+      var date = new Date().toISOString().slice(0, 10);
+      var slug = c3ExportConditionSlug(linkedContext, { label: key, scope: key }, key);
+      c3DownloadCsv('bonga-north-' + key + '-' + slug + '-' + date + '.csv', csvRows);
+      if (exportBtn) {
+        exportBtn.classList.add('is-exported');
+        window.setTimeout(function(){ exportBtn.classList.remove('is-exported'); }, 900);
+      }
+    }
+
+    populateSelects();
+    [searchInput, statusSelect].forEach(function(control){
+      if (!control) return;
+      control.addEventListener('input', applyFilters);
+      control.addEventListener('change', applyFilters);
+    });
+    filterInputs.forEach(function(input){ input.addEventListener('input', applyFilters); });
+    filterSelects.forEach(function(select){ select.addEventListener('change', applyFilters); });
+    headers.forEach(function(header){ header.addEventListener('click', function(){ sortBy(header); }); });
+    colToggles.forEach(function(toggle){ toggle.addEventListener('change', applyColumnVisibility); });
+    if (densityBtn) {
+      densityBtn.addEventListener('click', function(){
+        table.classList.toggle('is-dense');
+        densityBtn.classList.toggle('is-active', table.classList.contains('is-dense'));
+      });
+    }
+    if (copyBtn) copyBtn.addEventListener('click', copyVisible);
+    if (exportBtn) exportBtn.addEventListener('click', exportVisible);
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function(){
+        linkedContext = null;
+        c3ResetPendingMatrices();
+        document.querySelectorAll('[data-c3-linked-filter].is-linked-active').forEach(function(item){
+          item.classList.remove('is-linked-active');
+        });
+        clearManualFilters();
+        applyFilters();
+      });
+    }
+    table._c3ProbeGrid = {
+      applyLinkedFilter: function(context) {
+        linkedContext = context || null;
+        clearManualFilters();
+        window.requestAnimationFrame(function(){
+          applyFilters();
+          var first = rows.find(function(row){ return !row.hidden; });
+          if (first) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        });
+      },
+      clearLinkedFilter: function() {
+        linkedContext = null;
+        applyFilters();
+      }
+    };
+    applyColumnVisibility();
+    applyFilters();
+  }
+
+  function initC3NoteTooltips() {
+    var buttons = Array.from(document.querySelectorAll('.c3-note-popover'));
+    if (!buttons.length) return;
+    var root = document.querySelector('.cockpit-v3') || document.body;
+    var floating = document.createElement('div');
+    floating.className = 'c3-note-floating';
+    floating.setAttribute('role', 'tooltip');
+    root.appendChild(floating);
+
+    var active = null;
+    var pinned = false;
+    var hideTimer = null;
+
+    function clearHide() {
+      if (hideTimer) window.clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+
+    function setExpanded(button, value) {
+      if (button) button.setAttribute('aria-expanded', value ? 'true' : 'false');
+    }
+
+    function position() {
+      if (!active || !floating.classList.contains('is-visible')) return;
+      var rect = active.getBoundingClientRect();
+      var gap = 10;
+      var margin = 12;
+      var width = floating.offsetWidth || 340;
+      var height = floating.offsetHeight || 160;
+      var placement = 'left';
+      var left = rect.left - width - gap;
+      if (left < margin) {
+        placement = 'right';
+        left = rect.right + gap;
+      }
+      left = Math.max(margin, Math.min(window.innerWidth - width - margin, left));
+      var top = rect.top + (rect.height / 2) - (height / 2);
+      top = Math.max(margin, Math.min(window.innerHeight - height - margin, top));
+      floating.style.left = left + 'px';
+      floating.style.top = top + 'px';
+      floating.classList.toggle('is-right', placement === 'right');
+    }
+
+    function show(button, shouldPin) {
+      var source = button.querySelector('.c3-note-tooltip');
+      if (!source) return;
+      clearHide();
+      if (active && active !== button) setExpanded(active, false);
+      active = button;
+      pinned = !!shouldPin;
+      floating.innerHTML = source.innerHTML;
+      floating.classList.toggle('is-pinned', pinned);
+      floating.classList.add('is-visible');
+      setExpanded(button, true);
+      window.requestAnimationFrame(position);
+    }
+
+    function hide(force) {
+      if (pinned && !force) return;
+      clearHide();
+      floating.classList.remove('is-visible', 'is-pinned', 'is-right');
+      setExpanded(active, false);
+      active = null;
+      pinned = false;
+    }
+
+    function scheduleHide() {
+      clearHide();
+      hideTimer = window.setTimeout(function(){ hide(false); }, 160);
+    }
+
+    function keepVisibleDuringScroll() {
+      if (!active || !floating.classList.contains('is-visible')) return;
+      position();
+      if (!pinned) {
+        clearHide();
+        hideTimer = window.setTimeout(function(){ hide(false); }, 1200);
+      }
+    }
+
+    buttons.forEach(function(button){
+      button.addEventListener('mouseenter', function(){ if (!pinned) show(button, false); });
+      button.addEventListener('mouseleave', function(){ if (!pinned) scheduleHide(); });
+      button.addEventListener('focus', function(){ if (!pinned) show(button, false); });
+      button.addEventListener('blur', function(){ if (!pinned) scheduleHide(); });
+      button.addEventListener('click', function(event){
+        event.preventDefault();
+        event.stopPropagation();
+        if (active === button && pinned) hide(true);
+        else show(button, true);
+      });
+    });
+
+    floating.addEventListener('mouseenter', clearHide);
+    floating.addEventListener('mouseleave', function(){ if (!pinned) scheduleHide(); });
+    document.addEventListener('click', function(event){
+      if (!pinned) return;
+      if (floating.contains(event.target)) return;
+      if (active && active.contains(event.target)) return;
+      hide(true);
+    });
+    document.addEventListener('keydown', function(event){
+      if (event.key === 'Escape') hide(true);
+    });
+    window.addEventListener('resize', position);
+    document.addEventListener('scroll', keepVisibleDuringScroll, true);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    c3Idle(function(){
+      renderC3Curve(document.querySelector('[data-c3-curve]'), C3_CURVE_PAYLOAD);
+    });
+    c3WhenVisible(document.querySelector('[data-c3-areaperf]'), function(){
+      renderC3AreaPerf(document.querySelector('[data-c3-areaperf]'), C3_AREAPERF_PAYLOAD);
+    });
+    c3WhenVisible(document.querySelector('[data-c3-monthload]'), function(){
+      renderC3MonthLoad(document.querySelector('[data-c3-monthload]'), C3_MONTHLOAD_PAYLOAD);
+    });
+    renderAllPoPlaced();
+    initC3PendingExports();
+    setupPoPlacedResize();
+    initC3ProbeTabs();
+    c3WhenVisible(document.querySelector('[data-c3-probe]'), function(){
+      document.querySelectorAll('[data-c3-probe-grid]').forEach(initC3ProbeGrid);
+    }, { rootMargin: '720px 0px' });
+    initC3LinkedFilters();
+    initC3NoteTooltips();
+
+    // Section-nav scroll-spy + smooth scroll
+    var tabs = Array.from(document.querySelectorAll('#c3-section-nav .sn-tab'));
+    var navMeta = document.querySelector('#c3-section-nav .sn-meta');
+    var navMetaDefault = navMeta ? navMeta.innerHTML : '';
+    var navMeta3d = '<span>Model · <b>Bonga North Project</b></span><span>·</span><span><b>Local GLB</b> · 3D hierarchy</span>';
+    function activate(id){
+      tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.target === id); });
+      if (navMeta) navMeta.innerHTML = id === 's03' ? navMeta3d : navMetaDefault;
+    }
+    tabs.forEach(function(t){
+      t.addEventListener('click', function(e){
+        e.preventDefault();
+        var el = document.getElementById(t.dataset.target);
+        if (!el) return;
+        var y = el.getBoundingClientRect().top + window.scrollY - 124;
+        window.scrollTo({ top: y, behavior: 'smooth' });
+        activate(t.dataset.target);
+      });
+    });
+    var secs = ['s00','s01','s02','s03'];
+    window.addEventListener('scroll', function(){
+      var pos = window.scrollY + 200;
+      var cur = secs[0];
+      for (var i=0;i<secs.length;i++){ var el = document.getElementById(secs[i]); if (el && el.offsetTop <= pos) cur = secs[i]; }
+      activate(cur);
+    }, { passive: true });
+
+    // ECharts supply campaign panel (keep previous behavior)
+    if (window.echarts) initSupplyEcharts();
+  });
+
+  function initSupplyEcharts() {
+    var fmt = function(n){ return (n || 0).toLocaleString('pt-BR'); };
+    var instances = [];
+    var PALETTE = ['#fbbf24','#84cc16','#38bdf8','#a78bfa','#ef4444','#6b7280','#5eead4','#94a3b8'];
+
+    document.querySelectorAll('[data-supply-chart-payload]').forEach(function(node){
+      // payload kept for back-compat but not used in new design (campaign tracks are CSS-driven from template)
+    });
+
+    // Scope switch behavior
+    document.querySelectorAll('[data-supply-campaign-panel]').forEach(function(panel){
+      panel.addEventListener('click', function(evt){
+        var btn = evt.target.closest('[data-supply-mode]');
+        if (!btn) return;
+        var mode = btn.dataset.supplyMode;
+        panel.querySelectorAll('[data-supply-mode]').forEach(function(b){
+          b.classList.toggle('active', b === btn);
+        });
+        panel.querySelectorAll('[data-supply-scope]').forEach(function(v){
+          v.classList.toggle('is-active', v.dataset.supplyScope === mode);
+        });
+        window.requestAnimationFrame(function(){
+          c3RenderPoPlacedScope(mode);
+        });
+      });
+    });
+  }
+</script>
+{% endblock %}

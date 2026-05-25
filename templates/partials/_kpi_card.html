@@ -1,0 +1,12 @@
+{% comment %}
+Usage:
+  {% include "partials/_kpi_card.html" with label="Total" value="42" icon="bi-people" color="primary" trend="+5%" %}
+{% endcomment %}
+<div class="kpi-card kpi-{{ color|default:'primary' }}">
+  <div class="kpi-icon"><i class="bi {{ icon|default:'bi-graph-up' }}"></i></div>
+  <div class="kpi-body">
+    <div class="kpi-label">{{ label }}</div>
+    <div class="kpi-value">{{ value }}</div>
+    {% if trend %}<div class="kpi-trend">{{ trend }}</div>{% endif %}
+  </div>
+</div>

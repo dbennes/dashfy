@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Sign in - {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="c3-login-screen">
+  <div class="c3-login-shell">
+    <section class="c3-login-intel" aria-label="System overview">
+      <div class="c3-login-brand">
+        <div class="c3-login-mark">{{ APP_BRAND_MARK|default:"D" }}</div>
+        <div>
+          <strong>{{ APP_NAME|default:"DASHFY" }}</strong>
+          <span>Construction cockpit</span>
+        </div>
+      </div>
+
+      <div class="c3-login-copy">
+        <span class="c3-login-kicker">BN-EPC1 · Bonga North Project</span>
+        <h1>Operational intelligence for project execution.</h1>
+        <p>Secure access to schedule, engineering, procurement and 3D model control.</p>
+      </div>
+
+      <div class="c3-login-metrics" aria-label="Cockpit modules">
+        <div><span>P6</span><strong>Schedule</strong></div>
+        <div><span>DED</span><strong>Engineering</strong></div>
+        <div><span>DATAFY</span><strong>Supply</strong></div>
+        <div><span>3D</span><strong>Model</strong></div>
+      </div>
+
+      <div class="c3-login-terminal" aria-hidden="true">
+        <div><span>[00:00.012]</span> DASHFY kernel mounted</div>
+        <div><span>[00:00.241]</span> Secure tunnel ready</div>
+        <div><span>[00:00.892]</span> Project data index standing by</div>
+      </div>
+    </section>
+
+    <section class="c3-login-panel" aria-label="Sign in">
+      <div class="c3-login-panel-head">
+        <span>Authorized access</span>
+        <h2>Sign in</h2>
+      </div>
+
+      {% include "partials/_messages.html" %}
+
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger c3-login-alert">
+          {{ form.non_field_errors }}
+        </div>
+      {% endif %}
+
+      <form method="post" class="c3-login-form" data-login-form>
+        {% csrf_token %}
+        <div class="c3-login-field">
+          <label class="form-label">{{ form.username.label }}</label>
+          {{ form.username }}
+          {% if form.username.errors %}<div class="text-danger small">{{ form.username.errors }}</div>{% endif %}
+        </div>
+        <div class="c3-login-field">
+          <label class="form-label">{{ form.password.label }}</label>
+          {{ form.password }}
+          {% if form.password.errors %}<div class="text-danger small">{{ form.password.errors }}</div>{% endif %}
+        </div>
+        <div class="c3-login-options">
+          <label class="c3-login-check" for="id_remember">
+            {{ form.remember }}
+            <span>{{ form.remember.label }}</span>
+          </label>
+          <a href="{% url 'accounts:password_reset' %}">Reset password</a>
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="c3-login-submit" data-login-submit>
+          <span>Enter cockpit</span>
+          <i class="bi bi-arrow-right"></i>
+        </button>
+      </form>
+
+      <div class="c3-login-footer">
+        Secure session · Audit logging enabled
+      </div>
+    </section>
+  </div>
+  <div class="c3-login-auth-overlay" aria-hidden="true">
+    <div>
+      <span>Authorizing session</span>
+      <strong>Preparing cockpit</strong>
+      <i></i>
+    </div>
+  </div>
+</div>
+<script>
+  (function(){
+    var form = document.querySelector('[data-login-form]');
+    if (!form) return;
+    form.addEventListener('submit', function(){
+      var screen = form.closest('.c3-login-screen');
+      var button = form.querySelector('[data-login-submit]');
+      if (screen) screen.classList.add('is-authenticating');
+      if (button) {
+        button.disabled = true;
+        button.querySelector('span').textContent = 'Authorizing';
+      }
+    });
+  })();
+</script>
+{% endblock %}

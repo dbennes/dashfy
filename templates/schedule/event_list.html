@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Schedule - Eventos{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title="Eventos do cronograma" icon="bi-list-ul" %}
+{% include "partials/_filters_bar.html" %}
+<div class="table-card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead class="table-light">
+        <tr><th>Titulo</th><th>Tipo</th><th>Status</th><th>Inicio</th><th>Fim</th><th>Cronograma</th><th>Responsavel</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for e in page_obj %}
+        <tr>
+          <td><strong>{{ e.title }}</strong></td>
+          <td>{{ e.get_event_type_display }}</td>
+          <td>
+            {% if e.status == "delayed" %}<span class="badge bg-danger">{{ e.get_status_display }}</span>
+            {% elif e.status == "completed" %}<span class="badge bg-success">{{ e.get_status_display }}</span>
+            {% elif e.status == "in_progress" %}<span class="badge bg-warning text-dark">{{ e.get_status_display }}</span>
+            {% else %}<span class="badge bg-secondary">{{ e.get_status_display }}</span>{% endif %}
+          </td>
+          <td>{{ e.start_at|date:"d/m/Y H:i" }}</td>
+          <td>{{ e.end_at|date:"d/m/Y H:i" }}</td>
+          <td>{{ e.schedule.name }}</td>
+          <td>{{ e.owner|default:"-" }}</td>
+          <td><a class="btn btn-sm btn-outline-primary" href="{% url 'schedule:event_detail' e.pk %}"><i class="bi bi-eye"></i></a></td>
+        </tr>
+        {% empty %}<tr><td colspan="8" class="empty-state">Sem eventos</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "partials/_pagination.html" %}
+</div>
+{% endblock %}

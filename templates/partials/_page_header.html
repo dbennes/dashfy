@@ -1,0 +1,16 @@
+{% comment %}
+Usage:
+  {% include "partials/_page_header.html" with title="Titulo" subtitle="opcional" icon="bi-bar-chart" %}
+{% endcomment %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">
+      {% if icon %}<span class="page-title-icon"><i class="bi {{ icon }}"></i></span>{% endif %}
+      {{ title }}
+    </h1>
+    {% if subtitle %}<p class="page-subtitle">{{ subtitle }}</p>{% endif %}
+  </div>
+  <div class="page-actions">
+    {% block page_actions %}{% endblock %}
+  </div>
+</div>

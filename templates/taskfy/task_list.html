@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Taskfy - JobCards reais{% endblock %}
+
+{% block content %}
+<div class="dx-dashboard">
+  <section class="dx-hero">
+    <div class="dx-hero-main">
+      <div class="dx-hero-eyebrow">TASKFY / JobCards</div>
+      <h1 class="dx-hero-title">JobCards</h1>
+      <p class="dx-hero-sub">{{ source.total|default:0|intcomma }} registro(s) na base real</p>
+    </div>
+    <div class="dx-hero-actions">
+      <a class="dx-btn" href="{% url 'taskfy:kanban' %}?{{ request.GET.urlencode }}">
+        <i class="bi bi-columns-gap"></i> Status board
+      </a>
+      <a class="dx-btn" href="{{ source.base_url }}/" target="_blank">
+        <i class="bi bi-box-arrow-up-right"></i> Abrir Taskfy
+      </a>
+    </div>
+  </section>
+
+  {% if not source.available %}
+    <div class="app-alert alert-danger">{{ source.error }}</div>
+  {% endif %}
+
+  <form method="get" class="dx-grid-toolbar">
+    <label class="dx-grid-search">
+      <i class="bi bi-search"></i>
+      <input type="search" name="q" value="{{ request.GET.q }}" placeholder="JobCard, Activity ID ou Tag">
+    </label>
+    <input class="dx-grid-select" name="status" value="{{ request.GET.status }}" placeholder="Status exato">
+    <input class="dx-grid-select" name="discipline" value="{{ request.GET.discipline }}" placeholder="Disciplina">
+    <button class="dx-grid-tool" type="submit"><i class="bi bi-filter"></i> Filtrar</button>
+    <a class="dx-grid-tool" href="{% url 'taskfy:task_list' %}"><i class="bi bi-x-lg"></i> Reset</a>
+    <span class="dx-grid-visible">{{ paginator.count|intcomma }} visible</span>
+  </form>
+
+  <div class="dx-card">
+    <div class="dx-table-wrap">
+      <table class="dx-table dx-table-dense">
+        <thead>
+          <tr>
+            <th>JobCard</th>
+            <th>Disc.</th>
+            <th>Activity</th>
+            <th>Working code</th>
+            <th>Status</th>
+            <th>Completed</th>
+            <th>Start</th>
+            <th>Finish</th>
+            <th>Tag</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for jc in page_obj %}
+            <tr>
+              <td class="dx-mono">{{ jc.job_card_number }}</td>
+              <td><span class="dx-pill">{{ jc.discipline_code|default:"-" }}</span></td>
+              <td class="dx-mono">{{ jc.activity_id|default:"-" }}</td>
+              <td>{{ jc.working_code|default:"-" }}</td>
+              <td><span class="dx-status">{{ jc.jobcard_status|default:"-" }}</span></td>
+              <td class="dx-mono">{{ jc.completed|default:"-" }}</td>
+              <td class="dx-mono">{{ jc.start|default:"-" }}</td>
+              <td class="dx-mono">{{ jc.finish|default:"-" }}</td>
+              <td>{{ jc.tag|default:"-"|truncatechars:72 }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="9" class="empty-state">Nenhuma JobCard encontrada na base real.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "partials/_pagination.html" %}
+  </div>
+</div>
+{% endblock %}

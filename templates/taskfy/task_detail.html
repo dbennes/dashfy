@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ task.code }} - Taskfy{% endblock %}
+{% block content %}
+{% include "partials/_page_header.html" with title=task.code subtitle=task.title icon="bi-card-checklist" %}
+<div class="row g-3">
+  <div class="col-md-8">
+    <div class="card card-body">
+      <h5>{{ task.title }}</h5>
+      <p class="text-muted">{{ task.description|linebreaksbr|default:"Sem descricao." }}</p>
+      <hr>
+      <div class="row g-3">
+        <div class="col-md-6"><strong>Status:</strong> {{ task.get_status_display }}</div>
+        <div class="col-md-6"><strong>Prioridade:</strong> {{ task.get_priority_display }}</div>
+        <div class="col-md-6"><strong>Responsavel:</strong> {{ task.assignee|default:"-" }}</div>
+        <div class="col-md-6"><strong>Reportado por:</strong> {{ task.reporter|default:"-" }}</div>
+        <div class="col-md-6"><strong>Prazo:</strong> {{ task.due_date|date:"d/m/Y"|default:"-" }}</div>
+        <div class="col-md-6"><strong>Progresso:</strong> {{ task.progress }}%</div>
+        <div class="col-md-6"><strong>Estimativa:</strong> {{ task.estimated_hours|default:"-" }}h</div>
+        <div class="col-md-6"><strong>Real:</strong> {{ task.actual_hours|default:"-" }}h</div>
+      </div>
+      {% if task.tags %}<hr><div>{% for tag in task.tags|cut:" "|stringformat:"s"|slice:":" %}{% endfor %}<small class="text-muted">Tags:</small> {{ task.tags }}</div>{% endif %}
+    </div>
+
+    <div class="card card-body mt-3">
+      <h6>Comentarios</h6>
+      {% for c in task.comments.all %}
+        <div class="border-bottom py-2">
+          <strong>{{ c.author|default:"Sistema" }}</strong>
+          <small class="text-muted">{{ c.created_at|date:"d/m/Y H:i" }}</small>
+          <p class="mb-0">{{ c.body|linebreaksbr }}</p>
+        </div>
+      {% empty %}
+        <small class="text-muted">Nenhum comentario.</small>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card card-body">
+      <strong>Cliente</strong><p>{{ task.client.name }}</p>
+      <strong>Board</strong><p>{{ task.board|default:"-" }}</p>
+      <strong>Projeto</strong><p class="mb-0">{{ task.project|default:"-" }}</p>
+    </div>
+    <a class="btn btn-outline-secondary w-100 mt-2" href="{% url 'taskfy:task_list' %}"><i class="bi bi-arrow-left"></i> Voltar</a>
+  </div>
+</div>
+{% endblock %}

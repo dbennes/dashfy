@@ -1,0 +1,59 @@
+{% load static %}
+<header class="app-topbar topbar">
+  <button class="icon-btn d-lg-none" id="sidebar-toggle" type="button" aria-label="Abrir menu">
+    <i class="bi bi-list"></i>
+  </button>
+
+  <div class="topbar-breadcrumb">
+    <span class="crumb">DASHFY</span>
+    <span class="crumb-sep">/</span>
+    {% if request.resolver_match.namespace == "datafy" %}
+      <span class="crumb">DATAFY</span><span class="crumb-sep">/</span><span class="crumb current">Base SPDM real</span>
+    {% elif request.resolver_match.namespace == "taskfy" %}
+      <span class="crumb">TASKFY</span><span class="crumb-sep">/</span><span class="crumb current">Base PostgreSQL real</span>
+    {% elif request.resolver_match.namespace == "schedule" %}
+      <span class="crumb">Workspace</span><span class="crumb-sep">/</span><span class="crumb current">Schedule</span>
+    {% elif request.resolver_match.namespace == "eclic" %}
+      <span class="crumb">Engineering</span><span class="crumb-sep">/</span><span class="crumb current">ECLIC</span>
+    {% else %}
+      <span class="crumb">Workspace</span><span class="crumb-sep">/</span><span class="crumb current">Cockpit da obra</span>
+    {% endif %}
+  </div>
+
+  <div class="topbar-actions ms-auto">
+    <div class="seg" title="Pipeline status">
+      <button class="active" type="button"><i class="bi bi-lightning-charge"></i> Online</button>
+      <button type="button">Bases reais</button>
+    </div>
+    <button class="icon-btn" type="button" onclick="location.reload()" title="Atualizar">
+      <i class="bi bi-arrow-clockwise"></i>
+    </button>
+    <button class="icon-btn" type="button" id="theme-toggle" title="Alternar tema">
+      <i class="bi bi-moon-stars-fill"></i>
+    </button>
+    <div class="avatar-menu dropdown">
+      <button class="avatar" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Menu do usuario">
+        {{ user.username|slice:":2"|upper }}
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end shadow">
+        <li>
+          <span class="dropdown-item-text">
+            <strong>{{ user.get_full_name|default:user.username }}</strong><br>
+            <small class="text-muted">{{ user.email }}</small><br>
+            <small class="text-muted">{{ user.get_role_display }}</small>
+          </span>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item" href="{% url 'accounts:profile' %}"><i class="bi bi-person me-2"></i>Conta</a></li>
+        <li>
+          <form action="{% url 'accounts:logout' %}" method="post" class="m-0">
+            {% csrf_token %}
+            <button type="submit" class="dropdown-item text-danger">
+              <i class="bi bi-box-arrow-right me-2"></i>Sair
+            </button>
+          </form>
+        </li>
+      </ul>
+    </div>
+  </div>
+</header>

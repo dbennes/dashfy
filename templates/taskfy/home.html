@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% load humanize %}
+{% block title %}Taskfy - Base real{% endblock %}
+
+{% block content %}
+<div class="dx-dashboard">
+  <section class="dx-hero">
+    <div class="dx-hero-main">
+      <div class="dx-hero-eyebrow">TASKFY / PostgreSQL</div>
+      <h1 class="dx-hero-title">JobCards and field execution control</h1>
+      <p class="dx-hero-sub">
+        Base real: {{ source.source_name }}{% if not source.available %} indisponivel{% endif %}
+      </p>
+    </div>
+    <div class="dx-hero-actions">
+      <a class="dx-btn dx-btn-primary" href="{{ source.base_url }}/" target="_blank">
+        <i class="bi bi-box-arrow-up-right"></i> Abrir Taskfy
+      </a>
+      <a class="dx-btn" href="{% url 'taskfy:task_list' %}">
+        <i class="bi bi-table"></i> JobCards
+      </a>
+      <a class="dx-btn" href="{% url 'taskfy:kanban' %}">
+        <i class="bi bi-columns-gap"></i> Status board
+      </a>
+    </div>
+  </section>
+
+  {% if not source.available %}
+    <div class="app-alert alert-danger">{{ source.error }}</div>
+  {% endif %}
+
+  <section class="dx-procure-strip">
+    <div class="dx-pc dx-pc-good">
+      <div class="dx-pc-icon"><i class="bi bi-card-checklist"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">JobCards</div>
+        <div class="dx-pc-value">{{ kpis.total|default:0|intcomma }}</div>
+      </div>
+    </div>
+    <div class="dx-pc dx-pc-info">
+      <div class="dx-pc-icon"><i class="bi bi-activity"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">Active</div>
+        <div class="dx-pc-value">{{ kpis.active|default:0|intcomma }}</div>
+      </div>
+    </div>
+    <div class="dx-pc dx-pc-muted">
+      <div class="dx-pc-icon"><i class="bi bi-check2-circle"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">Completion</div>
+        <div class="dx-pc-value">{{ kpis.completion_pct|default:0 }}<span class="dx-pc-unit">%</span></div>
+      </div>
+    </div>
+    <div class="dx-pc dx-pc-warn">
+      <div class="dx-pc-icon"><i class="bi bi-calendar-week"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">Schedule activities</div>
+        <div class="dx-pc-value">{{ kpis.schedule_activities|default:0|intcomma }}</div>
+      </div>
+    </div>
+    <div class="dx-pc dx-pc-danger">
+      <div class="dx-pc-icon"><i class="bi bi-exclamation-triangle"></i></div>
+      <div class="dx-pc-body">
+        <div class="dx-pc-label">Overdue</div>
+        <div class="dx-pc-value">{{ kpis.overdue|default:0|intcomma }}</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="row g-3">
+    <div class="col-xl-4">
+      <div class="dx-card">
+        <div class="dx-card-head">
+          <div><div class="dx-card-eyebrow">JobCards</div><h2 class="dx-card-title">Status</h2></div>
+        </div>
+        <div class="dx-card-body"><div id="chart-status"></div></div>
+      </div>
+    </div>
+    <div class="col-xl-4">
+      <div class="dx-card">
+        <div class="dx-card-head">
+          <div><div class="dx-card-eyebrow">Execution</div><h2 class="dx-card-title">Discipline codes</h2></div>
+        </div>
+        <div class="dx-card-body"><div id="chart-disciplines"></div></div>
+      </div>
+    </div>
+    <div class="col-xl-4">
+      <div class="dx-card">
+        <div class="dx-card-head">
+          <div><div class="dx-card-eyebrow">Progress</div><h2 class="dx-card-title">Completion</h2></div>
+        </div>
+        <div class="dx-card-body"><div id="chart-completion"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dx-card">
+    <div class="dx-card-head">
+      <div>
+        <div class="dx-card-eyebrow">Latest records</div>
+        <h2 class="dx-card-title">JobCards recentes</h2>
+      </div>
+      <a class="dx-link-static" href="{% url 'taskfy:task_list' %}">Ver todos</a>
+    </div>
+    <div class="dx-table-wrap">
+      <table class="dx-table">
+        <thead><tr><th>JobCard</th><th>Disc.</th><th>Activity</th><th>Status</th><th>Finish</th><th>Tag</th></tr></thead>
+        <tbody>
+          {% for jc in source.recent_jobcards %}
+            <tr>
+              <td class="dx-mono">{{ jc.job_card_number }}</td>
+              <td><span class="dx-pill">{{ jc.discipline_code|default:"-" }}</span></td>
+              <td>{{ jc.activity_id|default:"-" }}</td>
+              <td><span class="dx-status">{{ jc.jobcard_status|default:"-" }}</span></td>
+              <td class="dx-mono">{{ jc.finish|default:"-" }}</td>
+              <td>{{ jc.tag|default:"-"|truncatechars:54 }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty-state">Nenhuma JobCard encontrada na base real.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  renderShellChart('chart-status', {{ chart_status|safe }});
+  renderShellChart('chart-disciplines', {{ chart_disciplines|safe }});
+  renderShellChart('chart-completion', {{ chart_completion|safe }});
+});
+</script>
+{% endblock %}
