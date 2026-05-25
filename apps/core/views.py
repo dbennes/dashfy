@@ -8,8 +8,9 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
@@ -24,6 +25,89 @@ from apps.exports.models import ExportLog
 from apps.core import real_sources
 
 from .models import Announcement, EngineeringStatusImport
+
+
+def _dashboard_filters_from_request(request):
+    return {
+        "date_from": request.GET.get("date_from", ""),
+        "date_to": request.GET.get("date_to", ""),
+        "discipline": request.GET.get("discipline", ""),
+        "engineering_discipline": request.GET.get("engineering_discipline", ""),
+        "engineering_status": request.GET.get("engineering_status", ""),
+        "engineering_issue_status": request.GET.get("engineering_issue_status", ""),
+        "engineering_revision": request.GET.get("engineering_revision", ""),
+        "engineering_responsible": request.GET.get("engineering_responsible", ""),
+        "engineering_q": request.GET.get("engineering_q", ""),
+        "supply_priority": request.GET.get("supply_priority", ""),
+        "supply_drawing_q": request.GET.get("supply_drawing_q", ""),
+        "supply_revision": request.GET.get("supply_revision", ""),
+        "supply_discipline": request.GET.get("supply_discipline", ""),
+        "supply_line": request.GET.get("supply_line", ""),
+        "supply_table": request.GET.get("supply_table", ""),
+        "supply_page": request.GET.get("supply_page", ""),
+        "supply_item": request.GET.get("supply_item", ""),
+        "supply_family": request.GET.get("supply_family", ""),
+        "supply_code_q": request.GET.get("supply_code_q", ""),
+        "supply_description_q": request.GET.get("supply_description_q", ""),
+        "supply_fab_min": request.GET.get("supply_fab_min", ""),
+        "supply_erection_min": request.GET.get("supply_erection_min", ""),
+        "campaign": request.GET.get("campaign", ""),
+        "contract_week": request.GET.get("contract_week", ""),
+        "min_readiness": request.GET.get("min_readiness", ""),
+    }
+
+
+def _material_row_column_text(row, column):
+    if column == "drawing":
+        return row.get("drawing_number") or row.get("original_filename") or "-"
+    if column == "requested":
+        return f"{row.get('requested_qty') or 0} {row.get('unit') or ''}"
+    if column == "allocated":
+        return f"{row.get('allocated_qty') or 0} {row.get('unit') or ''}"
+    if column == "missing":
+        return f"{row.get('missing_qty') or 0} {row.get('unit') or ''}"
+    if column == "stock":
+        if row.get("stock_free_na"):
+            return "n/a"
+        return f"{row.get('stock_free_qty') or 0} {row.get('unit') or ''}"
+    if column == "po":
+        return row.get("po_covering") or "No linked PO"
+
+    field_map = {
+        "priority": "priority",
+        "revision": "revision",
+        "discipline": "discipline",
+        "line": "line",
+        "table": "table_name",
+        "page": "page_number",
+        "item": "item_number",
+        "family": "family",
+        "code": "cpmtocode",
+        "description": "description",
+    }
+    field = field_map.get(column)
+    if not field:
+        return ""
+    value = row.get(field)
+    return "-" if value in (None, "") else str(value)
+
+
+def _material_row_numeric_value(row, column):
+    field_map = {
+        "priority": "priority",
+        "page": "page_number",
+        "requested": "requested_qty",
+        "allocated": "allocated_qty",
+        "missing": "missing_qty",
+        "stock": "stock_free_qty",
+    }
+    field = field_map.get(column)
+    if not field:
+        return 0.0
+    try:
+        return float(row.get(field) or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 @login_required
@@ -82,33 +166,7 @@ def home_view(request):
         last_seen__gte=now - timezone.timedelta(hours=24)
     ).count()
     total_users = User.objects.filter(is_active=True).count()
-    dashboard_filters = {
-        "date_from": request.GET.get("date_from", ""),
-        "date_to": request.GET.get("date_to", ""),
-        "discipline": request.GET.get("discipline", ""),
-        "engineering_discipline": request.GET.get("engineering_discipline", ""),
-        "engineering_status": request.GET.get("engineering_status", ""),
-        "engineering_issue_status": request.GET.get("engineering_issue_status", ""),
-        "engineering_revision": request.GET.get("engineering_revision", ""),
-        "engineering_responsible": request.GET.get("engineering_responsible", ""),
-        "engineering_q": request.GET.get("engineering_q", ""),
-        "supply_priority": request.GET.get("supply_priority", ""),
-        "supply_drawing_q": request.GET.get("supply_drawing_q", ""),
-        "supply_revision": request.GET.get("supply_revision", ""),
-        "supply_discipline": request.GET.get("supply_discipline", ""),
-        "supply_line": request.GET.get("supply_line", ""),
-        "supply_table": request.GET.get("supply_table", ""),
-        "supply_page": request.GET.get("supply_page", ""),
-        "supply_item": request.GET.get("supply_item", ""),
-        "supply_family": request.GET.get("supply_family", ""),
-        "supply_code_q": request.GET.get("supply_code_q", ""),
-        "supply_description_q": request.GET.get("supply_description_q", ""),
-        "supply_fab_min": request.GET.get("supply_fab_min", ""),
-        "supply_erection_min": request.GET.get("supply_erection_min", ""),
-        "campaign": request.GET.get("campaign", ""),
-        "contract_week": request.GET.get("contract_week", ""),
-        "min_readiness": request.GET.get("min_readiness", ""),
-    }
+    dashboard_filters = _dashboard_filters_from_request(request)
     manager = real_sources.management_dashboard(dashboard_filters)
     charts_payload = manager.get("charts", {})
 
@@ -148,6 +206,91 @@ def home_view(request):
         },
     }
     return render(request, "core/home.html", context)
+
+
+@login_required
+def material_rows_page_view(request):
+    """Return one server-side page of DATAFY material rows for the heavy supply grid."""
+    dashboard_filters = _dashboard_filters_from_request(request)
+    manager = real_sources.management_dashboard(dashboard_filters)
+    rows = list(manager.get("material", {}).get("material_rows") or [])
+    valid_columns = {
+        "priority", "drawing", "revision", "discipline", "line", "table", "page", "item",
+        "family", "code", "description", "requested", "allocated", "missing", "stock", "po",
+    }
+    numeric_columns = {"priority", "page", "requested", "allocated", "missing", "stock"}
+
+    status = request.GET.get("status", "").strip()
+    if status:
+        rows = [row for row in rows if str(row.get("status") or "") == status]
+
+    query = request.GET.get("q", "").strip().lower()
+    if query:
+        def row_text(row):
+            fields = (
+                "priority", "drawing_number", "original_filename", "revision",
+                "discipline", "line", "table_name", "page_number", "item_number",
+                "family", "cpmtocode", "description", "po_covering",
+            )
+            return " ".join(str(row.get(field) or "") for field in fields).lower()
+        rows = [row for row in rows if query in row_text(row)]
+
+    for column in valid_columns:
+        contains_value = request.GET.get(f"cf_{column}", "").strip().lower()
+        if contains_value:
+            rows = [
+                row for row in rows
+                if contains_value in _material_row_column_text(row, column).lower()
+            ]
+
+        exact_value = request.GET.get(f"cs_{column}", "").strip().lower()
+        if exact_value:
+            rows = [
+                row for row in rows
+                if _material_row_column_text(row, column).lower() == exact_value
+            ]
+
+    sort_column = request.GET.get("sort_col", "").strip()
+    sort_dir = -1 if request.GET.get("sort_dir") == "-1" else 1
+    if sort_column in valid_columns:
+        if sort_column in numeric_columns:
+            rows.sort(
+                key=lambda row: _material_row_numeric_value(row, sort_column),
+                reverse=sort_dir < 0,
+            )
+        else:
+            rows.sort(
+                key=lambda row: _material_row_column_text(row, sort_column).casefold(),
+                reverse=sort_dir < 0,
+            )
+
+    try:
+        page = max(1, int(request.GET.get("page", "1")))
+    except ValueError:
+        page = 1
+    try:
+        page_size = int(request.GET.get("page_size", "300"))
+    except ValueError:
+        page_size = 300
+    page_size = max(100, min(page_size, 600))
+
+    total = len(rows)
+    max_page = max(1, (total + page_size - 1) // page_size)
+    page = min(page, max_page)
+    start = (page - 1) * page_size
+    end = min(start + page_size, total)
+    page_rows = rows[start:end]
+    html = render_to_string("core/partials/material_rows.html", {"rows": page_rows})
+    return JsonResponse({
+        "html": html,
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "start": start + 1 if total else 0,
+        "end": end,
+        "has_prev": page > 1,
+        "has_next": end < total,
+    })
 
 
 @login_required

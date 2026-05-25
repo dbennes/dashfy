@@ -1664,6 +1664,27 @@ button.c3-export-link {
   color: var(--fg-0);
   font-size: 12px;
 }
+.cockpit-v3 .c3-grid-pager {
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.cockpit-v3 .c3-grid-pager[hidden] { display: none; }
+.cockpit-v3 .c3-grid-pager .c3-grid-tool {
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+.cockpit-v3 .c3-grid-pager .c3-grid-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 .cockpit-v3 .c3-col-menu { position: relative; }
 .cockpit-v3 .c3-col-menu summary { list-style: none; }
 .cockpit-v3 .c3-col-panel {
