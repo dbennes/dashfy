@@ -352,6 +352,80 @@ def _po_row_has_yard_actual(row: dict[str, Any]) -> bool:
     return any(value <= today for value in candidates)
 
 
+def _po_delivery_date_iso(row: dict[str, Any]) -> str:
+    raw_payload = row.get("procurement_plan_payload")
+    payload = {}
+    if raw_payload:
+        try:
+            payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        except (TypeError, ValueError):
+            payload = {}
+    timeline = payload.get("timeline") if isinstance(payload, dict) else []
+    for kind in ("Actual", "Forecast", "Planned"):
+        dates = []
+        for item in timeline or []:
+            if not isinstance(item, dict):
+                continue
+            stage_text = str(item.get("stage") or "").lower()
+            kind_text = str(item.get("kind") or "").lower()
+            if "delivery" not in stage_text or "yard" not in stage_text or kind_text != kind.lower():
+                continue
+            iso = _expected_date_iso(item.get("date"))
+            if iso:
+                dates.append(iso)
+        if dates:
+            return sorted(dates)[-1]
+
+    stage_text = str(row.get("procurement_plan_stage") or "").lower()
+    if "delivery" in stage_text and "yard" in stage_text:
+        iso = _expected_date_iso(row.get("procurement_plan_date"))
+        if iso:
+            return iso
+    return _expected_date_iso(row.get("procurement_plan_date"))
+
+
+def datafy_po_delivery_lookup(po_numbers: list[str] | set[str] | tuple[str, ...]) -> dict[str, dict[str, str]]:
+    clean = []
+    seen = set()
+    for value in po_numbers or []:
+        po = str(value or "").strip()
+        key = po.upper()
+        if not po or key in seen or key in {"NO LINKED PO", "COVERED", "-"}:
+            continue
+        seen.add(key)
+        clean.append(po)
+    if not clean:
+        return {}
+
+    placeholders = ", ".join("?" for _ in clean)
+    try:
+        with _datafy_conn() as conn:
+            rows = _rows(conn.cursor(), f"""
+                select po_number,
+                       procurement_plan_stage,
+                       procurement_plan_kind,
+                       procurement_plan_date,
+                       procurement_plan_payload
+                from core_purchaseorder
+                where po_number in ({placeholders})
+            """, tuple(clean))
+    except Exception:
+        return {}
+
+    output = {}
+    for row in rows:
+        po = str(row.get("po_number") or "").strip()
+        if not po:
+            continue
+        output[po.upper()] = {
+            "po": po,
+            "expected_date": _po_delivery_date_iso(row),
+            "stage": str(row.get("procurement_plan_stage") or ""),
+            "kind": str(row.get("procurement_plan_kind") or ""),
+        }
+    return output
+
+
 def _material_flow_summary(total: int, covered: int, at_aveon: int) -> dict[str, Any]:
     total = max(int(total or 0), 0)
     covered = max(int(covered or 0), 0)
@@ -555,6 +629,7 @@ def _supply_build_drawing_line_rows(
             "stage_yard_items": 0,
             "stage_yard_pending": 0,
             "families": set(),
+            "pending_families": set(),
             "lines": set(),
         })
         line = str(row.get("line") or "").strip()
@@ -608,6 +683,8 @@ def _supply_build_drawing_line_rows(
         family = str(row.get("family") or "").strip()
         if family and family != "-":
             group["families"].add(family)
+            if missing > 0:
+                group["pending_families"].add(family)
 
     output = []
     for index, group in enumerate(groups.values(), start=1):
@@ -649,6 +726,7 @@ def _supply_build_drawing_line_rows(
         group["lines_full"] = ", ".join(lines) if lines else "-"
         group["line"] = ", ".join(lines[:4]) + (f" +{len(lines) - 4}" if len(lines) > 4 else "") if lines else "-"
         group["families"] = ", ".join(sorted(group["families"])) or "-"
+        group["pending_families"] = ", ".join(sorted(group["pending_families"])) or "-"
         group.pop("lines", None)
         output.append(group)
 
@@ -673,6 +751,48 @@ def _supply_build_drawing_line_rows(
     return output[:limit]
 
 
+def _supply_enrich_drawing_line_families(
+    drawing_line_rows: list[dict[str, Any]],
+    material_rows: list[dict[str, Any]],
+) -> None:
+    pending_by_line_scope: dict[tuple[str, str], set[str]] = {}
+    all_by_line_scope: dict[tuple[str, str], set[str]] = {}
+    for row in material_rows:
+        line = str(row.get("line") or "").strip()
+        family = str(row.get("family") or "").strip()
+        if not line or line == "-" or not family or family == "-":
+            continue
+        scope = row.get("scope") or _supply_scope_from_table(row.get("table_name"))
+        if scope == "other":
+            continue
+        key = (str(scope), line)
+        all_by_line_scope.setdefault(key, set()).add(family)
+        try:
+            missing = float(row.get("missing_qty") or 0)
+        except (TypeError, ValueError):
+            missing = 0
+        if missing > 0:
+            pending_by_line_scope.setdefault(key, set()).add(family)
+
+    for row in drawing_line_rows:
+        scope = str(row.get("scope") or "")
+        lines = [
+            part.strip()
+            for part in str(row.get("lines_full") or row.get("line") or "").split(",")
+            if part.strip() and part.strip() != "-"
+        ]
+        pending_families: set[str] = set()
+        all_families: set[str] = set()
+        for line in lines:
+            key = (scope, line)
+            pending_families.update(pending_by_line_scope.get(key, set()))
+            all_families.update(all_by_line_scope.get(key, set()))
+        if pending_families:
+            row["pending_families"] = ", ".join(sorted(pending_families))
+        if all_families and str(row.get("families") or "-").strip() == "-":
+            row["families"] = ", ".join(sorted(all_families))
+
+
 def _supply_normalize_operational_payload(payload: dict[str, Any]) -> None:
     material_rows = payload.get("material_rows") or []
     status_counts = _supply_enrich_material_rows(material_rows)
@@ -684,6 +804,7 @@ def _supply_normalize_operational_payload(payload: dict[str, Any]) -> None:
     }
     drawing_source_rows = payload.get("material_scope_items") or material_rows
     payload["drawing_line_rows"] = _supply_build_drawing_line_rows(drawing_source_rows)
+    _supply_enrich_drawing_line_families(payload["drawing_line_rows"], material_rows)
 
 
 SUPPLY_CAMPAIGN_PALETTE = [
@@ -4511,7 +4632,14 @@ def _construction_datafy(filters: dict) -> dict:
             alloc as (
                 select a.material_item_id,
                        sum(a.qty_allocated) as allocated_qty,
-                       string_agg(distinct nullif(po.po_number, ''), ', ') as po_covering
+                       string_agg(distinct nullif(po.po_number, ''), ', ') as po_covering,
+                       min(po.procurement_plan_date) filter (where po.procurement_plan_date is not null) as po_expected_date,
+                       string_agg(distinct to_char(po.procurement_plan_date, 'YYYY-MM-DD'), ', ')
+                         filter (where po.procurement_plan_date is not null) as po_expected_dates,
+                       string_agg(
+                         distinct concat(nullif(po.po_number, ''), '::', coalesce(to_char(po.procurement_plan_date, 'YYYY-MM-DD'), '')),
+                         ';;'
+                       ) filter (where nullif(po.po_number, '') is not null) as po_delivery_pairs
                 from catalog_allocation a
                 left join catalog_stockpiece sp on sp.id = a.stock_piece_id
                 left join core_purchaseorderitem poi on poi.id = sp.po_item_id
@@ -4564,7 +4692,10 @@ def _construction_datafy(filters: dict) -> dict:
                        when ci.id is null then null
                        else coalesce(stock.stock_free_qty, 0)
                    end as stock_free_qty,
-                   coalesce(nullif(alloc.po_covering, ''), '') as po_covering
+                   coalesce(nullif(alloc.po_covering, ''), '') as po_covering,
+                   alloc.po_expected_date,
+                   coalesce(nullif(alloc.po_expected_dates, ''), '') as po_expected_dates,
+                   coalesce(nullif(alloc.po_delivery_pairs, ''), '') as po_delivery_pairs
             from core_document d
             join core_extractedtable t on t.document_id = d.id
             join core_materialitem mi on mi.table_id = t.id
@@ -4751,6 +4882,7 @@ def _construction_datafy(filters: dict) -> dict:
             row["yard_actual"] = 1 if material_id in material_yard_ids else 0
         material_status_counts = _supply_enrich_material_rows(material_rows, material_yard_ids, material_po_ids)
         drawing_line_rows = _supply_build_drawing_line_rows(material_scope_items)
+        _supply_enrich_drawing_line_families(drawing_line_rows, material_rows)
         supply_campaign_views = _supply_campaign_views(
             material_scope_items,
             material_scope_po_rows,

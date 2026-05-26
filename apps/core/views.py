@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from collections import Counter
+from datetime import date, datetime
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -108,6 +110,218 @@ def _material_row_numeric_value(row, column):
         return float(row.get(field) or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _supply_lookup_text(value):
+    return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
+
+
+def _supply_split_lookup_values(value):
+    output = []
+    for part in re.split(r"[,;\n]+", str(value or "")):
+        clean = re.sub(r"\s+\+\d+$", "", part).strip()
+        if clean and clean != "-":
+            output.append(clean)
+    return output
+
+
+def _supply_float_value(value):
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _supply_int_value(value, fallback=0):
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _supply_date_iso(value):
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y", "%m-%d-%Y"):
+        try:
+            return datetime.strptime(text[:10], fmt).date().isoformat()
+        except ValueError:
+            continue
+    return text[:10] if re.match(r"\d{4}-\d{2}-\d{2}", text) else text
+
+
+def _supply_po_delivery_pairs(value):
+    pairs = []
+    for part in str(value or "").split(";;"):
+        if not part.strip():
+            continue
+        po, _, expected = part.partition("::")
+        po = po.strip()
+        if not po:
+            continue
+        pairs.append({
+            "po": po,
+            "expected_date": _supply_date_iso(expected.strip()),
+        })
+    return pairs
+
+
+def _supply_material_po_numbers(row):
+    return [
+        value for value in _supply_split_lookup_values(row.get("po_covering"))
+        if _supply_lookup_text(value) not in {"", "-", "no linked po", "covered"}
+    ]
+
+
+def _supply_enrich_po_delivery(rows):
+    po_by_row = []
+    all_pos = set()
+    for row in rows:
+        pos = _supply_material_po_numbers(row)
+        po_by_row.append((row, pos))
+        all_pos.update(pos)
+    if not all_pos:
+        return
+
+    lookup = real_sources.datafy_po_delivery_lookup(all_pos)
+    if not lookup:
+        return
+    for row, pos in po_by_row:
+        pairs = [
+            lookup.get(po.upper())
+            for po in pos
+            if lookup.get(po.upper())
+        ]
+        if not pairs:
+            continue
+        if not row.get("po_delivery_pairs"):
+            row["po_delivery_pairs"] = ";;".join(
+                f"{pair.get('po') or ''}::{pair.get('expected_date') or ''}"
+                for pair in pairs
+                if pair.get("po")
+            )
+        dates = [
+            pair.get("expected_date")
+            for pair in pairs
+            if pair.get("expected_date")
+        ]
+        if dates:
+            if not row.get("po_expected_date"):
+                row["po_expected_date"] = dates[0]
+            if not row.get("po_expected_dates"):
+                row["po_expected_dates"] = ", ".join(dict.fromkeys(dates))
+
+
+def _supply_size_hint(row):
+    line = str(row.get("line") or "")
+    line_match = re.match(r'\s*(\d+(?:[.,]\d+)?)\s*"', line)
+    if line_match:
+        return f'{line_match.group(1).replace(",", ".")}"'
+
+    text = f"{row.get('description') or ''} {row.get('cpmtocode') or ''}"
+    desc_match = re.search(r'(?<!\d)(\d+(?:[.,]\d+)?\s*(?:"|in\b|inch\b|pol\b))', text, re.IGNORECASE)
+    if desc_match:
+        return desc_match.group(1).replace(" ", "")
+    return ""
+
+
+def _supply_material_match_tokens(row):
+    text = _supply_lookup_text(
+        " ".join(
+            str(row.get(field) or "")
+            for field in ("family", "cpmtocode", "description")
+        )
+    )
+    tokens = []
+
+    def add(*items):
+        for item in items:
+            if item and item not in tokens:
+                tokens.append(item)
+
+    if re.search(r"\bvalve\b|valvula", text):
+        add("VALVE")
+    if re.search(r"\bgasket\b|junta", text):
+        add("GASKET")
+    if re.search(r"stud\s*bolt|\bbolt\b|\bnut\b|parafuso|porca", text):
+        add("BOLT", "GENSEC")
+    if re.search(r"flangolet|flgol|weldolet|sockolet|\bolet\b", text):
+        add("OLET", "FLANGE")
+    elif re.search(r"\bflange\b|flanged|blind\s+flange", text):
+        add("FLANGE")
+    if re.search(r"trunnion|trunion|trunn|pipe support|support|shoe|guide|repad|base plate|attachment", text):
+        add("ATTACHMENT", "PCOMPONENT", "TRUNNION")
+    if re.search(r"\belbow\b", text):
+        add("ELBOW")
+    if re.search(r"\bbend\b", text):
+        add("BEND")
+    if re.search(r"\btee\b", text):
+        add("TEE")
+    if re.search(r"\bcap\b", text):
+        add("CAP")
+    if not tokens and re.search(r"\bpipe\b|\btube\b", text):
+        add("TUBE")
+    return tokens
+
+
+def _supply_is_3d_support_item(row):
+    text = _supply_lookup_text(
+        " ".join(
+            str(row.get(field) or "")
+            for field in ("family", "cpmtocode", "description")
+        )
+    )
+    return bool(re.search(
+        r"pipe support|shoe|guide|special support|trunnion|trunion|line stop|support",
+        text,
+    ))
+
+
+def _supply_3d_material_payload(row):
+    requested = _supply_float_value(row.get("requested_qty"))
+    allocated = _supply_float_value(row.get("allocated_qty"))
+    missing = _supply_float_value(row.get("missing_qty"))
+    stock = _supply_float_value(row.get("stock_free_qty"))
+    is_support_attention = _supply_is_3d_support_item(row)
+    return {
+        "material_item_id": row.get("material_item_id"),
+        "drawing": row.get("drawing_number") or row.get("original_filename") or "-",
+        "line": row.get("line") or "-",
+        "scope": row.get("scope") or "",
+        "scope_label": row.get("scope_label") or "",
+        "table": row.get("table_name") or "-",
+        "page": row.get("page_number"),
+        "item": row.get("item_number") or "-",
+        "family": row.get("family") or "",
+        "code": row.get("cpmtocode") or "",
+        "description": row.get("description") or "",
+        "requested_qty": requested,
+        "allocated_qty": allocated,
+        "missing_qty": missing,
+        "stock_free_qty": stock,
+        "stock_free_na": bool(row.get("stock_free_na")),
+        "unit": row.get("unit") or "",
+        "po": row.get("po_covering") or "",
+        "po_list": _supply_split_lookup_values(row.get("po_covering")),
+        "po_expected_date": _supply_date_iso(row.get("po_expected_date")),
+        "po_expected_dates": [
+            _supply_date_iso(value)
+            for value in _supply_split_lookup_values(row.get("po_expected_dates"))
+            if _supply_date_iso(value)
+        ],
+        "po_delivery_pairs": _supply_po_delivery_pairs(row.get("po_delivery_pairs")),
+        "status": row.get("status") or "",
+        "status_label": row.get("status_label") or "",
+        "size": _supply_size_hint(row),
+        "attention": is_support_attention,
+        "attention_label": "Support/trunnion only; not counted as missing material" if is_support_attention else "",
+        "match_tokens": [] if is_support_attention else _supply_material_match_tokens(row),
+    }
 
 
 @login_required
@@ -290,6 +504,98 @@ def material_rows_page_view(request):
         "end": end,
         "has_prev": page > 1,
         "has_next": end < total,
+    })
+
+
+@login_required
+def material_items_3d_view(request):
+    """Return the DATAFY material rows that should drive the 3D missing overlay."""
+    dashboard_filters = _dashboard_filters_from_request(request)
+    manager = real_sources.management_dashboard(dashboard_filters)
+    rows = [dict(row) for row in manager.get("material", {}).get("material_rows") or []]
+
+    drawing = _supply_lookup_text(request.GET.get("drawing", ""))
+    line_values = {
+        _supply_lookup_text(value)
+        for value in _supply_split_lookup_values(request.GET.get("line", ""))
+    }
+    line_values.discard("")
+    scope = _supply_lookup_text(request.GET.get("scope", ""))
+    status = _supply_lookup_text(request.GET.get("status", "missing")) or "missing"
+
+    if drawing:
+        rows = [
+            row for row in rows
+            if any(
+                drawing == candidate
+                or drawing in candidate
+                or candidate in drawing
+                for candidate in (
+                    _supply_lookup_text(row.get("drawing_number")),
+                    _supply_lookup_text(row.get("original_filename")),
+                )
+                if candidate
+            )
+        ]
+
+    if line_values:
+        rows = [
+            row for row in rows
+            if _supply_lookup_text(row.get("line")) in line_values
+        ]
+
+    if scope:
+        rows = [
+            row for row in rows
+            if _supply_lookup_text(row.get("scope")) == scope
+        ]
+
+    if status in {"missing", "pending"}:
+        rows = [
+            row for row in rows
+            if _supply_float_value(row.get("missing_qty")) > 0
+        ]
+
+    _supply_enrich_po_delivery(rows)
+
+    rows.sort(key=lambda row: (
+        _supply_int_value(row.get("priority"), 999999),
+        _supply_lookup_text(row.get("scope")),
+        _supply_int_value(row.get("page_number"), 0),
+        _supply_int_value(row.get("item_number"), 999999),
+        _supply_lookup_text(row.get("item_number")),
+        _supply_lookup_text(row.get("family")),
+        _supply_lookup_text(row.get("cpmtocode")),
+    ))
+
+    missing_rows = [
+        row for row in rows
+        if _supply_float_value(row.get("missing_qty")) > 0
+        and not _supply_is_3d_support_item(row)
+    ]
+    attention_rows = [
+        row for row in rows
+        if _supply_float_value(row.get("missing_qty")) > 0
+        and _supply_is_3d_support_item(row)
+    ]
+    payload_rows = [_supply_3d_material_payload(row) for row in rows[:80]]
+    missing_payload_rows = [_supply_3d_material_payload(row) for row in missing_rows]
+    families = sorted({row["family"] for row in missing_payload_rows if row.get("family")})
+    tokens = []
+    for row in missing_payload_rows:
+        for token in row.get("match_tokens") or []:
+            if token not in tokens:
+                tokens.append(token)
+
+    return JsonResponse({
+        "rows": payload_rows,
+        "total": len(rows),
+        "returned": len(payload_rows),
+        "families": families,
+        "tokens": tokens,
+        "missing_item_count": len(missing_rows),
+        "missing_qty_total": sum(_supply_float_value(row.get("missing_qty")) for row in missing_rows),
+        "attention_item_count": len(attention_rows),
     })
 
 

@@ -2639,6 +2639,34 @@ button.c3-export-link {
 }
 .cockpit-v3 .dx-project-tree-summary { padding: 7px 8px; margin: 0 0 8px; }
 .cockpit-v3 .dx-project-tree-empty { padding: 12px 8px; }
+.cockpit-v3 .dx-project-tree-summary.is-datafy-focus {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-color: rgba(249, 168, 212, 0.34);
+  background: linear-gradient(135deg, rgba(249, 168, 212, 0.12), rgba(56, 189, 248, 0.045));
+  color: rgba(251, 207, 232, 0.92);
+}
+.cockpit-v3 .dx-project-tree-summary.is-datafy-focus strong {
+  color: #f9a8d4;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cockpit-v3 .dx-project-tree-summary.is-datafy-focus span,
+.cockpit-v3 .dx-project-tree-summary.is-datafy-focus small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cockpit-v3 .dx-project-tree-summary.is-datafy-focus span {
+  color: var(--fg-1);
+}
+.cockpit-v3 .dx-project-tree-summary.is-datafy-focus small {
+  color: rgba(251, 207, 232, 0.72);
+}
 .cockpit-v3 .dx-project-tree-item {
   position: relative;
   width: 100%;
@@ -2686,6 +2714,19 @@ button.c3-export-link {
 }
 .cockpit-v3 .dx-project-tree-item.is-selected::before {
   background: var(--signal-cyan);
+}
+.cockpit-v3 .dx-project-tree-item.is-datafy-line {
+  border-color: rgba(125, 211, 252, 0.34);
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.14), rgba(255, 255, 255, 0.018));
+}
+.cockpit-v3 .dx-project-tree-item.is-datafy-component,
+.cockpit-v3 .dx-project-tree-item.is-datafy-component:hover {
+  border-color: rgba(249, 168, 212, 0.36);
+  background: linear-gradient(90deg, rgba(249, 168, 212, 0.16), rgba(255, 255, 255, 0.018));
+  box-shadow: inset 3px 0 0 #f9a8d4;
+}
+.cockpit-v3 .dx-project-tree-item.is-datafy-component::before {
+  background: rgba(249, 168, 212, 0.52);
 }
 .cockpit-v3 .dx-project-tree-caret {
   width: 18px;
@@ -2755,6 +2796,11 @@ button.c3-export-link {
   background: rgba(56, 189, 248, 0.12);
   color: var(--signal-cyan);
 }
+.cockpit-v3 .dx-project-tree-item.is-datafy-component em {
+  border-color: rgba(249, 168, 212, 0.34);
+  background: rgba(249, 168, 212, 0.14);
+  color: #f9a8d4;
+}
 .cockpit-v3 .dx-project-tree-item:focus-visible {
   outline: 1px solid rgba(56, 189, 248, 0.55);
   outline-offset: 1px;
@@ -2784,6 +2830,244 @@ button.c3-export-link {
   width: 100% !important;
   height: 100% !important;
 }
+.cockpit-v3 .dx-project-callouts {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.cockpit-v3 .dx-project-callout-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.cockpit-v3 .dx-project-callout-line {
+  stroke: #ef4444;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.72;
+  filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.30));
+}
+.cockpit-v3 .dx-project-callout-dot {
+  fill: #f9a8d4;
+  stroke: #ef4444;
+  stroke-width: 0.8;
+  opacity: 0.82;
+  vector-effect: non-scaling-stroke;
+}
+.cockpit-v3 .dx-project-callout-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.cockpit-v3 .dx-project-callout-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-height: 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px 6px;
+  background: rgba(10, 11, 13, 0.54);
+  border: 1px solid rgba(239, 68, 68, 0.38);
+  border-radius: var(--r-1);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.20);
+  opacity: 0.86;
+  transition: opacity .14s ease, background .14s ease, border-color .14s ease;
+}
+.cockpit-v3 .dx-project-callout-label:hover {
+  opacity: 1;
+  background: rgba(10, 11, 13, 0.82);
+  border-color: rgba(239, 68, 68, 0.64);
+}
+.cockpit-v3 .dx-project-callout-label strong,
+.cockpit-v3 .dx-project-callout-label small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cockpit-v3 .dx-project-callout-label strong {
+  color: #fca5a5;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.cockpit-v3 .dx-project-callout-label small {
+  color: rgba(254, 202, 202, 0.74);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+}
+.cockpit-v3 .dx-project-callout-label.is-partial {
+  border-color: rgba(250, 204, 21, 0.56);
+}
+.cockpit-v3 .dx-project-callout-label.is-partial strong {
+  color: #fde68a;
+}
+.cockpit-v3 .dx-project-material-panel {
+  position: absolute;
+  top: 22px;
+  right: 18px;
+  width: min(440px, 42%);
+  max-height: calc(100% - 44px);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px;
+  pointer-events: auto;
+  background: rgba(10, 11, 13, 0.78);
+  border: 1px solid rgba(239, 68, 68, 0.34);
+  border-radius: var(--r-1);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.26), inset 0 0 0 1px rgba(255, 255, 255, 0.025);
+  overflow: hidden;
+  opacity: 0.92;
+}
+.cockpit-v3 .dx-project-material-head {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.22);
+}
+.cockpit-v3 .dx-project-material-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cockpit-v3 .dx-project-material-title > span {
+  color: #f87171;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cockpit-v3 .dx-project-material-title > strong,
+.cockpit-v3 .dx-project-material-title > small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cockpit-v3 .dx-project-material-title > strong {
+  color: var(--fg-0);
+  font-size: 12px;
+  font-weight: 700;
+}
+.cockpit-v3 .dx-project-material-title > small {
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+.cockpit-v3 .dx-project-material-toggle {
+  display: none;
+}
+.cockpit-v3 .dx-project-material-note {
+  padding: 7px 8px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: var(--r-1);
+  background: rgba(56, 189, 248, 0.06);
+  color: rgba(186, 230, 253, 0.86);
+  font-size: 9px;
+  line-height: 1.35;
+}
+.cockpit-v3 .dx-project-material-table {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(239, 68, 68, 0.28) transparent;
+}
+.cockpit-v3 .dx-project-material-row {
+  display: grid;
+  grid-template-columns: 10px minmax(120px, 1.35fr) minmax(62px, 0.62fr) minmax(64px, 0.58fr) minmax(56px, 0.52fr) minmax(34px, auto);
+  align-items: start;
+  gap: 6px;
+  min-height: 27px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+.cockpit-v3 .dx-project-material-row:last-child {
+  border-bottom: 0;
+}
+.cockpit-v3 .dx-project-material-row.is-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: 24px;
+  padding: 5px 0 6px;
+  background: rgba(10, 11, 13, 0.96);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.26);
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.cockpit-v3 .dx-project-material-row strong,
+.cockpit-v3 .dx-project-material-row small,
+.cockpit-v3 .dx-project-material-row em,
+.cockpit-v3 .dx-project-material-row time,
+.cockpit-v3 .dx-project-material-row b {
+  min-width: 0;
+}
+.cockpit-v3 .dx-project-material-row strong {
+  color: var(--fg-1);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cockpit-v3 .dx-project-material-row small {
+  color: var(--fg-3);
+  font-size: 8px;
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cockpit-v3 .dx-project-material-row em,
+.cockpit-v3 .dx-project-material-row time {
+  color: rgba(203, 213, 225, 0.82);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-style: normal;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cockpit-v3 .dx-project-material-row time {
+  color: rgba(186, 230, 253, 0.82);
+}
+.cockpit-v3 .dx-project-material-row b {
+  color: var(--fg-0);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
+}
+.cockpit-v3 .dx-project-material-state {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--callout-state, var(--fg-3));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--callout-state, var(--fg-3)) 18%, transparent);
+}
+.cockpit-v3 .dx-project-material-row.is-available { --callout-state: #38bdf8; }
+.cockpit-v3 .dx-project-material-row.is-missing { --callout-state: #f9a8d4; }
+.cockpit-v3 .dx-project-material-row.is-partial { --callout-state: #facc15; }
+.cockpit-v3 .dx-project-material-row.is-attention { --callout-state: #facc15; }
+.cockpit-v3 .dx-project-material-row.is-attention strong { color: #fde68a; }
+.cockpit-v3 .dx-project-material-row.is-info { --callout-state: #94a3b8; }
 .cockpit-v3 .dx-project-viewer-empty {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -2808,6 +3092,54 @@ button.c3-export-link {
 .cockpit-v3 .dx-project-selection > span { font-family: var(--font-mono); font-size: 9px; color: var(--fg-3); text-transform: uppercase; letter-spacing: 0.08em; }
 .cockpit-v3 .dx-project-selection strong { color: var(--fg-0); font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cockpit-v3 .dx-project-selection small { color: var(--fg-3); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-v3 .dx-project-datafy-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+  min-width: 0;
+}
+.cockpit-v3 .dx-project-datafy-context span,
+.cockpit-v3 .dx-project-datafy-context strong,
+.cockpit-v3 .dx-project-datafy-context b {
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.cockpit-v3 .dx-project-datafy-context span {
+  color: var(--fg-2);
+  background: rgba(255, 255, 255, 0.025);
+}
+.cockpit-v3 .dx-project-datafy-context strong {
+  color: #f9a8d4;
+  border-color: rgba(249, 168, 212, 0.38);
+  background: rgba(249, 168, 212, 0.10);
+}
+.cockpit-v3 .dx-project-datafy-context em {
+  min-width: 0;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-style: normal;
+}
+.cockpit-v3 .dx-project-datafy-context b {
+  max-width: 124px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(251, 207, 232, 0.92);
+  border-color: rgba(249, 168, 212, 0.22);
+  background: rgba(249, 168, 212, 0.055);
+}
 .cockpit-v3 .dx-project-selection-actions {
   display: inline-flex;
   align-items: center;
@@ -2857,9 +3189,82 @@ button.c3-export-link {
   }
   .cockpit-v3 .dx-project-tree-panel { max-height: 320px; }
   .cockpit-v3 .dx-project-viewer { min-height: 460px; }
+  .cockpit-v3 .dx-project-callout-svg { opacity: 0.45; }
+  .cockpit-v3 .dx-project-material-panel {
+    left: 12px;
+    right: 12px;
+    top: 12px;
+    width: auto;
+    max-height: 185px;
+  }
   .cockpit-v3 .dx-project-selection { align-items: flex-start; flex-direction: column; }
   .cockpit-v3 .dx-project-selection-actions { width: 100%; }
   .cockpit-v3 .dx-project-selection-action { flex: 1 1 auto; }
+}
+@media (max-width: 700px) {
+  .cockpit-v3 .dx-project-viewer { min-height: 430px; }
+  .cockpit-v3 .dx-project-material-panel {
+    left: 8px;
+    right: 8px;
+    top: 8px;
+    width: auto;
+    max-height: min(70vh, 360px);
+    gap: 7px;
+    padding: 9px;
+  }
+  .cockpit-v3 .dx-project-material-panel.is-collapsed {
+    left: auto;
+    width: min(330px, calc(100% - 16px));
+    max-height: none;
+  }
+  .cockpit-v3 .dx-project-material-panel.is-collapsed .dx-project-material-note,
+  .cockpit-v3 .dx-project-material-panel.is-collapsed .dx-project-material-table {
+    display: none;
+  }
+  .cockpit-v3 .dx-project-material-head {
+    min-height: 42px;
+    padding-right: 92px;
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+  .cockpit-v3 .dx-project-material-title > strong {
+    font-size: 11px;
+  }
+  .cockpit-v3 .dx-project-material-title > small {
+    font-size: 8px;
+  }
+  .cockpit-v3 .dx-project-material-toggle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    height: 28px;
+    min-width: 82px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 0 8px;
+    border: 1px solid rgba(239, 68, 68, 0.34);
+    border-radius: var(--r-1);
+    background: rgba(15, 23, 42, 0.82);
+    color: #fecaca;
+    font-family: var(--font-mono);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .cockpit-v3 .dx-project-material-toggle i {
+    font-size: 10px;
+  }
+  .cockpit-v3 .dx-project-material-table {
+    max-height: 250px;
+  }
+  .cockpit-v3 .dx-project-material-row {
+    min-width: 430px;
+    grid-template-columns: 9px minmax(128px, 1.35fr) minmax(58px, 0.55fr) minmax(58px, 0.5fr) minmax(54px, 0.48fr) minmax(30px, auto);
+    gap: 5px;
+  }
 }
 
 /* Bootstrap icon fallback styling (bi-*) — keep them readable on dark */
@@ -3967,6 +4372,12 @@ button.c3-export-link {
 
   .cockpit-v3 #s03 .dx-project-tree-summary {
     margin-bottom: 5px;
+  }
+
+  .cockpit-v3 #s03 .dx-project-tree-summary.is-datafy-focus {
+    display: flex;
+    -webkit-line-clamp: unset;
+    overflow: visible;
   }
 
   .cockpit-v3 #s03 .dx-project-tree-list {
