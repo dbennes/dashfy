@@ -5,6 +5,7 @@ from .models import (
     DatafySupplySnapshot,
     EngineeringDisciplineStatus,
     EngineeringDocumentStatus,
+    EngineeringMonitorImport,
     EngineeringStatusImport,
     P6CurveImport,
     P6CurvePoint,
@@ -132,6 +133,36 @@ class EngineeringStatusImportAdmin(admin.ModelAdmin):
         "updated_at",
     )
     inlines = (EngineeringDisciplineStatusInline, EngineeringDocumentStatusInline)
+
+
+@admin.register(EngineeringMonitorImport)
+class EngineeringMonitorImportAdmin(admin.ModelAdmin):
+    list_display = (
+        "original_filename",
+        "is_active",
+        "monitored_document_count",
+        "discipline_count",
+        "excluded_count",
+        "imported_by",
+        "created_at",
+    )
+    list_filter = ("is_active", "created_at")
+    search_fields = ("original_filename", "file_hash")
+    readonly_fields = (
+        "original_filename",
+        "file_size",
+        "file_hash",
+        "imported_by",
+        "detail_sheet",
+        "document_count",
+        "monitored_document_count",
+        "discipline_count",
+        "excluded_count",
+        "payload",
+        "metadata",
+        "created_at",
+        "updated_at",
+    )
 
 
 @admin.register(DatafySupplySnapshot)

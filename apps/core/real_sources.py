@@ -15,7 +15,7 @@ from django.core.cache import cache
 from django.db.utils import OperationalError, ProgrammingError
 
 from apps.eclic.api_client import EclicAPIError, EclicClient
-from apps.core.models import DatafySupplySnapshot, EngineeringStatusImport, P6CurveImport
+from apps.core.models import DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport, P6CurveImport
 from apps.core.supply_snapshot_filters import (
     hash_supply_snapshot_filters,
     normalized_supply_snapshot_filters,
@@ -3410,6 +3410,216 @@ def _engineering_empty(error: str = "") -> dict:
     }
 
 
+_ENGINEERING_MONITOR_STATUS_ORDER = (
+    "NI",
+    "IFR",
+    "IFA",
+    "IFI",
+    "AFC 1",
+    "AFC 3",
+    "AFC CODE 3A",
+    "UNDER REVIEW",
+)
+
+
+def _engineering_monitor_empty(error: str = "") -> dict[str, Any]:
+    return {
+        "source": "AOL XLSX monitor",
+        "source_mode": "sqlite_monitor_missing",
+        "error": error,
+        "import_id": None,
+        "imported_at": None,
+        "source_file_name": "",
+        "detail_sheet": "",
+        "document_count": 0,
+        "raw_document_count": 0,
+        "excluded_count": 0,
+        "flow": {
+            "total": 0,
+            "afc": 0,
+            "afc_pct": 0,
+            "in_engineering": 0,
+            "in_engineering_pct": 0,
+            "issued": 0,
+            "issued_pct": 0,
+            "rev_r": 0,
+            "rev_a": 0,
+            "rev_c": 0,
+            "rev_other": 0,
+        },
+        "summary": [],
+        "status_rows": [],
+        "revision_rows": [],
+        "documents": [],
+        "metadata": {},
+    }
+
+
+def _engineering_monitor_pct(value: int | float, total: int | float) -> float:
+    return round(100 * float(value or 0) / float(total or 0), 2) if total else 0.0
+
+
+def _engineering_monitor_flow(docs: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(docs)
+    afc = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() in {"AFC 1", "AFC 3", "AFC CODE 3A"})
+    under_review = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() == "UNDER REVIEW")
+    issued = sum(
+        1 for doc in docs
+        if str(doc.get("document_status_effective") or "").upper() in {"ISSUED", "EMITIDO"}
+        or str(doc.get("status_bucket") or "").upper() in {"AFC 1", "AFC 3", "AFC CODE 3A", "IFI"}
+    )
+    rev_r = sum(1 for doc in docs if str(doc.get("revision_family") or "").upper() == "R")
+    rev_a = sum(1 for doc in docs if str(doc.get("revision_family") or "").upper() == "A")
+    rev_c = sum(1 for doc in docs if str(doc.get("revision_family") or "").upper() == "C")
+    rev_other = max(total - rev_r - rev_a - rev_c, 0)
+    return {
+        "total": total,
+        "afc": afc,
+        "afc_pct": _engineering_monitor_pct(afc, total),
+        "in_engineering": under_review,
+        "in_engineering_pct": _engineering_monitor_pct(under_review, total),
+        "issued": issued,
+        "issued_pct": _engineering_monitor_pct(issued, total),
+        "rev_r": rev_r,
+        "rev_a": rev_a,
+        "rev_c": rev_c,
+        "rev_other": rev_other,
+    }
+
+
+def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
+    try:
+        latest = EngineeringMonitorImport.objects.filter(is_active=True).first()
+    except (OperationalError, ProgrammingError):
+        return _engineering_monitor_empty("Engineering monitor table is not migrated.")
+    if latest is None:
+        return _engineering_monitor_empty("No active AOL engineering monitor import.")
+
+    payload = latest.payload or {}
+    raw_docs = list(payload.get("documents") or [])
+    monitored_docs = [doc for doc in raw_docs if doc.get("is_monitored")]
+    countable_docs = [doc for doc in monitored_docs if doc.get("is_countable")]
+
+    filtered_docs = list(countable_docs)
+    if filters.get("engineering_revision") in {"R", "A", "C"}:
+        filtered_docs = [doc for doc in filtered_docs if doc.get("revision_family") == filters["engineering_revision"]]
+    if filters.get("engineering_q"):
+        query = str(filters["engineering_q"]).lower()
+        filtered_docs = [
+            doc for doc in filtered_docs
+            if query in " ".join([
+                str(doc.get("document_number") or ""),
+                str(doc.get("title") or ""),
+                str(doc.get("discipline") or ""),
+                str(doc.get("source_discipline") or ""),
+                str(doc.get("revision") or ""),
+                str(doc.get("status_bucket") or ""),
+                str(doc.get("issue_status") or ""),
+                str(doc.get("last_transmittal_purpose") or ""),
+                str(doc.get("fabrication_ref") or ""),
+            ]).lower()
+        ]
+
+    total = len(filtered_docs)
+    discipline_order = payload.get("discipline_order") or []
+    if not discipline_order:
+        discipline_order = sorted({str(doc.get("discipline") or "-") for doc in monitored_docs})
+
+    status_counts = Counter(str(doc.get("status_bucket") or "") for doc in filtered_docs)
+    excluded_by_discipline: dict[str, Counter[str]] = {}
+    for doc in monitored_docs:
+        if doc.get("is_countable"):
+            continue
+        discipline = str(doc.get("discipline") or "-")
+        excluded_by_discipline.setdefault(discipline, Counter())[str(doc.get("excluded_reason") or "Excluded")] += 1
+
+    summary = []
+    revision_counts: Counter[tuple[str, str]] = Counter()
+    revision_distinct = set()
+    for doc in filtered_docs:
+        discipline = str(doc.get("discipline") or "-")
+        revision = str(doc.get("revision") or "")
+        family = str(doc.get("revision_family") or "")
+        if revision:
+            revision_distinct.add(revision)
+        if family in {"R", "A", "C"}:
+            revision_counts[(discipline, f"REV. {family}")] += 1
+
+    for discipline in discipline_order:
+        docs_for_discipline = [doc for doc in filtered_docs if doc.get("discipline") == discipline]
+        row_total = len(docs_for_discipline)
+        excluded_counts = excluded_by_discipline.get(discipline, Counter())
+        remarks = []
+        if excluded_counts:
+            remarks = [f"{reason}: {count}" for reason, count in sorted(excluded_counts.items())]
+        row = {
+            "discipline": discipline,
+            "total": row_total,
+            "pct_total": round(100 * row_total / total, 1) if total else 0,
+            "rev_a": sum(1 for doc in docs_for_discipline if doc.get("revision_family") == "A"),
+            "rev_r": sum(1 for doc in docs_for_discipline if doc.get("revision_family") == "R"),
+            "rev_c": sum(1 for doc in docs_for_discipline if doc.get("revision_family") == "C"),
+            "rev_other": sum(1 for doc in docs_for_discipline if doc.get("revision_family") not in {"R", "A", "C"}),
+            "not_issued": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "NI"),
+            "ifr": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "IFR"),
+            "ifa": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "IFA"),
+            "ifi": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "IFI"),
+            "afc_code1": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "AFC 1"),
+            "afc_code3": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "AFC 3"),
+            "afc_code3a": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "AFC CODE 3A"),
+            "under_review": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "UNDER REVIEW"),
+            "issued": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in {"AFC 1", "AFC 3", "AFC CODE 3A", "IFI"}),
+            "in_engineering": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "UNDER REVIEW"),
+            "excluded": sum(excluded_counts.values()),
+            "remarks": "; ".join(remarks),
+        }
+        summary.append(row)
+
+    summary.sort(key=lambda row: (-int(row.get("total") or 0), str(row.get("discipline") or "")))
+    status_order = payload.get("status_order") or list(_ENGINEERING_MONITOR_STATUS_ORDER)
+    status_rows = [
+        {"label": label, "value": int(status_counts.get(label, 0))}
+        for label in status_order
+        if status_counts.get(label, 0)
+    ]
+    revision_rows = [
+        {"label": discipline, "revision": revision, "total": count}
+        for (discipline, revision), count in sorted(revision_counts.items())
+    ]
+
+    status_rank = {label: index for index, label in enumerate(status_order)}
+    documents = sorted(
+        filtered_docs,
+        key=lambda doc: (
+            status_rank.get(str(doc.get("status_bucket") or ""), 99),
+            str(doc.get("discipline") or ""),
+            str(doc.get("document_number") or ""),
+        ),
+    )[:24]
+
+    return {
+        "source": "AOL XLSX monitor",
+        "source_mode": "sqlite_monitor",
+        "error": "",
+        "import_id": latest.pk,
+        "imported_at": latest.created_at,
+        "source_file_name": latest.original_filename,
+        "detail_sheet": latest.detail_sheet,
+        "document_count": total,
+        "raw_document_count": latest.document_count,
+        "excluded_count": latest.excluded_count,
+        "flow": _engineering_monitor_flow(filtered_docs),
+        "summary": summary,
+        "status_rows": status_rows,
+        "revision_rows": revision_rows,
+        "documents": documents,
+        "metadata": {
+            **(latest.metadata or {}),
+            "revision_count": len(revision_distinct),
+        },
+    }
+
+
 def _engineering_is_under_review_code(value: Any) -> bool:
     text = str(value or "").strip().upper()
     return text == "MABU" or "UNDER REVIEW" in text
@@ -4067,6 +4277,7 @@ def _construction_taskfy(filters: dict) -> dict:
         jobcards = dict(cur.fetchone())
 
     engineering = _engineering_from_ded_snapshot(filters) or _engineering_from_eclic_api(filters)
+    engineering_monitor = _engineering_monitor_from_snapshot(filters)
     engineering_docs = engineering["engineering_docs"]
     engineering_counts = engineering["engineering_counts"]
     engineering_summary = engineering["engineering_summary"]
@@ -4186,6 +4397,7 @@ def _construction_taskfy(filters: dict) -> dict:
         "engineering_revision_rows": engineering_revision_rows,
         "engineering_status_rows": engineering_status_rows,
         "engineering_documents": engineering_documents,
+        "engineering_monitor": engineering_monitor,
     }
 
 
@@ -5051,6 +5263,7 @@ def _construction_sqlite_snapshot(filters: dict) -> dict:
         engineering = _engineering_empty("No active DED SQLite snapshot.")
         engineering["source"] = "SQLite DED snapshot"
         engineering["source_mode"] = "sqlite_snapshot_missing"
+    engineering_monitor = _engineering_monitor_from_snapshot(filters)
     choices = {
         "disciplines": [],
         "campaigns": [],
@@ -5119,6 +5332,7 @@ def _construction_sqlite_snapshot(filters: dict) -> dict:
         "engineering_revision_rows": engineering.get("engineering_revision_rows", []),
         "engineering_status_rows": engineering.get("engineering_status_rows", []),
         "engineering_documents": engineering.get("engineering_documents", []),
+        "engineering_monitor": engineering_monitor,
     }
 
 

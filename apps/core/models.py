@@ -256,6 +256,41 @@ class EngineeringDocumentStatus(models.Model):
         return self.document_number
 
 
+class EngineeringMonitorImport(TimestampedModel):
+    """Imported engineering monitor workbook normalized from the AOL spreadsheet."""
+
+    original_filename = models.CharField(max_length=255)
+    file_size = models.PositiveIntegerField(default=0)
+    file_hash = models.CharField(max_length=64, db_index=True)
+    imported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="engineering_monitor_imports",
+    )
+    detail_sheet = models.CharField(max_length=120, default="Sheet1")
+    document_count = models.PositiveIntegerField(default=0)
+    monitored_document_count = models.PositiveIntegerField(default=0)
+    discipline_count = models.PositiveIntegerField(default=0)
+    excluded_count = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True, db_index=True)
+    payload = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["is_active", "-created_at"]),
+            models.Index(fields=["file_hash"]),
+        ]
+        verbose_name = "Importacao monitor engenharia"
+        verbose_name_plural = "Importacoes monitor engenharia"
+
+    def __str__(self) -> str:
+        return f"{self.original_filename} ({self.created_at:%d/%m/%Y %H:%M})"
+
+
 class DatafySupplySnapshot(TimestampedModel):
     """Snapshot da area S02/Suprimentos consumido do PostgreSQL do DATAFY."""
 

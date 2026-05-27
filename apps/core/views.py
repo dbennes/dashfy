@@ -21,6 +21,7 @@ from apps.accounts.models import User
 from apps.accounts.permissions import has_module_permission
 from apps.core.datafy_supply import refresh_supply_snapshot
 from apps.core.engineering_import import import_engineering_status_workbook
+from apps.core.engineering_monitor_import import import_engineering_monitor_workbook
 from apps.core.model_selection import SelectionTooLarge, selection_glb_path
 from apps.core.p6_import import import_p6_curves_workbook
 from apps.exports.models import ExportLog
@@ -250,9 +251,14 @@ def _supply_material_match_tokens(row):
         add("GASKET")
     if re.search(r"stud\s*bolt|\bbolt\b|\bnut\b|parafuso|porca", text):
         add("BOLT", "GENSEC")
+    instrument_like = bool(re.search(r"\binstrument\b|transmitter|datasheet|\b04-[a-z0-9-]+", text))
+    if re.search(r"\breducer\b|red\s+(?:ecc|conc)|\bptre[cn]?\b", text):
+        add("REDUCER")
     if re.search(r"flangolet|flgol|weldolet|sockolet|\bolet\b", text):
         add("OLET", "FLANGE")
-    elif re.search(r"\bflange\b|flanged|blind\s+flange", text):
+    elif re.search(r"\bflange\b|blind\s+flange", text) or (
+        not instrument_like and re.search(r"flanged", text)
+    ):
         add("FLANGE")
     if re.search(r"trunnion|trunion|trunn|pipe support|support|shoe|guide|repad|base plate|attachment", text):
         add("ATTACHMENT", "PCOMPONENT", "TRUNNION")
@@ -670,6 +676,35 @@ def import_engineering_status_view(request):
             ),
         )
     return redirect(reverse("core:home") + "#s01")
+
+
+@login_required
+@require_POST
+def import_engineering_monitor_view(request):
+    """Import the duplicated engineering monitor XLSX without replacing DED engineering."""
+    if not getattr(request.user, "is_admin", False):
+        raise PermissionDenied("Somente administradores podem importar o monitor de engenharia.")
+
+    upload = request.FILES.get("engineering_monitor_file")
+    if not upload:
+        messages.error(request, "Selecione o arquivo XLSX do monitor de engenharia antes de importar.")
+        return redirect(reverse("core:home") + "#s01-monitor")
+
+    try:
+        batch = import_engineering_monitor_workbook(upload, imported_by=request.user)
+    except Exception as exc:
+        messages.error(request, f"Falha ao importar monitor de engenharia: {exc}")
+    else:
+        messages.success(
+            request,
+            (
+                "Monitor de engenharia importado para a base do sistema: "
+                f"{batch.monitored_document_count} documentos monitorados, "
+                f"{batch.discipline_count} disciplinas e "
+                f"{batch.excluded_count} linhas fora da contagem."
+            ),
+        )
+    return redirect(reverse("core:home") + "#s01-monitor")
 
 
 def _engineering_export_afc_code(value) -> str:

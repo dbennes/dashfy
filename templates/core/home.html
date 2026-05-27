@@ -500,6 +500,171 @@
   </div>
 
   {% endwith %}
+
+  {% with monitor=manager.construction.engineering_monitor %}
+  <div id="s01-monitor" class="c3-monitor-block">
+    <div class="section-head c3-subsection-head">
+      <div>
+        <span class="tag">S01B · Engineering Monitor</span>
+        <h2>AOL document status monitor</h2>
+      </div>
+      <div class="meta p6-source-meta c3-meta-inline">
+        <div class="c3-meta-line">
+          <b>{{ monitor.flow.total|default:0|intcomma }}</b> monitored docs · <b>{{ monitor.summary|length }}</b> disciplines
+          {% if monitor.source_mode == "sqlite_monitor" %}
+            · AOL XLSX · import #{{ monitor.import_id }} · {{ monitor.imported_at|date:"d/m/Y H:i" }}
+          {% else %}
+            · {{ monitor.error|default:"No active AOL monitor import" }}
+          {% endif %}
+          {% if monitor.source_file_name %}
+            · {{ monitor.source_file_name }} · {{ monitor.detail_sheet|default:"Sheet1" }}
+          {% endif %}
+        </div>
+        {% if request.user.is_admin %}
+          <form class="p6-import-form" action="{% url 'core:import_engineering_monitor' %}" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <label class="p6-import-btn" title="Import AOL engineering monitor XLSX">
+              <input type="file" name="engineering_monitor_file" accept=".xlsx,.xlsm" onchange="this.form.submit()">
+              <span>Import Monitor</span>
+            </label>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% with mf=monitor.flow %}
+    <div class="kpi-strip">
+      <div class="kpi">
+        <div class="lbl"><span class="marker"></span><span>Documents</span></div>
+        <div class="val">{{ mf.total|default:0|intcomma }}</div>
+        <div class="sub">Monitored engineering documents</div>
+      </div>
+      <div class="kpi kpi-green">
+        <div class="lbl"><span class="marker"></span><span>AFC status</span></div>
+        <div class="val">{{ mf.afc_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+        <div class="sub">{{ mf.afc|default:0|intcomma }} AFC / AFC 3A documents</div>
+      </div>
+      <div class="kpi kpi-amber">
+        <div class="lbl"><span class="marker"></span><span>Under Review</span></div>
+        <div class="val">{{ mf.in_engineering_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+        <div class="sub">{{ mf.in_engineering|default:0|intcomma }} MABU under review</div>
+      </div>
+      <div class="kpi kpi-cyan">
+        <div class="lbl"><span class="marker"></span><span>Issued / IFI</span></div>
+        <div class="val">{{ mf.issued_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+        <div class="sub">{{ mf.issued|default:0|intcomma }} classified as issued</div>
+      </div>
+    </div>
+
+    <div class="row-2 c3-engineering-layout">
+      <div class="card">
+        <div class="card-head">
+          <div class="lhs">
+            <span class="tag">REVISIONS</span>
+            <h3>Monitor documents by revision</h3>
+          </div>
+          <div class="rhs">DOCS · R* · A* · C*</div>
+        </div>
+        <div class="card-body flush">
+          {% if mf.total %}
+          <div class="barchart">
+            <div class="yaxis">
+              <span>{{ mf.total|intcomma }}</span>
+              <span>{% widthratio mf.total 4 3 %}</span>
+              <span>{% widthratio mf.total 2 1 %}</span>
+              <span>{% widthratio mf.total 4 1 %}</span>
+              <span>0</span>
+            </div>
+            <div class="plot">
+              <div class="bar is-total" style="--h: 100%"><span class="dlabel">{{ mf.total|intcomma }}</span></div>
+              <div class="bar is-r" style="--h: {% widthratio mf.rev_r mf.total 100 %}%"><span class="dlabel">{{ mf.rev_r|default:0|intcomma }}</span></div>
+              <div class="bar is-a" style="--h: {% widthratio mf.rev_a mf.total 100 %}%"><span class="dlabel">{{ mf.rev_a|default:0|intcomma }}</span></div>
+              <div class="bar is-c" style="--h: {% widthratio mf.rev_c mf.total 100 %}%"><span class="dlabel">{{ mf.rev_c|default:0|intcomma }}</span></div>
+            </div>
+            <div class="xaxis">
+              <span>DOCS</span><span>R</span><span>A</span><span>C · AFC</span>
+            </div>
+          </div>
+          <div class="legend">
+            <span><i style="background: var(--fg-0)"></i>Total</span>
+            <span><i style="background: var(--signal-cyan)"></i>Rev R — preliminary</span>
+            <span><i style="background: var(--signal-amber)"></i>Rev A — issued</span>
+            <span><i style="background: var(--signal-green)"></i>Rev C — AFC</span>
+          </div>
+          {% else %}
+          <div class="card-body" style="text-align:center; color: var(--fg-3); padding: var(--s-5);">No AOL monitor data imported.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="lhs">
+            <span class="tag">DOCS</span>
+            <h3>Monitor status by discipline</h3>
+          </div>
+          <div class="rhs"><b>{{ monitor.summary|length }}</b> disciplines</div>
+        </div>
+        <div class="card-body flush">
+          <div class="scroll-y c3-discipline-scroll c3-monitor-scroll" style="--max-h: 360px">
+            <table class="tbl c3-monitor-table">
+              <thead>
+                <tr>
+                  <th>Discipline</th>
+                  <th class="num">Docs</th>
+                  <th class="num">%</th>
+                  <th class="num">NI</th>
+                  <th class="num">IFR</th>
+                  <th class="num">IFA</th>
+                  <th class="num">IFI</th>
+                  <th class="num">AFC 1</th>
+                  <th class="num">AFC 3</th>
+                  <th class="num">AFC CODE 3A</th>
+                  <th class="num">UNDER REVIEW</th>
+                  <th class="num">Obs.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in monitor.summary %}
+                  <tr>
+                    <td><span class="pill">{{ row.discipline }}</span></td>
+                    <td class="num"><b>{{ row.total|intcomma }}</b></td>
+                    <td class="num dim">{{ row.pct_total|floatformat:1 }}%</td>
+                    <td class="num"><span class="rev-tag r">{{ row.not_issued|default:0 }}</span></td>
+                    <td class="num"><span class="rev-tag r">{{ row.ifr|default:0 }}</span></td>
+                    <td class="num"><span class="rev-tag a">{{ row.ifa|default:0 }}</span></td>
+                    <td class="num"><span class="rev-tag r">{{ row.ifi|default:0 }}</span></td>
+                    <td class="num"><span class="rev-tag c">{{ row.afc_code1|default:0 }}</span></td>
+                    <td class="num"><span class="rev-tag a">{{ row.afc_code3|default:0 }}</span></td>
+                    <td class="num"><span class="rev-tag code3a">{{ row.afc_code3a|default:0 }}</span></td>
+                    <td class="num"><span class="rev-tag c">{{ row.under_review|default:0 }}</span></td>
+                    <td class="num c3-note-cell">
+                      {% if row.remarks %}
+                        <button class="c3-note-popover" type="button" aria-label="Monitor note for {{ row.discipline }}" aria-expanded="false">
+                          <i class="bi bi-chat-left-text"></i>
+                          <span class="c3-note-tooltip" role="tooltip">
+                            <b>{{ row.discipline }}</b>
+                            <small>Monitor note</small>
+                            <em>{{ row.remarks }}</em>
+                          </span>
+                        </button>
+                      {% else %}
+                        <span class="c3-note-empty" aria-label="No note"><i class="bi bi-chat-left-text"></i></span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                {% empty %}
+                  <tr><td colspan="12" style="text-align:center; color:var(--fg-3); padding: var(--s-4);">No monitor documents.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endwith %}
+  </div>
+  {% endwith %}
 </section>
 
 {# ===== S02 — SUPPLY ===== #}

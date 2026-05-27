@@ -9,6 +9,7 @@ urlpatterns = [
     path("search/", views.search_view, name="search"),
     path("p6-curves/import/", views.import_p6_curves_view, name="import_p6_curves"),
     path("engineering-status/import/", views.import_engineering_status_view, name="import_engineering_status"),
+    path("engineering-monitor/import/", views.import_engineering_monitor_view, name="import_engineering_monitor"),
     path("engineering-status/export/", views.export_engineering_status_view, name="export_engineering_status"),
     path("datafy-supply/refresh/", views.refresh_datafy_supply_view, name="refresh_datafy_supply"),
     path("datafy-supply/material-rows/", views.material_rows_page_view, name="material_rows_page"),

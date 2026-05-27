@@ -1607,16 +1607,18 @@
       const tokens = new Set();
       const supportLike = /support|suport|shoe|guide|trunnion|trunion|trunn|repad|base plate|attachment/.test(text);
       const flangoletLike = /flangolet|flgol/.test(text);
+      const instrumentLike = /\binstrument\b|transmitter|datasheet|\b04-[a-z0-9-]+/.test(text);
       if (/\bvalve\b/.test(text)) tokens.add('VALVE');
       if (/\bgasket\b|junta/.test(text)) tokens.add('GASKET');
       if (/stud\s*bolt|\bbolt\b|\bnut\b|parafuso|porca/.test(text)) {
         tokens.add('BOLT');
         tokens.add('GENSEC');
       }
+      if (/\breducer\b|red\s+(?:ecc|conc)|\bptre[cn]\b/.test(text)) tokens.add('REDUCER');
       if (/\bolet\b|weldolet|sockolet/.test(text) || flangoletLike) {
         tokens.add('OLET');
         tokens.add('FLANGE');
-      } else if (/\bflange\b|flanged|blind flange/.test(text)) {
+      } else if (/\bflange\b|blind flange/.test(text) || (!instrumentLike && /flanged/.test(text))) {
         tokens.add('FLANGE');
       }
       if (/\belbow\b/.test(text)) tokens.add('ELBOW');
@@ -1660,8 +1662,103 @@
       if (tokens.length === 1 && tokens[0] === 'TUBE') return false;
       return true;
     };
+    const datafyMaterialGroupKey = item => {
+      const materialKey = compactToken([
+        item?.code,
+        item?.cpmtocode,
+        item?.description,
+        item?.family,
+      ].filter(Boolean).join('|'));
+      return materialKey || String(item?.material_item_id || '');
+    };
+    const pushUniqueDatafyText = (target, value) => {
+      const values = Array.isArray(value) ? value : String(value || '').split(/[,;]+/);
+      values.forEach(raw => {
+        const text = String(raw || '').trim();
+        if (!text || text === '-') return;
+        const key = text.toUpperCase();
+        if (target.some(existing => String(existing || '').toUpperCase() === key)) return;
+        target.push(text);
+      });
+    };
+    const pushUniqueDatafyPair = (target, pair) => {
+      const po = String(pair?.po || '').trim();
+      const expectedDate = String(pair?.expected_date || '').trim();
+      if (!po && !expectedDate) return;
+      const key = `${po.toUpperCase()}|${expectedDate.toUpperCase()}`;
+      if (target.some(existing => `${String(existing?.po || '').toUpperCase()}|${String(existing?.expected_date || '').toUpperCase()}` === key)) return;
+      target.push({ po, expected_date: expectedDate });
+    };
+    const summarizeDatafyGroupValues = values => {
+      const clean = values.map(value => String(value || '').trim()).filter(Boolean);
+      if (!clean.length) return '';
+      return clean.length > 2 ? `${clean.slice(0, 2).join(', ')} +${clean.length - 2}` : clean.join(', ');
+    };
+    const aggregateDatafyMaterialItems = items => {
+      if (!Array.isArray(items) || !items.length) return [];
+      const groups = new Map();
+      items.forEach((item, index) => {
+        const key = datafyMaterialGroupKey(item) || `row-${index}`;
+        let group = groups.get(key);
+        if (!group) {
+          group = {
+            ...item,
+            material_item_id: key,
+            requested_qty: 0,
+            allocated_qty: 0,
+            missing_qty: 0,
+            stock_free_qty: 0,
+            match_tokens: [],
+            po_list: [],
+            po_expected_dates: [],
+            po_delivery_pairs: [],
+            source_item_ids: [],
+            source_scopes: [],
+            source_scope_labels: [],
+            grouped_count: 0,
+            has_uncovered_missing: false,
+            has_partial_missing: false,
+            _sortIndex: index,
+          };
+          groups.set(key, group);
+        }
+        const requested = datafyItemNumber(item, ['requested_qty', 'requested']);
+        const allocated = datafyItemNumber(item, ['allocated_qty', 'allocated']);
+        const missing = datafyItemNumber(item, ['missing_qty', 'missing']);
+        const stock = datafyItemNumber(item, ['stock_free_qty', 'stock']);
+        group.requested_qty += requested;
+        group.allocated_qty += allocated;
+        group.missing_qty += missing;
+        group.stock_free_qty += stock;
+        group.grouped_count += 1;
+        if (item?.material_item_id) group.source_item_ids.push(item.material_item_id);
+        if (item?.attention) group.attention = true;
+        if (missing > 0 && allocated <= 0 && stock <= 0) group.has_uncovered_missing = true;
+        if (missing > 0 && (allocated > 0 || stock > 0)) group.has_partial_missing = true;
+        supplyItemTokens(item).forEach(token => {
+          if (!group.match_tokens.includes(token)) group.match_tokens.push(token);
+        });
+        pushUniqueDatafyText(group.source_scopes, item?.scope);
+        pushUniqueDatafyText(group.source_scope_labels, item?.scope_label);
+        pushUniqueDatafyText(group.po_list, item?.po_list);
+        pushUniqueDatafyText(group.po_list, item?.po);
+        pushUniqueDatafyText(group.po_expected_dates, item?.po_expected_dates);
+        pushUniqueDatafyText(group.po_expected_dates, item?.po_expected_date || item?.eta || item?.expected_date);
+        if (Array.isArray(item?.po_delivery_pairs)) {
+          item.po_delivery_pairs.forEach(pair => pushUniqueDatafyPair(group.po_delivery_pairs, pair));
+        }
+      });
+      return Array.from(groups.values())
+        .map(group => ({
+          ...group,
+          po: group.po_list.join(', '),
+          scope: summarizeDatafyGroupValues(group.source_scopes),
+          scope_label: summarizeDatafyGroupValues(group.source_scope_labels),
+        }))
+        .sort((a, b) => a._sortIndex - b._sortIndex);
+    };
     const supplyComponentTokens = context => {
-      const items = Array.isArray(context?.items) ? context.items : [];
+      const items = aggregateDatafyMaterialItems(Array.isArray(context?.items) ? context.items : []);
       const missingItems = items.filter(item => datafyItemNumber(item, ['missing_qty', 'missing']) > 0 && !item.attention);
       if (items.length) {
         const tokens = new Set();
@@ -1740,8 +1837,61 @@
       });
       return bestScore;
     };
-    const nodeMatchesComponent = (node, tokens) => {
-      return Number.isFinite(nodeComponentMatchScore(node, tokens));
+    const componentBboxCenter = node => {
+      const bbox = node?.bbox;
+      if (!Array.isArray(bbox) || bbox.length !== 6) return null;
+      const center = {
+        x: (Number(bbox[0]) + Number(bbox[3])) / 2,
+        y: (Number(bbox[1]) + Number(bbox[4])) / 2,
+        z: (Number(bbox[2]) + Number(bbox[5])) / 2,
+      };
+      return Number.isFinite(center.x) && Number.isFinite(center.y) && Number.isFinite(center.z)
+        ? center
+        : null;
+    };
+    const componentBboxMaxSize = node => {
+      const bbox = node?.bbox;
+      if (!Array.isArray(bbox) || bbox.length !== 6) return 0;
+      return Math.max(
+        Math.abs(Number(bbox[3]) - Number(bbox[0])) || 0,
+        Math.abs(Number(bbox[4]) - Number(bbox[1])) || 0,
+        Math.abs(Number(bbox[5]) - Number(bbox[2])) || 0,
+      );
+    };
+    const componentCenterDistance = (a, b) => {
+      const centerA = componentBboxCenter(a);
+      const centerB = componentBboxCenter(b);
+      if (!centerA || !centerB) return Number.POSITIVE_INFINITY;
+      return Math.hypot(centerA.x - centerB.x, centerA.y - centerB.y, centerA.z - centerB.z);
+    };
+    const componentSpatialGap = (a, b, relaxed = false) => {
+      const scale = Math.max(componentBboxMaxSize(a), componentBboxMaxSize(b));
+      return Math.max(relaxed ? 0.16 : 0.35, scale * (relaxed ? 0.45 : 0.85));
+    };
+    const isSpatiallyDistinctComponent = (node, selectedNodes, relaxed = false) => {
+      return selectedNodes.every(selected => (
+        componentCenterDistance(node, selected) >= componentSpatialGap(node, selected, relaxed)
+      ));
+    };
+    const takeSpatiallyDistinctComponentHits = (rankedHits, limit, existingNodes = []) => {
+      const selectedHits = [];
+      const selectedNodes = Array.isArray(existingNodes) ? existingNodes.slice() : [];
+      const usedIds = new Set(selectedNodes.map(node => String(node?.id || '')).filter(Boolean));
+      const takePass = relaxed => {
+        for (const hit of rankedHits) {
+          if (selectedHits.length >= limit) return;
+          const id = String(hit?.node?.id || '');
+          if (!id || usedIds.has(id)) continue;
+          if (!isSpatiallyDistinctComponent(hit.node, selectedNodes, relaxed)) continue;
+          selectedHits.push(hit);
+          selectedNodes.push(hit.node);
+          usedIds.add(id);
+        }
+      };
+      takePass(false);
+      if (selectedHits.length < limit) takePass(true);
+      if (!selectedHits.length && rankedHits[0]?.node) selectedHits.push(rankedHits[0]);
+      return selectedHits;
     };
     const visualLimitForDatafyItem = item => {
       const qty = Math.ceil(Math.max(1, datafyItemNumber(item, ['missing_qty', 'missing'], 1)));
@@ -1760,8 +1910,9 @@
         && item.bbox
         && (rootNode?.id ? nodeBelongsToExactLinePath(item, candidates) : nodeMatchesLine(item, candidates))
       ));
-      const missingItems = Array.isArray(context?.items)
-        ? context.items.filter(item => (
+      const contextItems = aggregateDatafyMaterialItems(Array.isArray(context?.items) ? context.items : []);
+      const missingItems = contextItems.length
+        ? contextItems.filter(item => (
           datafyItemNumber(item, ['missing_qty', 'missing']) > 0
           && supplyItemCanCreateVisualReference(item)
         ))
@@ -1772,6 +1923,7 @@
       if (missingItems.length) {
         const nodes = [];
         const usedIds = new Set();
+        const usedNodes = [];
         missingItems.forEach(item => {
           const itemTokens = supplyItemTokens(item);
           if (!itemTokens.length) return;
@@ -1781,8 +1933,9 @@
             .filter(hit => Number.isFinite(hit.score))
             .sort((a, b) => a.score - b.score);
           const limit = visualLimitForDatafyItem(item);
-          ranked.slice(0, limit).forEach(hit => {
+          takeSpatiallyDistinctComponentHits(ranked, limit, usedNodes).forEach(hit => {
             usedIds.add(String(hit.node.id || ''));
+            usedNodes.push(hit.node);
             nodes.push({
               ...hit.node,
               materialItem: item,
@@ -1792,9 +1945,11 @@
         });
         return { tokens, nodes: nodes.slice(0, 16) };
       }
-      const nodes = lineNodes
-        .filter(item => nodeMatchesComponent(item, tokens))
-        .slice(0, 16);
+      const ranked = lineNodes
+        .map(node => ({ node, score: nodeComponentMatchScore(node, tokens) }))
+        .filter(hit => Number.isFinite(hit.score))
+        .sort((a, b) => a.score - b.score);
+      const nodes = takeSpatiallyDistinctComponentHits(ranked, 16).map(hit => hit.node);
       return { tokens, nodes };
     };
     const removeDatafyOverlay = () => {
@@ -1888,6 +2043,7 @@
         TEE: 'Tee',
         OLET: 'Olet',
         CAP: 'Cap',
+        REDUCER: 'Reducer',
         BOLT: 'Bolt / nut',
         GENSEC: 'Bolt / nut',
       };
@@ -1907,7 +2063,12 @@
       const stock = datafyItemNumber(item, ['stock_free_qty', 'stock']);
       const requested = datafyItemNumber(item, ['requested_qty', 'requested']);
       const unit = item?.unit || '';
-      const kind = item?.attention ? 'attention' : missing > 0 ? (allocated > 0 || stock > 0 ? 'partial' : 'missing') : 'available';
+      const hasPartialCoverage = Boolean(item?.has_partial_missing) || allocated > 0 || stock > 0;
+      const kind = item?.attention
+        ? 'attention'
+        : missing > 0
+          ? (item?.has_uncovered_missing ? 'missing' : hasPartialCoverage ? 'partial' : 'missing')
+          : 'available';
       const qty = missing > 0
         ? `${formatDatafyQty(missing)} ${unit}`.trim()
         : `${formatDatafyQty(allocated || stock || requested || 1)} ${unit}`.trim();
@@ -1920,10 +2081,13 @@
         item?.size,
         family,
         item?.scope_label || item?.scope,
+        item?.grouped_count > 1 ? `${item.grouped_count} DATAFY rows` : '',
       ].filter(Boolean).join(' · ');
       const status = item?.attention
         ? 'Support/trunnion note'
-        : kind === 'partial'
+        : kind === 'missing' && hasPartialCoverage
+          ? 'Missing / partial'
+          : kind === 'partial'
           ? 'Partial'
           : kind === 'missing'
             ? 'Missing'
@@ -1944,7 +2108,7 @@
     const buildDatafyMaterialRows = (lineNode, componentNodes, componentTokens = []) => {
       const context = state.supplyContext || {};
       const rows = [];
-      const items = Array.isArray(context.items) ? context.items : [];
+      const items = aggregateDatafyMaterialItems(Array.isArray(context.items) ? context.items : []);
       items.forEach(item => {
         rows.push(datafyRowFromMaterialItem(item));
       });
@@ -2049,6 +2213,22 @@
         ...infoRows,
       ].slice(0, limit);
     };
+    const datafyCalloutKey = item => {
+      return datafyMaterialGroupKey(item);
+    };
+    const uniqueDatafyMarkerNodes = (nodes, limit) => {
+      const selected = [];
+      const seen = new Set();
+      for (const node of nodes) {
+        if (!supplyItemCanCreateVisualReference(node?.materialItem)) continue;
+        const key = datafyCalloutKey(node.materialItem) || String(node?.id || selected.length);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        selected.push(node);
+        if (selected.length >= limit) break;
+      }
+      return selected;
+    };
     const createDatafyCallouts = (lineNode, componentNodes, componentTokens = []) => {
       if (!viewer || !state.THREE || !state.camera || !Array.isArray(componentNodes)) return;
       removeDatafyCallouts();
@@ -2065,9 +2245,7 @@
       const labels = document.createElement('div');
       labels.className = 'dx-project-callout-labels';
       const markerNodes = calloutRows.length
-        ? componentNodes
-          .filter(node => supplyItemCanCreateVisualReference(node.materialItem))
-          .slice(0, Math.min(6, calloutRows.length))
+        ? uniqueDatafyMarkerNodes(componentNodes, Math.min(6, calloutRows.length))
         : [];
       const markers = markerNodes.map((node, index) => {
         const row = node.materialItem ? datafyRowFromMaterialItem(node.materialItem) : calloutRows[index % calloutRows.length];

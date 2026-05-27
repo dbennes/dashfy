@@ -1376,6 +1376,74 @@ button.c3-export-link {
   padding-right: 4px;
 }
 
+.cockpit-v3 .c3-monitor-block {
+  margin-top: var(--s-5);
+}
+
+.cockpit-v3 .c3-subsection-head {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-1);
+}
+
+.cockpit-v3 .c3-monitor-scroll {
+  overflow-x: auto;
+}
+
+.cockpit-v3 .c3-monitor-table {
+  table-layout: fixed;
+  min-width: 900px;
+}
+
+.cockpit-v3 .c3-monitor-table th,
+.cockpit-v3 .c3-monitor-table td {
+  padding-left: 7px;
+  padding-right: 7px;
+}
+
+.cockpit-v3 .c3-monitor-table thead th {
+  white-space: normal;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.cockpit-v3 .c3-monitor-table th:nth-child(1),
+.cockpit-v3 .c3-monitor-table td:nth-child(1) { width: 18%; }
+.cockpit-v3 .c3-monitor-table th:nth-child(2),
+.cockpit-v3 .c3-monitor-table td:nth-child(2) { width: 7%; }
+.cockpit-v3 .c3-monitor-table th:nth-child(3),
+.cockpit-v3 .c3-monitor-table td:nth-child(3) { width: 7%; }
+.cockpit-v3 .c3-monitor-table th:nth-child(4),
+.cockpit-v3 .c3-monitor-table td:nth-child(4),
+.cockpit-v3 .c3-monitor-table th:nth-child(5),
+.cockpit-v3 .c3-monitor-table td:nth-child(5),
+.cockpit-v3 .c3-monitor-table th:nth-child(6),
+.cockpit-v3 .c3-monitor-table td:nth-child(6),
+.cockpit-v3 .c3-monitor-table th:nth-child(7),
+.cockpit-v3 .c3-monitor-table td:nth-child(7) { width: 6%; }
+.cockpit-v3 .c3-monitor-table th:nth-child(8),
+.cockpit-v3 .c3-monitor-table td:nth-child(8),
+.cockpit-v3 .c3-monitor-table th:nth-child(9),
+.cockpit-v3 .c3-monitor-table td:nth-child(9) { width: 7%; }
+.cockpit-v3 .c3-monitor-table th:nth-child(10),
+.cockpit-v3 .c3-monitor-table td:nth-child(10) { width: 11%; }
+.cockpit-v3 .c3-monitor-table th:nth-child(11),
+.cockpit-v3 .c3-monitor-table td:nth-child(11) { width: 12%; }
+.cockpit-v3 .c3-monitor-table th:nth-child(12),
+.cockpit-v3 .c3-monitor-table td:nth-child(12) { width: 7%; }
+
+.cockpit-v3 .c3-monitor-table .pill {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cockpit-v3 .rev-tag.code3a {
+  background: rgba(147, 51, 234, .16);
+  color: #c084fc;
+}
+
 .cockpit-v3 .c3-note-cell {
   position: relative;
   width: 48px;
@@ -3601,18 +3669,24 @@ button.c3-export-link {
   }
 
   .cockpit-v3 .c3-discipline-scroll,
+  .cockpit-v3 .c3-monitor-scroll,
   .cockpit-v3 .c3-probe-table-wrap,
   .cockpit-v3 .c3-pending-table-wrap {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
   }
 
-  .cockpit-v3 .c3-discipline-scroll {
+  .cockpit-v3 .c3-discipline-scroll,
+  .cockpit-v3 .c3-monitor-scroll {
     overflow-x: auto;
   }
 
   .cockpit-v3 .c3-discipline-table {
     min-width: 680px;
+  }
+
+  .cockpit-v3 .c3-monitor-table {
+    min-width: 900px;
   }
 }
 
