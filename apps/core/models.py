@@ -257,7 +257,7 @@ class EngineeringDocumentStatus(models.Model):
 
 
 class EngineeringMonitorImport(TimestampedModel):
-    """Imported engineering monitor workbook normalized from the AOL spreadsheet."""
+    """Imported engineering monitor workbook normalized from the raw spreadsheet."""
 
     original_filename = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField(default=0)

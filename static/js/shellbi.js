@@ -1607,6 +1607,8 @@
       const tokens = new Set();
       const supportLike = /support|suport|shoe|guide|trunnion|trunion|trunn|repad|base plate|attachment/.test(text);
       const flangoletLike = /flangolet|flgol/.test(text);
+      const blindFlangeLike = /\bfblind\b|blind\s+flange|flg\s*bld|flg\s*blind|\bptfbc\b/.test(text);
+      const weldNeckFlangeLike = /flg\s*wn|weld\s*neck|weldneck|\bptfwc\b/.test(text);
       const instrumentLike = /\binstrument\b|transmitter|datasheet|\b04-[a-z0-9-]+/.test(text);
       if (/\bvalve\b/.test(text)) tokens.add('VALVE');
       if (/\bgasket\b|junta/.test(text)) tokens.add('GASKET');
@@ -1618,7 +1620,11 @@
       if (/\bolet\b|weldolet|sockolet/.test(text) || flangoletLike) {
         tokens.add('OLET');
         tokens.add('FLANGE');
-      } else if (/\bflange\b|blind flange/.test(text) || (!instrumentLike && /flanged/.test(text))) {
+      } else if (blindFlangeLike) {
+        tokens.add('FBLIND');
+        tokens.add('FLANGE');
+      } else if (/\bflange\b|\bflg\b/.test(text) || (!instrumentLike && /flanged/.test(text))) {
+        if (weldNeckFlangeLike) tokens.add('FLANGE_WN');
         tokens.add('FLANGE');
       }
       if (/\belbow\b/.test(text)) tokens.add('ELBOW');
@@ -1893,6 +1899,57 @@
       if (!selectedHits.length && rankedHits[0]?.node) selectedHits.push(rankedHits[0]);
       return selectedHits;
     };
+    const componentBranchKey = node => {
+      const name = String(node?.name || '').toUpperCase();
+      const branchMatch = name.match(/(?:^|[\/\\\s_-])(B\d+)(?=$|[\/\\\s_-])/);
+      if (branchMatch) return branchMatch[1];
+      const parent = String(node?.parent_id || node?.parent || '').trim();
+      return parent ? `PARENT-${parent}` : '';
+    };
+    const takeCoherentComponentHits = (rankedHits, limit, existingNodes = []) => {
+      if (limit <= 1) return takeSpatiallyDistinctComponentHits(rankedHits, limit, existingNodes);
+      const groups = new Map();
+      rankedHits.forEach((hit, index) => {
+        const key = componentBranchKey(hit?.node) || `SINGLE-${hit?.node?.id || index}`;
+        let group = groups.get(key);
+        if (!group) {
+          group = { key, hits: [], bestScore: Number.POSITIVE_INFINITY, firstIndex: index };
+          groups.set(key, group);
+        }
+        group.hits.push(hit);
+        group.bestScore = Math.min(group.bestScore, hit.score);
+      });
+      const groupedHits = Array.from(groups.values())
+        .filter(group => group.hits.length > 1)
+        .sort((a, b) => {
+          const aEnough = a.hits.length >= limit ? 0 : 1;
+          const bEnough = b.hits.length >= limit ? 0 : 1;
+          if (aEnough !== bEnough) return aEnough - bEnough;
+          const aDelta = Math.abs(a.hits.length - limit);
+          const bDelta = Math.abs(b.hits.length - limit);
+          if (aDelta !== bDelta) return aDelta - bDelta;
+          if (a.bestScore !== b.bestScore) return a.bestScore - b.bestScore;
+          return a.firstIndex - b.firstIndex;
+        });
+      const exactOrEnough = groupedHits.find(group => group.hits.length >= limit);
+      if (exactOrEnough) {
+        const target = Math.min(limit, exactOrEnough.hits.length);
+        const selected = takeSpatiallyDistinctComponentHits(exactOrEnough.hits, target, existingNodes);
+        const selectedIds = new Set(selected.map(hit => String(hit?.node?.id || '')).filter(Boolean));
+        const existingIds = new Set((Array.isArray(existingNodes) ? existingNodes : [])
+          .map(node => String(node?.id || ''))
+          .filter(Boolean));
+        for (const hit of exactOrEnough.hits) {
+          if (selected.length >= target) break;
+          const id = String(hit?.node?.id || '');
+          if (!id || selectedIds.has(id) || existingIds.has(id)) continue;
+          selected.push(hit);
+          selectedIds.add(id);
+        }
+        return selected.slice(0, limit);
+      }
+      return takeSpatiallyDistinctComponentHits(rankedHits, limit, existingNodes);
+    };
     const visualLimitForDatafyItem = item => {
       const qty = Math.ceil(Math.max(1, datafyItemNumber(item, ['missing_qty', 'missing'], 1)));
       const tokens = supplyItemTokens(item);
@@ -1933,7 +1990,7 @@
             .filter(hit => Number.isFinite(hit.score))
             .sort((a, b) => a.score - b.score);
           const limit = visualLimitForDatafyItem(item);
-          takeSpatiallyDistinctComponentHits(ranked, limit, usedNodes).forEach(hit => {
+          takeCoherentComponentHits(ranked, limit, usedNodes).forEach(hit => {
             usedIds.add(String(hit.node.id || ''));
             usedNodes.push(hit.node);
             nodes.push({
@@ -2036,6 +2093,8 @@
         TRUNNION: 'Trunnion',
         TUBE: 'Pipe / tube',
         FLANGE: 'Flange',
+        FLANGE_WN: 'Weld neck flange',
+        FBLIND: 'Blind flange',
         GASKET: 'Gasket',
         VALVE: 'Valve',
         ELBOW: 'Elbow',

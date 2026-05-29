@@ -15,6 +15,7 @@ from django.core.cache import cache
 from django.db.utils import OperationalError, ProgrammingError
 
 from apps.eclic.api_client import EclicAPIError, EclicClient
+from apps.core.engineering_monitor_import import monitor_discipline_order, normalize_monitor_discipline
 from apps.core.models import DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport, P6CurveImport
 from apps.core.supply_snapshot_filters import (
     hash_supply_snapshot_filters,
@@ -793,6 +794,112 @@ def _supply_enrich_drawing_line_families(
             row["families"] = ", ".join(sorted(all_families))
 
 
+def _supply_split_text_values(value: Any) -> list[str]:
+    if isinstance(value, (list, tuple, set)):
+        raw_values = value
+    else:
+        raw_values = str(value or "").replace("\n", ",").replace(";", ",").split(",")
+    return [str(item or "").strip() for item in raw_values if str(item or "").strip()]
+
+
+def _supply_forecast_delivery_date(row: dict[str, Any]) -> str:
+    dates: list[str] = []
+    for value in [row.get("po_expected_date"), *_supply_split_text_values(row.get("po_expected_dates"))]:
+        iso = _expected_date_iso(value)
+        if iso:
+            dates.append(iso)
+    raw_pairs = row.get("po_delivery_pairs")
+    if raw_pairs:
+        try:
+            pairs = json.loads(raw_pairs) if isinstance(raw_pairs, str) else raw_pairs
+        except (TypeError, ValueError):
+            pairs = []
+            if isinstance(raw_pairs, str):
+                pairs = [
+                    {"po": part.partition("::")[0], "expected_date": part.partition("::")[2]}
+                    for part in raw_pairs.split(";;")
+                    if part.strip() and part.partition("::")[2].strip()
+                ]
+        for pair in pairs or []:
+            if not isinstance(pair, dict):
+                continue
+            iso = _expected_date_iso(pair.get("expected_date"))
+            if iso:
+                dates.append(iso)
+    return sorted(set(dates))[-1] if dates else ""
+
+
+def _supply_forecast_delivery_pairs(row: dict[str, Any]) -> list[dict[str, str]]:
+    pairs: list[dict[str, str]] = []
+    raw_pairs = row.get("po_delivery_pairs")
+    parsed_pairs: Any = []
+    if raw_pairs:
+        if isinstance(raw_pairs, str):
+            try:
+                parsed_pairs = json.loads(raw_pairs)
+            except (TypeError, ValueError):
+                parsed_pairs = [
+                    {"po": part.partition("::")[0], "expected_date": part.partition("::")[2]}
+                    for part in raw_pairs.split(";;")
+                    if part.strip()
+                ]
+        else:
+            parsed_pairs = raw_pairs
+    for pair in parsed_pairs or []:
+        if not isinstance(pair, dict):
+            continue
+        po = str(pair.get("po") or "").strip()
+        iso = _expected_date_iso(pair.get("expected_date"))
+        if po and iso:
+            pairs.append({"po": po, "expected_date": iso})
+
+    if not pairs:
+        delivery_date = row.get("po_delivery_date") or _supply_forecast_delivery_date(row)
+        for po in _supply_split_text_values(row.get("po_numbers") or row.get("po_covering")):
+            if po.upper() in {"NO LINKED PO", "COVERED", "-"}:
+                continue
+            iso = _expected_date_iso(delivery_date)
+            if po and iso:
+                pairs.append({"po": po, "expected_date": iso})
+
+    seen: set[tuple[str, str]] = set()
+    output: list[dict[str, str]] = []
+    for pair in pairs:
+        key = (pair["po"].upper(), pair["expected_date"])
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(pair)
+    return output
+
+
+def _supply_forecast_items_from_rows(material_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items = []
+    for row in material_rows:
+        scope = row.get("scope") or _supply_scope_from_table(row.get("table_name"))
+        if scope not in {"fabrication", "erection"}:
+            continue
+        items.append({
+            "document_id": row.get("document_id"),
+            "drawing": row.get("drawing_number") or row.get("original_filename") or "-",
+            "scope": scope,
+            "campaign": _campaign_label(row.get("campaign")),
+            "priority": row.get("priority"),
+            "material_item_id": row.get("material_item_id"),
+            "line": row.get("line") or "-",
+            "is_finalized": 1 if _truthy_flag(row.get("is_finalized")) else 0,
+            "requested_qty": float(row.get("requested_qty") or 0),
+            "allocated_qty": float(row.get("allocated_qty") or 0),
+            "missing_qty": float(row.get("missing_qty") or 0),
+            "has_po": 1 if _truthy_flag(row.get("has_po")) else 0,
+            "yard_actual": 1 if _truthy_flag(row.get("yard_actual")) else 0,
+            "po_delivery_date": row.get("po_delivery_date") or _supply_forecast_delivery_date(row),
+            "po_numbers": row.get("po_numbers") or row.get("po_covering") or "",
+            "po_delivery_pairs": _supply_forecast_delivery_pairs(row),
+        })
+    return items
+
+
 def _supply_normalize_operational_payload(payload: dict[str, Any]) -> None:
     material_rows = payload.get("material_rows") or []
     status_counts = _supply_enrich_material_rows(material_rows)
@@ -805,6 +912,24 @@ def _supply_normalize_operational_payload(payload: dict[str, Any]) -> None:
     drawing_source_rows = payload.get("material_scope_items") or material_rows
     payload["drawing_line_rows"] = _supply_build_drawing_line_rows(drawing_source_rows)
     _supply_enrich_drawing_line_families(payload["drawing_line_rows"], material_rows)
+    payload["supply_forecast_items_json"] = json.dumps(
+        _supply_forecast_items_from_rows(material_rows),
+        ensure_ascii=False,
+    )
+    for view in payload.get("supply_campaign_views") or []:
+        totals = view.setdefault("totals", {})
+        executive = view.setdefault("executive", {})
+        total = int(float(totals.get("total") or 0))
+        po = int(float(totals.get("po") or 0))
+        no_po = totals.get("no_po")
+        if no_po in (None, ""):
+            no_po = executive.get("po_gap")
+        if no_po in (None, ""):
+            no_po = max(total - po, 0)
+        no_po = int(float(no_po or 0))
+        totals["no_po"] = no_po
+        executive["no_po_pct"] = _supply_ratio(no_po, total)
+        executive["no_po_pct_css"] = _supply_ratio_css(no_po, total)
 
 
 SUPPLY_CAMPAIGN_PALETTE = [
@@ -1193,6 +1318,8 @@ def _supply_campaign_views(
         executive = {
             "po_pct": _supply_ratio(po_items, total_items),
             "po_pct_css": _supply_ratio_css(po_items, total_items),
+            "no_po_pct": _supply_ratio(no_po_items, total_items),
+            "no_po_pct_css": _supply_ratio_css(no_po_items, total_items),
             "yard_pct": _supply_ratio(yard_items, total_items),
             "yard_pct_css": _supply_ratio_css(yard_items, total_items),
             "yard_of_po_pct": _supply_ratio(yard_items, po_items),
@@ -3421,10 +3548,13 @@ _ENGINEERING_MONITOR_STATUS_ORDER = (
     "UNDER REVIEW",
 )
 
+_ENGINEERING_MONITOR_AFC_STATUSES = {"AFC 1", "AFC 3", "AFC CODE 3A", "AFC 3A"}
+_ENGINEERING_MONITOR_AFC_3A_STATUSES = {"AFC CODE 3A", "AFC 3A"}
+
 
 def _engineering_monitor_empty(error: str = "") -> dict[str, Any]:
     return {
-        "source": "AOL XLSX monitor",
+        "source": "Engineering base monitor",
         "source_mode": "sqlite_monitor_missing",
         "error": error,
         "import_id": None,
@@ -3461,12 +3591,14 @@ def _engineering_monitor_pct(value: int | float, total: int | float) -> float:
 
 def _engineering_monitor_flow(docs: list[dict[str, Any]]) -> dict[str, Any]:
     total = len(docs)
-    afc = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() in {"AFC 1", "AFC 3", "AFC CODE 3A"})
+    ifr = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() == "IFR")
+    ifa = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() == "IFA")
+    afc = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() in _ENGINEERING_MONITOR_AFC_STATUSES)
     under_review = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() == "UNDER REVIEW")
     issued = sum(
         1 for doc in docs
         if str(doc.get("document_status_effective") or "").upper() in {"ISSUED", "EMITIDO"}
-        or str(doc.get("status_bucket") or "").upper() in {"AFC 1", "AFC 3", "AFC CODE 3A", "IFI"}
+        or str(doc.get("status_bucket") or "").upper() in {*_ENGINEERING_MONITOR_AFC_STATUSES, "IFI"}
     )
     rev_r = sum(1 for doc in docs if str(doc.get("revision_family") or "").upper() == "R")
     rev_a = sum(1 for doc in docs if str(doc.get("revision_family") or "").upper() == "A")
@@ -3476,6 +3608,10 @@ def _engineering_monitor_flow(docs: list[dict[str, Any]]) -> dict[str, Any]:
         "total": total,
         "afc": afc,
         "afc_pct": _engineering_monitor_pct(afc, total),
+        "ifr": ifr,
+        "ifr_pct": _engineering_monitor_pct(ifr, total),
+        "ifa": ifa,
+        "ifa_pct": _engineering_monitor_pct(ifa, total),
         "in_engineering": under_review,
         "in_engineering_pct": _engineering_monitor_pct(under_review, total),
         "issued": issued,
@@ -3487,16 +3623,26 @@ def _engineering_monitor_flow(docs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _engineering_monitor_normalized_doc(doc: dict[str, Any]) -> dict[str, Any]:
+    discipline = (
+        normalize_monitor_discipline(doc.get("source_discipline") or doc.get("discipline"), doc.get("title"))
+        or normalize_monitor_discipline(doc.get("discipline"), doc.get("title"))
+    )
+    if discipline and discipline != doc.get("discipline"):
+        return {**doc, "discipline": discipline}
+    return doc
+
+
 def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
     try:
         latest = EngineeringMonitorImport.objects.filter(is_active=True).first()
     except (OperationalError, ProgrammingError):
         return _engineering_monitor_empty("Engineering monitor table is not migrated.")
     if latest is None:
-        return _engineering_monitor_empty("No active AOL engineering monitor import.")
+        return _engineering_monitor_empty("No active engineering base import.")
 
     payload = latest.payload or {}
-    raw_docs = list(payload.get("documents") or [])
+    raw_docs = [_engineering_monitor_normalized_doc(dict(doc)) for doc in list(payload.get("documents") or [])]
     monitored_docs = [doc for doc in raw_docs if doc.get("is_monitored")]
     countable_docs = [doc for doc in monitored_docs if doc.get("is_countable")]
 
@@ -3521,9 +3667,7 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
         ]
 
     total = len(filtered_docs)
-    discipline_order = payload.get("discipline_order") or []
-    if not discipline_order:
-        discipline_order = sorted({str(doc.get("discipline") or "-") for doc in monitored_docs})
+    discipline_order = monitor_discipline_order({str(doc.get("discipline") or "-") for doc in monitored_docs})
 
     status_counts = Counter(str(doc.get("status_bucket") or "") for doc in filtered_docs)
     excluded_by_discipline: dict[str, Counter[str]] = {}
@@ -3566,25 +3710,35 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
             "ifi": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "IFI"),
             "afc_code1": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "AFC 1"),
             "afc_code3": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "AFC 3"),
-            "afc_code3a": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "AFC CODE 3A"),
+            "afc_code3a": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in _ENGINEERING_MONITOR_AFC_3A_STATUSES),
             "under_review": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "UNDER REVIEW"),
-            "issued": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in {"AFC 1", "AFC 3", "AFC CODE 3A", "IFI"}),
+            "issued": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in {*_ENGINEERING_MONITOR_AFC_STATUSES, "IFI"}),
             "in_engineering": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "UNDER REVIEW"),
             "excluded": sum(excluded_counts.values()),
             "remarks": "; ".join(remarks),
         }
         summary.append(row)
 
-    summary.sort(key=lambda row: (-int(row.get("total") or 0), str(row.get("discipline") or "")))
+    discipline_rank = {discipline: index for index, discipline in enumerate(discipline_order)}
+    summary.sort(key=lambda row: (discipline_rank.get(str(row.get("discipline") or ""), 999), str(row.get("discipline") or "")))
     status_order = payload.get("status_order") or list(_ENGINEERING_MONITOR_STATUS_ORDER)
     status_rows = [
         {"label": label, "value": int(status_counts.get(label, 0))}
         for label in status_order
         if status_counts.get(label, 0)
     ]
+    revision_rank = {"REV. R": 0, "REV. A": 1, "REV. C": 2}
     revision_rows = [
         {"label": discipline, "revision": revision, "total": count}
-        for (discipline, revision), count in sorted(revision_counts.items())
+        for (discipline, revision), count in sorted(
+            revision_counts.items(),
+            key=lambda item: (
+                discipline_rank.get(str(item[0][0] or ""), 999),
+                revision_rank.get(str(item[0][1] or ""), 99),
+                str(item[0][0] or ""),
+                str(item[0][1] or ""),
+            ),
+        )
     ]
 
     status_rank = {label: index for index, label in enumerate(status_order)}
@@ -3592,13 +3746,14 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
         filtered_docs,
         key=lambda doc: (
             status_rank.get(str(doc.get("status_bucket") or ""), 99),
+            discipline_rank.get(str(doc.get("discipline") or ""), 999),
             str(doc.get("discipline") or ""),
             str(doc.get("document_number") or ""),
         ),
     )[:24]
 
     return {
-        "source": "AOL XLSX monitor",
+        "source": "Engineering base monitor",
         "source_mode": "sqlite_monitor",
         "error": "",
         "import_id": latest.pk,
@@ -5069,6 +5224,7 @@ def _construction_datafy(filters: dict) -> dict:
             f"""
             {material_scope_cte}
             select distinct si.material_item_id,
+                   po.po_number,
                    po.procurement_plan_stage,
                    po.procurement_plan_kind,
                    po.procurement_plan_date,
@@ -5088,10 +5244,31 @@ def _construction_datafy(filters: dict) -> dict:
             if _po_row_has_yard_actual(row)
         }
         material_po_ids = {row["material_item_id"] for row in material_scope_po_rows}
+        material_delivery_by_id: dict[Any, str] = {}
+        material_po_numbers_by_id: dict[Any, set[str]] = {}
+        material_delivery_pairs_by_id: dict[Any, list[dict[str, str]]] = {}
+        for po_row in material_scope_po_rows:
+            material_id = po_row.get("material_item_id")
+            if material_id is None:
+                continue
+            po_number = str(po_row.get("po_number") or "").strip()
+            if po_number:
+                material_po_numbers_by_id.setdefault(material_id, set()).add(po_number)
+            delivery_date = _po_delivery_date_iso(po_row)
+            if delivery_date and delivery_date > material_delivery_by_id.get(material_id, ""):
+                material_delivery_by_id[material_id] = delivery_date
+            if po_number and delivery_date:
+                material_delivery_pairs_by_id.setdefault(material_id, []).append({
+                    "po": po_number,
+                    "expected_date": delivery_date,
+                })
         for row in material_scope_items:
             material_id = row.get("material_item_id")
             row["has_po"] = 1 if material_id in material_po_ids else 0
             row["yard_actual"] = 1 if material_id in material_yard_ids else 0
+            row["po_delivery_date"] = material_delivery_by_id.get(material_id, "")
+            row["po_numbers"] = ", ".join(sorted(material_po_numbers_by_id.get(material_id, set())))
+            row["po_delivery_pairs"] = material_delivery_pairs_by_id.get(material_id, [])
         material_status_counts = _supply_enrich_material_rows(material_rows, material_yard_ids, material_po_ids)
         drawing_line_rows = _supply_build_drawing_line_rows(material_scope_items)
         _supply_enrich_drawing_line_families(drawing_line_rows, material_rows)
@@ -5099,6 +5276,28 @@ def _construction_datafy(filters: dict) -> dict:
             material_scope_items,
             material_scope_po_rows,
         )
+        supply_forecast_items = [
+            {
+                "document_id": item.get("document_id"),
+                "drawing": item.get("drawing_number") or item.get("original_filename") or "-",
+                "scope": item.get("scope") or "",
+                "campaign": _campaign_label(item.get("campaign")),
+                "priority": item.get("priority"),
+                "material_item_id": item.get("material_item_id"),
+                "line": item.get("line") or "-",
+                "is_finalized": 1 if _truthy_flag(item.get("is_finalized")) else 0,
+                "requested_qty": float(item.get("requested_qty") or 0),
+                "allocated_qty": float(item.get("allocated_qty") or 0),
+                "missing_qty": float(item.get("missing_qty") or 0),
+                "has_po": 1 if _truthy_flag(item.get("has_po")) else 0,
+                "yard_actual": 1 if _truthy_flag(item.get("yard_actual")) else 0,
+                "po_delivery_date": item.get("po_delivery_date") or "",
+                "po_numbers": item.get("po_numbers") or "",
+                "po_delivery_pairs": item.get("po_delivery_pairs") or [],
+            }
+            for item in material_scope_items
+            if item.get("scope") in {"fabrication", "erection"}
+        ]
         supply_documents = _rows(
             cur,
             """
@@ -5151,6 +5350,7 @@ def _construction_datafy(filters: dict) -> dict:
         "drawing_revisions": drawing_revisions,
         "material_flow": material_flow,
         "supply_campaign_views": supply_campaign_views,
+        "supply_forecast_items_json": json.dumps(supply_forecast_items, ensure_ascii=False),
         "material_rows": material_rows,
         "material_scope_items": material_scope_items,
         "material_status_counts": {
@@ -5191,6 +5391,7 @@ def _construction_datafy_empty(message: str = "No active DATAFY SQLite snapshot.
         "drawing_revisions": [],
         "material_flow": _material_flow_summary(0, 0, 0),
         "supply_campaign_views": [],
+        "supply_forecast_items_json": "[]",
         "material_rows": [],
         "material_scope_items": [],
         "material_status_counts": {

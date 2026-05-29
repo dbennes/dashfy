@@ -6,9 +6,11 @@ import re
 from collections import Counter
 from datetime import date, datetime
 
+from django.core.cache import cache
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -19,15 +21,16 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.accounts.permissions import has_module_permission
-from apps.core.datafy_supply import refresh_supply_snapshot
+from apps.core.datafy_supply import latest_supply_snapshot, refresh_supply_snapshot, supply_filters_hash
 from apps.core.engineering_import import import_engineering_status_workbook
-from apps.core.engineering_monitor_import import import_engineering_monitor_workbook
+from apps.core.engineering_monitor_import import import_engineering_monitor_workbook, normalize_monitor_discipline
 from apps.core.model_selection import SelectionTooLarge, selection_glb_path
 from apps.core.p6_import import import_p6_curves_workbook
+from apps.core.supply_snapshot_filters import normalized_supply_snapshot_filters
 from apps.exports.models import ExportLog
 from apps.core import real_sources
 
-from .models import Announcement, EngineeringStatusImport
+from .models import Announcement, DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport
 
 
 def _dashboard_filters_from_request(request):
@@ -254,11 +257,17 @@ def _supply_material_match_tokens(row):
     instrument_like = bool(re.search(r"\binstrument\b|transmitter|datasheet|\b04-[a-z0-9-]+", text))
     if re.search(r"\breducer\b|red\s+(?:ecc|conc)|\bptre[cn]?\b", text):
         add("REDUCER")
+    blind_flange = bool(re.search(r"\bfblind\b|blind\s+flange|flg\s*bld|flg\s*blind|\bptfbc\b", text))
+    weld_neck_flange = bool(re.search(r"flg\s*wn|weld\s*neck|weldneck|\bptfwc\b", text))
     if re.search(r"flangolet|flgol|weldolet|sockolet|\bolet\b", text):
         add("OLET", "FLANGE")
-    elif re.search(r"\bflange\b|blind\s+flange", text) or (
+    elif blind_flange:
+        add("FBLIND", "FLANGE")
+    elif re.search(r"\bflange\b|\bflg\b", text) or (
         not instrument_like and re.search(r"flanged", text)
     ):
+        if weld_neck_flange:
+            add("FLANGE_WN")
         add("FLANGE")
     if re.search(r"trunnion|trunion|trunn|pipe support|support|shoe|guide|repad|base plate|attachment", text):
         add("ATTACHMENT", "PCOMPONENT", "TRUNNION")
@@ -681,7 +690,7 @@ def import_engineering_status_view(request):
 @login_required
 @require_POST
 def import_engineering_monitor_view(request):
-    """Import the duplicated engineering monitor XLSX without replacing DED engineering."""
+    """Importa a planilha bruta de engenharia ou a base editada."""
     if not getattr(request.user, "is_admin", False):
         raise PermissionDenied("Somente administradores podem importar o monitor de engenharia.")
 
@@ -698,13 +707,173 @@ def import_engineering_monitor_view(request):
         messages.success(
             request,
             (
-                "Monitor de engenharia importado para a base do sistema: "
-                f"{batch.monitored_document_count} documentos monitorados, "
+                "Base de engenharia importada: "
+                f"{batch.monitored_document_count} documentos contabilizados, "
                 f"{batch.discipline_count} disciplinas e "
                 f"{batch.excluded_count} linhas fora da contagem."
             ),
         )
     return redirect(reverse("core:home") + "#s01-monitor")
+
+
+def _monitor_export_status_label(value) -> str:
+    text = str(value or "").strip().upper()
+    if text == "UNDER REVIEW":
+        return "MABU UNDER REVIEW"
+    if text == "AFC CODE 3A":
+        return "AFC 3A"
+    return text
+
+
+def _monitor_excluded_reason_label(value, *, is_monitored: bool = True) -> str:
+    text = str(value or "").strip()
+    if not is_monitored and not text:
+        return "Disciplina fora do monitoramento"
+    labels = {
+        "Excluded document number": "Numero do documento excluido por regra",
+        "Vendor directory": "Diretorio Vendor",
+        "Not applicable/cancelled": "Nao aplicavel/cancelado",
+        "Excluded title": "Titulo excluido por regra",
+        "Cancelled revision X": "Revisao X cancelada",
+        "Rejected": "Rejeitado",
+        "Unmapped": "Status nao mapeado",
+    }
+    return labels.get(text, text)
+
+
+def _monitor_export_doc(doc: dict) -> dict:
+    discipline = (
+        normalize_monitor_discipline(doc.get("source_discipline") or doc.get("discipline"), doc.get("title"))
+        or normalize_monitor_discipline(doc.get("discipline"), doc.get("title"))
+    )
+    if discipline and discipline != doc.get("discipline"):
+        return {**doc, "discipline": discipline}
+    return doc
+
+
+@login_required
+def export_engineering_monitor_view(request):
+    """Exporta a base de engenharia normalizada e editavel para virar fonte oficial."""
+    latest = EngineeringMonitorImport.objects.filter(is_active=True).first()
+    if latest is None:
+        messages.error(request, "Nao ha base de engenharia ativa para exportar.")
+        return redirect(reverse("core:home") + "#s01-monitor")
+
+    payload = latest.payload or {}
+    docs = [_monitor_export_doc(dict(doc)) for doc in list(payload.get("documents") or [])]
+    docs.sort(key=lambda doc: (int(doc.get("row_number") or 0), str(doc.get("document_number") or "")))
+
+    output = io.BytesIO()
+    import xlsxwriter
+
+    workbook = xlsxwriter.Workbook(output, {"in_memory": True, "strings_to_urls": False})
+    header_fmt = workbook.add_format({
+        "bold": True,
+        "font_color": "#f8fafc",
+        "bg_color": "#111827",
+        "border": 1,
+        "border_color": "#334155",
+        "text_wrap": True,
+    })
+    text_fmt = workbook.add_format({"border": 1, "border_color": "#e5e7eb", "text_wrap": True})
+    count_fmt = workbook.add_format({"border": 1, "border_color": "#e5e7eb", "num_format": "#,##0"})
+    yes_fmt = workbook.add_format({"border": 1, "border_color": "#e5e7eb", "bg_color": "#dcfce7"})
+    no_fmt = workbook.add_format({"border": 1, "border_color": "#e5e7eb", "bg_color": "#fee2e2"})
+    note_fmt = workbook.add_format({"border": 1, "border_color": "#e5e7eb", "bg_color": "#fff7ed", "text_wrap": True})
+    title_fmt = workbook.add_format({"bold": True, "font_size": 14, "font_color": "#111827"})
+
+    base_sheet = workbook.add_worksheet("Base Engenharia")
+    columns = [
+        ("Documento", 34),
+        ("Titulo", 52),
+        ("Disciplina", 22),
+        ("Disciplina origem", 26),
+        ("Revisao", 10),
+        ("Contabilizar", 14),
+        ("Status normalizado", 20),
+        ("Motivo desconsiderado", 30),
+        ("Status documento", 22),
+        ("Issue Status", 30),
+        ("Last transmittal purpose", 26),
+        ("14-Tr_Aol-Fabrication", 24),
+        ("Diretorio", 46),
+        ("Observacao admin", 34),
+    ]
+    for col, (label, width) in enumerate(columns):
+        base_sheet.write(0, col, label, header_fmt)
+        base_sheet.set_column(col, col, width)
+
+    status_options = ["NI", "IFR", "IFA", "IFI", "AFC 1", "AFC 3", "AFC 3A", "MABU UNDER REVIEW"]
+    for row_idx, doc in enumerate(docs, start=1):
+        is_monitored = bool(doc.get("is_monitored"))
+        is_countable = bool(is_monitored and doc.get("is_countable"))
+        contabilizar = "SIM" if is_countable else "NAO"
+        status = _monitor_export_status_label(doc.get("status_bucket")) if is_countable else ""
+        motivo = "" if is_countable else _monitor_excluded_reason_label(doc.get("excluded_reason"), is_monitored=is_monitored)
+        values = [
+            doc.get("document_number") or "",
+            doc.get("title") or "",
+            doc.get("discipline") or "",
+            doc.get("source_discipline") or "",
+            doc.get("revision") or "",
+            contabilizar,
+            status,
+            motivo,
+            doc.get("document_status_original") or doc.get("document_status_effective") or "",
+            doc.get("issue_status") or "",
+            doc.get("last_transmittal_purpose") or "",
+            doc.get("fabrication_ref") or "",
+            doc.get("directory") or "",
+            "",
+        ]
+        for col, value in enumerate(values):
+            fmt = yes_fmt if col == 5 and contabilizar == "SIM" else no_fmt if col == 5 else note_fmt if col == 13 else text_fmt
+            base_sheet.write(row_idx, col, value, fmt)
+
+    last_row = max(len(docs), 1)
+    base_sheet.autofilter(0, 0, last_row, len(columns) - 1)
+    base_sheet.freeze_panes(1, 0)
+    base_sheet.data_validation(1, 5, last_row, 5, {"validate": "list", "source": ["SIM", "NAO"]})
+    base_sheet.data_validation(1, 6, last_row, 6, {"validate": "list", "source": status_options})
+
+    summary_sheet = workbook.add_worksheet("Resumo")
+    summary_sheet.write(0, 0, "Base de engenharia editavel", title_fmt)
+    summary_sheet.write(1, 0, "Edite Contabilizar e Status normalizado. Depois importe este arquivo novamente para tornar a base oficial.", text_fmt)
+    summary_rows = [
+        ("Importacao", f"#{latest.pk} - {latest.original_filename}"),
+        ("Linhas brutas", latest.document_count),
+        ("Contabilizadas", latest.monitored_document_count),
+        ("Desconsideradas", latest.excluded_count),
+        ("Aba para editar", "Base Engenharia"),
+    ]
+    summary_sheet.write_row(3, 0, ["Item", "Valor"], header_fmt)
+    for row_idx, (label, value) in enumerate(summary_rows, start=4):
+        summary_sheet.write(row_idx, 0, label, text_fmt)
+        summary_sheet.write(row_idx, 1, value, count_fmt if isinstance(value, int) else text_fmt)
+    summary_sheet.set_column(0, 0, 24)
+    summary_sheet.set_column(1, 1, 64)
+
+    workbook.close()
+
+    timestamp = timezone.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"base_engenharia_editavel_{timestamp}.xlsx"
+    export_user = getattr(request.user, "_wrapped", request.user)
+    if not getattr(export_user, "is_authenticated", False):
+        export_user = None
+    ExportLog.objects.create(
+        user=export_user,
+        filename=filename,
+        file_format="xlsx",
+        module="engineering-monitor",
+        rows=len(docs),
+        query_params="",
+    )
+    response = HttpResponse(
+        output.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 def _engineering_export_afc_code(value) -> str:
@@ -787,9 +956,6 @@ def _engineering_status_export_queryset(request):
 @login_required
 def export_engineering_status_view(request):
     """Exporta desenhos/documentos DED e status do snapshot ativo."""
-    if not (getattr(request.user, "is_admin", False) or getattr(request.user, "can_export", False)):
-        raise PermissionDenied("Usuario sem permissao de exportacao.")
-
     latest, qs = _engineering_status_export_queryset(request)
     if latest is None or qs is None:
         messages.error(request, "Nao ha snapshot DED ativo na base do sistema para exportar.")
@@ -912,6 +1078,143 @@ def export_engineering_status_view(request):
     )
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+def _json_ready(value):
+    return json.loads(json.dumps(value, default=real_sources.json_default, ensure_ascii=False))
+
+
+def _supply_snapshot_counts(payload: dict) -> tuple[int, int, int]:
+    flow = payload.get("material_flow") or {}
+    campaign_views = payload.get("supply_campaign_views") or []
+    total_drawings = sum(
+        int((view.get("totals") or {}).get("drawings") or 0)
+        for view in campaign_views
+    )
+    return (
+        int(flow.get("total") or 0),
+        total_drawings,
+        len(payload.get("material_rows") or []),
+    )
+
+
+def _supply_snapshot_redirect(request):
+    target = reverse("core:home")
+    if request.GET.urlencode():
+        target = f"{target}?{request.GET.urlencode()}"
+    return f"{target}#s02"
+
+
+@login_required
+def export_datafy_supply_view(request):
+    """Exporta o snapshot DATAFY usado na S02 para reimportacao identica."""
+    filters = real_sources._construction_filters(request.GET)
+    snapshot = latest_supply_snapshot(filters)
+    if snapshot is None:
+        messages.error(request, "Nao ha snapshot DATAFY ativo para exportar nesta selecao.")
+        return redirect(_supply_snapshot_redirect(request))
+
+    exported_at = timezone.now()
+    payload = {
+        "kind": "datafy_supply_snapshot",
+        "version": 1,
+        "exported_at": exported_at.isoformat(),
+        "snapshot": {
+            "source_database": snapshot.source_database,
+            "source_host": snapshot.source_host,
+            "filters_hash": snapshot.filters_hash,
+            "filters": snapshot.filters,
+            "payload": snapshot.payload,
+            "total_materials": snapshot.total_materials,
+            "total_drawings": snapshot.total_drawings,
+            "material_rows": snapshot.material_rows,
+            "created_at": snapshot.created_at.isoformat() if snapshot.created_at else None,
+        },
+    }
+    content = json.dumps(payload, ensure_ascii=False, default=real_sources.json_default, indent=2)
+    timestamp = exported_at.strftime("%Y%m%d-%H%M%S")
+    filename = f"datafy_supply_snapshot_{timestamp}.json"
+    export_user = getattr(request.user, "_wrapped", request.user)
+    if not getattr(export_user, "is_authenticated", False):
+        export_user = None
+    ExportLog.objects.create(
+        user=export_user,
+        filename=filename,
+        file_format="json",
+        module="supply",
+        rows=snapshot.material_rows,
+        query_params=request.GET.urlencode()[:1000],
+    )
+    response = HttpResponse(content, content_type="application/json; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+@require_POST
+def import_datafy_supply_view(request):
+    """Importa o mesmo JSON exportado pela S02 sem consultar o DATAFY externo."""
+    if not getattr(request.user, "is_admin", False):
+        raise PermissionDenied("Somente administradores podem importar snapshots DATAFY.")
+
+    target = _supply_snapshot_redirect(request)
+    uploaded_file = request.FILES.get("datafy_supply_file")
+    if not uploaded_file:
+        messages.error(request, "Selecione o JSON exportado da secao Supply antes de importar.")
+        return redirect(target)
+
+    try:
+        raw = json.loads(uploaded_file.read().decode("utf-8-sig"))
+        snapshot_data = raw.get("snapshot") if isinstance(raw, dict) and raw.get("snapshot") else raw
+        if not isinstance(snapshot_data, dict):
+            raise ValueError("Arquivo sem bloco de snapshot.")
+        payload = snapshot_data.get("payload") or {}
+        filters = snapshot_data.get("filters") or {}
+        if not isinstance(payload, dict):
+            raise ValueError("Payload do snapshot invalido.")
+        if not isinstance(filters, dict):
+            raise ValueError("Filtros do snapshot invalidos.")
+        filters = _json_ready(filters)
+        payload = _json_ready(payload)
+        filters_hash = supply_filters_hash(filters)
+        total_materials, total_drawings, material_rows = _supply_snapshot_counts(payload)
+        normalized_filters = normalized_supply_snapshot_filters(filters)
+        active_snapshot_ids = [
+            snapshot.pk
+            for snapshot in DatafySupplySnapshot.objects.filter(is_active=True)
+            if normalized_supply_snapshot_filters(snapshot.filters) == normalized_filters
+        ]
+        user = getattr(request.user, "_wrapped", request.user)
+        if not getattr(user, "is_authenticated", False):
+            user = None
+        with transaction.atomic():
+            if active_snapshot_ids:
+                DatafySupplySnapshot.objects.filter(pk__in=active_snapshot_ids).update(is_active=False)
+            snapshot = DatafySupplySnapshot.objects.create(
+                source_database=str(snapshot_data.get("source_database") or "DATAFY")[:120],
+                source_host=str(snapshot_data.get("source_host") or "")[:120],
+                filters_hash=filters_hash,
+                filters=filters,
+                payload=payload,
+                total_materials=total_materials,
+                total_drawings=total_drawings,
+                material_rows=material_rows,
+                refreshed_by=user,
+            )
+        cache.clear()
+    except Exception as exc:
+        messages.error(request, f"Falha ao importar snapshot DATAFY Supply: {exc}")
+    else:
+        messages.success(
+            request,
+            (
+                "Snapshot DATAFY Supply importado: "
+                f"{snapshot.total_materials} materiais, "
+                f"{snapshot.total_drawings} desenhos e "
+                f"{snapshot.material_rows} linhas."
+            ),
+        )
+    return redirect(target)
 
 
 @login_required
