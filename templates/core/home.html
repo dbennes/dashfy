@@ -384,7 +384,7 @@
       <div class="kpi kpi-green">
         <div class="lbl"><span class="marker"></span><span>AFC status</span></div>
         <div class="val">{{ mf.afc_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
-        <div class="sub">{{ mf.afc|default:0|intcomma }} AFC 1 / AFC 3 / AFC 3A documents</div>
+        <div class="sub">{{ mf.afc|default:0|intcomma }} AFC 1 / AFC 3A documents</div>
       </div>
       <div class="kpi kpi-amber">
         <div class="lbl"><span class="marker"></span><span>Under Review</span></div>
@@ -405,7 +405,7 @@
             <span class="tag">STATUS</span>
             <h3>Monitor documents by status</h3>
           </div>
-          <div class="rhs">DOCS · IFR · IFA · AFC · UNDER REVIEW</div>
+          <div class="rhs">DOCS · IFR · IFA · AFC 3 · AFC · UNDER REVIEW</div>
         </div>
         <div class="card-body flush">
           {% if mf.total %}
@@ -421,18 +421,20 @@
               <div class="bar is-total" style="--h: 100%"><span class="dlabel">{{ mf.total|intcomma }}</span></div>
               <div class="bar is-ifr" style="--h: {% widthratio mf.ifr mf.total 100 %}%"><span class="dlabel">{{ mf.ifr|default:0|intcomma }}</span></div>
               <div class="bar is-ifa" style="--h: {% widthratio mf.ifa mf.total 100 %}%"><span class="dlabel">{{ mf.ifa|default:0|intcomma }}</span></div>
+              <div class="bar is-afc3" style="--h: {% widthratio mf.afc_code3 mf.total 100 %}%"><span class="dlabel">{{ mf.afc_code3|default:0|intcomma }}</span></div>
               <div class="bar is-afc" style="--h: {% widthratio mf.afc mf.total 100 %}%"><span class="dlabel">{{ mf.afc|default:0|intcomma }}</span></div>
               <div class="bar is-under-review" style="--h: {% widthratio mf.in_engineering mf.total 100 %}%"><span class="dlabel">{{ mf.in_engineering|default:0|intcomma }}</span></div>
             </div>
             <div class="xaxis">
-              <span>DOCS</span><span>IFR</span><span>IFA</span><span>AFC</span><span>UNDER REVIEW</span>
+              <span>DOCS</span><span>IFR</span><span>IFA</span><span>AFC 3</span><span>AFC</span><span>UNDER REVIEW</span>
             </div>
           </div>
           <div class="legend">
             <span><i style="background: var(--fg-0)"></i>Total</span>
             <span><i style="background: var(--signal-cyan)"></i>IFR — issued for review</span>
             <span><i style="background: var(--signal-amber)"></i>IFA — issued for approval</span>
-            <span><i style="background: var(--signal-green)"></i>AFC — AFC 1, AFC 3, AFC 3A</span>
+            <span><i style="background: var(--signal-violet)"></i>AFC 3 — separated</span>
+            <span><i style="background: var(--signal-green)"></i>AFC — AFC 1, AFC 3A</span>
             <span><i style="background: var(--signal-red)"></i>Under Review</span>
           </div>
           {% else %}

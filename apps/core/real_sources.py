@@ -3548,8 +3548,9 @@ _ENGINEERING_MONITOR_STATUS_ORDER = (
     "UNDER REVIEW",
 )
 
-_ENGINEERING_MONITOR_AFC_STATUSES = {"AFC 1", "AFC 3", "AFC CODE 3A", "AFC 3A"}
+_ENGINEERING_MONITOR_AFC_STATUSES = {"AFC 1", "AFC CODE 3A", "AFC 3A"}
 _ENGINEERING_MONITOR_AFC_3A_STATUSES = {"AFC CODE 3A", "AFC 3A"}
+_ENGINEERING_MONITOR_ISSUED_STATUSES = {*_ENGINEERING_MONITOR_AFC_STATUSES, "AFC 3", "IFI"}
 
 
 def _engineering_monitor_empty(error: str = "") -> dict[str, Any]:
@@ -3593,12 +3594,13 @@ def _engineering_monitor_flow(docs: list[dict[str, Any]]) -> dict[str, Any]:
     total = len(docs)
     ifr = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() == "IFR")
     ifa = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() == "IFA")
+    afc_code3 = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() == "AFC 3")
     afc = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() in _ENGINEERING_MONITOR_AFC_STATUSES)
     under_review = sum(1 for doc in docs if str(doc.get("status_bucket") or "").upper() == "UNDER REVIEW")
     issued = sum(
         1 for doc in docs
         if str(doc.get("document_status_effective") or "").upper() in {"ISSUED", "EMITIDO"}
-        or str(doc.get("status_bucket") or "").upper() in {*_ENGINEERING_MONITOR_AFC_STATUSES, "IFI"}
+        or str(doc.get("status_bucket") or "").upper() in _ENGINEERING_MONITOR_ISSUED_STATUSES
     )
     rev_r = sum(1 for doc in docs if str(doc.get("revision_family") or "").upper() == "R")
     rev_a = sum(1 for doc in docs if str(doc.get("revision_family") or "").upper() == "A")
@@ -3612,6 +3614,8 @@ def _engineering_monitor_flow(docs: list[dict[str, Any]]) -> dict[str, Any]:
         "ifr_pct": _engineering_monitor_pct(ifr, total),
         "ifa": ifa,
         "ifa_pct": _engineering_monitor_pct(ifa, total),
+        "afc_code3": afc_code3,
+        "afc_code3_pct": _engineering_monitor_pct(afc_code3, total),
         "in_engineering": under_review,
         "in_engineering_pct": _engineering_monitor_pct(under_review, total),
         "issued": issued,
@@ -3712,7 +3716,7 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
             "afc_code3": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "AFC 3"),
             "afc_code3a": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in _ENGINEERING_MONITOR_AFC_3A_STATUSES),
             "under_review": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "UNDER REVIEW"),
-            "issued": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in {*_ENGINEERING_MONITOR_AFC_STATUSES, "IFI"}),
+            "issued": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in _ENGINEERING_MONITOR_ISSUED_STATUSES),
             "in_engineering": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "UNDER REVIEW"),
             "excluded": sum(excluded_counts.values()),
             "remarks": "; ".join(remarks),
