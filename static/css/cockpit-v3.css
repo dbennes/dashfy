@@ -739,6 +739,35 @@ body::-webkit-scrollbar-thumb:hover { background: rgba(148,163,184,0.60); }
   justify-content: flex-end;
   white-space: normal;
 }
+.cockpit-v3 .c3-supply-panel-head,
+.cockpit-v3 .c3-supply-card-head {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: var(--s-2);
+}
+.cockpit-v3 .c3-supply-panel-head > .lhs,
+.cockpit-v3 .c3-supply-card-head > .lhs {
+  width: 100%;
+  align-items: flex-start;
+}
+.cockpit-v3 .c3-supply-panel-head > .rhs,
+.cockpit-v3 .c3-supply-card-head > .rhs {
+  width: 100%;
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  white-space: normal;
+}
+.cockpit-v3 .c3-supply-card-head h3 {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.25;
+}
+.cockpit-v3 .c3-supply-pending-head > .rhs .c3-export-link {
+  margin-left: auto;
+}
 .cockpit-v3 .c3-pending-total-filter {
   display: inline-flex;
   flex-direction: column;
@@ -2033,6 +2062,10 @@ button.c3-export-link {
 }
 .cockpit-v3 .c3-desc { color: var(--fg-2); }
 .cockpit-v3 .c3-po { color: var(--fg-1); font-family: var(--font-mono); font-size: 9px; }
+.cockpit-v3 .c3-po-no_balance { color: var(--signal-amber); }
+.cockpit-v3 .c3-po-not_allocated { color: var(--signal-cyan); }
+.cockpit-v3 .c3-po-catalog_issue,
+.cockpit-v3 .c3-po-no_po { color: var(--signal-red); }
 .cockpit-v3 .c3-mini-actions { display: inline-flex; gap: 5px; flex-wrap: nowrap; }
 .cockpit-v3 .c3-mini-actions a {
   height: 18px;
@@ -4440,6 +4473,10 @@ button.c3-export-link {
 
   .cockpit-v3 .c3-supply-stage-actions {
     width: 100%;
+  }
+
+  .cockpit-v3 .c3-supply-pending-head > .rhs .c3-export-link {
+    margin-left: 0;
   }
 
   .cockpit-v3 .c3-forecast-form {

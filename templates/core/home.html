@@ -202,7 +202,7 @@
 
   <div class="row-2 c3-p6-layout">
     <div class="card c3-revision-card">
-      <div class="card-head">
+      <div class="card-head c3-supply-panel-head">
         <div class="lhs">
           <span class="tag">CURVE</span>
           <h3>Planned vs Actual cumulative</h3>
@@ -562,9 +562,9 @@
       <div class="sub">{{ manager.material.material_flow.covered|default:0|intcomma }} linked to a PO</div>
     </div>
     <div class="kpi kpi-red">
-      <div class="lbl"><span class="marker"></span><span>Without PO</span></div>
+      <div class="lbl"><span class="marker"></span><span>Unallocated</span></div>
       <div class="val">{{ manager.material.material_flow.tbe_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
-      <div class="sub">{{ manager.material.material_flow.tbe|default:0|intcomma }} without linked PO</div>
+      <div class="sub">{{ manager.material.material_flow.tbe|default:0|intcomma }} without current allocation</div>
     </div>
     <div class="kpi kpi-amber">
       <div class="lbl"><span class="marker"></span><span>At Yard</span></div>
@@ -618,7 +618,12 @@
               <div class="kpi kpi-red">
                 <div class="lbl"><span class="marker"></span><span>Without PO</span></div>
                 <div class="val">{{ view.executive.no_po_pct|floatformat:1 }}<span class="unit">%</span></div>
-                <div class="sub">{{ view.executive.po_gap|intcomma }} without linked PO</div>
+                <div class="sub">{{ view.executive.po_gap|intcomma }} without PO, allocation, or catalog match</div>
+              </div>
+              <div class="kpi kpi-red">
+                <div class="lbl"><span class="marker"></span><span>No Balance</span></div>
+                <div class="val">{{ view.executive.no_balance|default:0|intcomma }}</div>
+                <div class="sub">compatible PO/stock, zero free balance</div>
               </div>
               <div class="kpi kpi-amber">
                 <div class="lbl"><span class="marker"></span><span>At Yard</span></div>
@@ -626,17 +631,16 @@
                 <div class="sub">{{ view.totals.yard|default:0|intcomma }} received at yard</div>
               </div>
             </div>
-            <div class="c3-forecast-insights" data-c3-forecast-insights="{{ view.key }}" hidden></div>
           </div>
 
           <script id="c3-poplaced-data-{{ view.key }}" type="application/json" data-c3-poplaced-data="{{ view.key }}">{{ view.chart_payload_json|safe }}</script>
 
           <div class="row-2 c3-poplaced-row" style="padding: 0 var(--s-4) var(--s-4); margin: 0; gap: var(--s-3);">
             <div class="card">
-              <div class="card-head">
+              <div class="card-head c3-supply-card-head">
                 <div class="lhs">
                   <span class="tag">STATUS PO</span>
-                  <h3>Total · With PO · Without PO · Item not arrived · At Yard</h3>
+                  <h3>PO Overview · At Yard Overview</h3>
                 </div>
                 <div class="rhs">{{ view.label|upper }} · ITEMS BY CAMPAIGN</div>
               </div>
@@ -647,16 +651,15 @@
             </div>
 
             <div class="card">
-              <div class="card-head">
+              <div class="card-head c3-supply-card-head c3-supply-pending-head">
                 <div class="lhs">
                   <span class="tag">PENDING</span>
                   <h3>Finalized drawings and material pending items</h3>
                 </div>
                 <div class="rhs">
                   <div class="scope-switch c3-supply-stage-actions" aria-label="Supply scenario filter">
-                    <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-scenario-label="All items" data-scenario-detail="All material rows, arrived or not arrived">All items</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="no_yard" data-scenario-label="Item not arrived" data-scenario-detail="Drawings with one or more active material item not confirmed at yard">Item not arrived</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard" data-scenario-detail="Drawings with every active material item confirmed at yard">At Yard</button>
+                    <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-scenario-label="PO Overview" data-scenario-detail="Total scope, with PO and without PO">PO Overview</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard Overview" data-scenario-detail="Drawings with material already received at yard; pending buckets show what is still missing">At Yard Overview</button>
                   </div>
                   <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
                   <button class="c3-export-link" type="button" data-c3-export-pending="{{ view.key }}" title="Export drawing list for the current pending condition">
@@ -887,7 +890,7 @@
             </thead>
             <tbody>
               {% for row in manager.material.drawing_line_rows %}
-                <tr class="c3-probe-row-{{ row.status|default:'missing' }}" data-grid-row data-status="{{ row.status|default:'missing' }}" data-document-id="{{ row.document_id|default:'' }}" data-campaign="{{ row.campaign|default:'-' }}" data-scope="{{ row.scope|default:'fabrication' }}" data-pending-bucket="{{ row.pending_bucket|default:0 }}" data-line-pending-bucket="{{ row.line_pending_bucket|default:row.pending_bucket|default:0 }}" data-drawing-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-has-po="{{ row.has_po|default:0 }}" data-with-po="{{ row.with_po|default:0 }}" data-without-po="{{ row.without_po|default:0 }}" data-po-not-arrived="{{ row.po_not_arrived|default:0 }}" data-yard-actual="{{ row.yard_actual|default:0 }}" data-drawing-finalized="{{ row.drawing_finalized|default:0 }}" data-stage-total-items="{{ row.stage_total_items|default:row.total_items|default:0 }}" data-stage-total-pending-bucket="{{ row.stage_total_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-po-items="{{ row.stage_po_items|default:row.with_po|default:0 }}" data-stage-po-pending-bucket="{{ row.stage_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-po-items="{{ row.stage_no_po_items|default:row.without_po|default:0 }}" data-stage-no-po-pending-bucket="{{ row.stage_no_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-yard-items="{{ row.stage_no_yard_items|default:row.po_not_arrived|default:0 }}" data-stage-no-yard-pending-bucket="{{ row.stage_no_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-yard-items="{{ row.stage_yard_items|default:row.yard_actual|default:0 }}" data-stage-yard-pending-bucket="{{ row.stage_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-c3-3d-line="{{ row.lines_full|default:row.line|default:'' }}" data-c3-3d-drawing="{{ row.drawing_number|default:'-' }}" data-c3-datafy-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-c3-datafy-families="{{ row.pending_families|default:row.families|default:'' }}" data-c3-datafy-status="{{ row.status_label|default:row.status|default:'missing' }}">
+                <tr class="c3-probe-row-{{ row.status|default:'missing' }}" data-grid-row data-status="{{ row.status|default:'missing' }}" data-document-id="{{ row.document_id|default:'' }}" data-campaign="{{ row.campaign|default:'-' }}" data-scope="{{ row.scope|default:'fabrication' }}" data-pending-bucket="{{ row.pending_bucket|default:0 }}" data-line-pending-bucket="{{ row.line_pending_bucket|default:row.pending_bucket|default:0 }}" data-drawing-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-has-po="{{ row.has_po|default:0 }}" data-with-po="{{ row.with_po|default:0 }}" data-without-po="{{ row.without_po|default:0 }}" data-no-balance="{{ row.no_balance|default:0 }}" data-not-allocated="{{ row.not_allocated|default:0 }}" data-catalog-issue="{{ row.catalog_issue|default:0 }}" data-unallocated="{{ row.unallocated|default:0 }}" data-po-not-arrived="{{ row.po_not_arrived|default:0 }}" data-yard-actual="{{ row.yard_actual|default:0 }}" data-drawing-finalized="{{ row.drawing_finalized|default:0 }}" data-stage-total-items="{{ row.stage_total_items|default:row.total_items|default:0 }}" data-stage-total-pending-bucket="{{ row.stage_total_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-po-items="{{ row.stage_po_items|default:row.with_po|default:0 }}" data-stage-po-pending-bucket="{{ row.stage_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-po-items="{{ row.stage_no_po_items|default:row.without_po|default:0 }}" data-stage-no-po-pending-bucket="{{ row.stage_no_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-balance-items="{{ row.stage_no_balance_items|default:row.no_balance|default:0 }}" data-stage-no-balance-pending-bucket="{{ row.stage_no_balance_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-not-allocated-items="{{ row.stage_not_allocated_items|default:row.not_allocated|default:0 }}" data-stage-not-allocated-pending-bucket="{{ row.stage_not_allocated_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-catalog-issue-items="{{ row.stage_catalog_issue_items|default:row.catalog_issue|default:0 }}" data-stage-catalog-issue-pending-bucket="{{ row.stage_catalog_issue_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-yard-items="{{ row.stage_no_yard_items|default:row.po_not_arrived|default:0 }}" data-stage-no-yard-pending-bucket="{{ row.stage_no_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-yard-items="{{ row.stage_yard_items|default:row.yard_actual|default:0 }}" data-stage-yard-pending-bucket="{{ row.stage_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-c3-3d-line="{{ row.lines_full|default:row.line|default:'' }}" data-c3-3d-drawing="{{ row.drawing_number|default:'-' }}" data-c3-datafy-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-c3-datafy-families="{{ row.pending_families|default:row.families|default:'' }}" data-c3-datafy-status="{{ row.status_label|default:row.status|default:'missing' }}">
                   <td data-col="row-no" data-sort-value="{{ row.row_no }}" class="mono">{{ row.row_no }}</td>
                   <td data-col="priority" data-sort-value="{{ row.priority|default:999999 }}" class="mono">{{ row.priority|default:"-" }}</td>
                   <td data-col="drawing"><span class="c3-local-ref c3-3d-click-hint" data-c3-3d-line-trigger data-c3-3d-line="{{ row.lines_full|default:row.line|default:'' }}" data-c3-3d-drawing="{{ row.drawing_number|default:'-' }}" title="Show linked line in 3D">{{ row.drawing_number|default:"-" }}</span></td>
@@ -1371,11 +1374,12 @@
 
   function c3StageLabel(stage) {
     var labels = {
-      total: 'Total',
+      total: 'PO Overview',
       po: 'With PO',
       no_po: 'Without PO',
+      no_balance: 'No Balance',
       no_yard: 'Item not arrived',
-      yard: 'At Yard'
+      yard: 'At Yard Overview'
     };
     return labels[stage] || stage || 'Selection';
   }
@@ -1399,7 +1403,7 @@
   }
 
   function c3ScenarioContextText(ctx) {
-    if (!ctx) return 'All items';
+    if (!ctx) return 'PO Overview';
     var label = ctx.scenarioLabel || c3ContextLabel(ctx);
     var detail = ctx.scenarioDetail || 'Rows grouped by missing material count in this scenario';
     return label + ' · ' + detail;
@@ -1421,7 +1425,8 @@
     if (forecast && !forecast.finalized) {
       if (stage === 'total') return forecast.total;
       if (stage === 'po') return forecast.withPo;
-      if (stage === 'no_po') return 0;
+      if (stage === 'no_po') return forecast.noPo;
+      if (stage === 'no_balance') return forecast.noBalance;
       if (stage === 'no_yard') return forecast.noYard;
       if (stage === 'yard') return forecast.forecastAvailable;
       return forecast.total;
@@ -1438,6 +1443,11 @@
       return c3DatasetHas(row, 'stageNoPoItems')
         ? c3DatasetNumber(row, 'stageNoPoItems')
         : (c3Flag(row.dataset.withoutPo) || !c3Flag(row.dataset.hasPo) ? 1 : 0);
+    }
+    if (stage === 'no_balance') {
+      return c3DatasetHas(row, 'stageNoBalanceItems')
+        ? c3DatasetNumber(row, 'stageNoBalanceItems')
+        : (c3Flag(row.dataset.noBalance) ? 1 : 0);
     }
     if (stage === 'no_yard') {
       return c3DatasetHas(row, 'stageNoYardItems')
@@ -1465,16 +1475,21 @@
       var totalItems = c3DatasetNumber(row, 'stageTotalItems');
       var yardItems = c3DatasetNumber(row, 'stageYardItems');
       if (stage === 'no_yard') return totalItems > 0 && yardItems < totalItems;
-      return totalItems > 0 && yardItems >= totalItems;
+      return totalItems > 0 && yardItems > 0;
     }
     return c3StageItems(row, stage) > 0;
   }
 
   function c3StagePendingBucket(row, stage) {
+    if (stage === 'yard' || stage === 'no_yard') {
+      var arrivalPending = c3ArrivalPendingItems(row, stage);
+      if (arrivalPending != null) return String(c3PendingBucketFromCount(arrivalPending));
+    }
     var keys = {
       total: 'stageTotalPendingBucket',
       po: 'stagePoPendingBucket',
       no_po: 'stageNoPoPendingBucket',
+      no_balance: 'stageNoBalancePendingBucket',
       no_yard: 'stageNoYardPendingBucket',
       yard: 'stageYardPendingBucket'
     };
@@ -1483,15 +1498,39 @@
     return String(row?.dataset?.pendingBucket || '0');
   }
 
-  function c3DrawingPendingBucket(row) {
+  function c3PendingBucketFromCount(value) {
+    var parsed = parseInt(String(value == null ? '0' : value), 10);
+    if (!Number.isFinite(parsed)) return 0;
+    return parsed >= 8 ? 8 : Math.max(0, parsed);
+  }
+
+  function c3ArrivalPendingItems(row, stage) {
+    if (!row || (stage !== 'yard' && stage !== 'no_yard')) return null;
+    var forecast = c3ForecastMetricsForRow(row);
+    if (forecast && !forecast.finalized) {
+      var forecastRemaining = (forecast.total || 0) - (forecast.forecastAvailable || 0) + (forecast.noPoAssumption || 0);
+      return Math.max(0, forecastRemaining);
+    }
+    if (c3DatasetHas(row, 'stageTotalItems') && c3DatasetHas(row, 'stageYardItems')) {
+      return Math.max(0, c3DatasetNumber(row, 'stageTotalItems') - c3DatasetNumber(row, 'stageYardItems'));
+    }
+    if (c3DatasetHas(row, 'stageNoYardItems') || c3DatasetHas(row, 'stageNoPoItems')) {
+      return c3DatasetNumber(row, 'stageNoYardItems') + c3DatasetNumber(row, 'stageNoPoItems');
+    }
+    if (c3DatasetHas(row, 'poNotArrived') || c3DatasetHas(row, 'withoutPo')) {
+      return c3DatasetNumber(row, 'poNotArrived') + c3DatasetNumber(row, 'withoutPo');
+    }
+    return null;
+  }
+
+  function c3DrawingPendingBucket(row, context) {
     if (!row) return 0;
     if (c3Flag(row.dataset.drawingFinalized) || String(row.dataset.pendingBucket || '') === '-1') return -1;
+    if (context?.stage) return c3StagePendingBucket(row, context.stage);
     var forecast = c3ForecastMetricsForRow(row);
     if (forecast && !forecast.finalized) return forecast.pendingBucket;
     var raw = row.dataset.pendingBucket || row.dataset.linePendingBucket || '0';
-    var parsed = parseInt(raw, 10);
-    if (!Number.isFinite(parsed)) return 0;
-    return parsed >= 8 ? 8 : Math.max(0, parsed);
+    return c3PendingBucketFromCount(raw);
   }
 
   function c3RowMatchesLinkedContext(row, ctx) {
@@ -1503,7 +1542,7 @@
       var expectedBucket = String(ctx.pendingBucket);
       if (expectedBucket === '-1') {
         if (!c3Flag(row.dataset.drawingFinalized) && String(row.dataset.pendingBucket || '') !== '-1') return false;
-      } else if (String(c3DrawingPendingBucket(row)) !== expectedBucket) {
+      } else if (String(c3DrawingPendingBucket(row, ctx)) !== expectedBucket) {
         return false;
       }
     }
@@ -1521,7 +1560,8 @@
       { key: 'total',   label: 'TOTAL',     field: 'total'   },
       { key: 'po',      label: 'WITH PO',     field: 'po'      },
       { key: 'no_po',   label: 'WITHOUT PO',  field: 'no_po'   },
-      { key: 'no_yard', label: 'ITEM NOT ARRIVED', field: 'no_yard' },
+      { key: 'no_balance', label: 'NO BALANCE', field: 'no_balance' },
+      { key: 'no_yard', label: 'NOT ARRIVED', field: 'no_yard' },
       { key: 'yard',    label: 'AT YARD',     field: 'yard'    }
     ];
     var totalsByStage = stages.map(function(s){ return camps.reduce(function(a,c){ return a + (c[s.field]||0); }, 0); });
@@ -1529,9 +1569,9 @@
 
     // dynamic viewBox = container size so SVG fills 100% w/h without distortion
     var rect = el.getBoundingClientRect();
-    var W = Math.max(420, Math.floor(rect.width || el.clientWidth || 640));
+    var W = Math.max(720, Math.floor(rect.width || el.clientWidth || 640));
     var H = Math.max(280, Math.floor(rect.height || el.clientHeight || 380));
-    var P = { l: 56, r: 16, t: 36, b: 44 };
+    var P = { l: 56, r: 16, t: 36, b: 48 };
     var innerW = W - P.l - P.r, innerH = H - P.t - P.b;
     var slotW = innerW / stages.length;
     var colW = Math.min(slotW * 0.64, 122);
@@ -1584,7 +1624,7 @@
       });
 
       // X-axis label
-      parts.push('<text x="' + colCenterX + '" y="' + (H - 14) + '" text-anchor="middle" font-size="12" font-weight="600" font-family="var(--font-mono)" fill="var(--fg-1)" pointer-events="none" style="letter-spacing:0.08em">' + stage.label + '</text>');
+      parts.push('<text x="' + colCenterX + '" y="' + (H - 16) + '" text-anchor="middle" font-size="10" font-weight="600" font-family="var(--font-mono)" fill="var(--fg-1)" pointer-events="none" style="letter-spacing:0.04em">' + stage.label + '</text>');
     });
 
     // axes
@@ -1654,6 +1694,14 @@
     return pairs;
   }
 
+  function c3ForecastHasTrackingPo(item, poPairs) {
+    var trackingPo = 'PO-AVEON-PARALLEL-TRACKING';
+    if (c3SplitForecastList(item?.po_numbers).some(function(po){ return po.toUpperCase() === trackingPo; })) {
+      return true;
+    }
+    return (poPairs || []).some(function(pair){ return String(pair?.po || '').trim().toUpperCase() === trackingPo; });
+  }
+
   function c3AddUnique(list, map, value) {
     var text = String(value || '').trim();
     if (!text || text === '-') return;
@@ -1697,6 +1745,9 @@
       total: 0,
       withPo: 0,
       noPo: 0,
+      noBalance: 0,
+      notAllocated: 0,
+      catalogIssue: 0,
       noPoExposure: 0,
       noPoAssumption: 0,
       noYard: 0,
@@ -1739,7 +1790,9 @@
       var hasPo = c3Flag(item.has_po);
       var yardActual = c3Flag(item.yard_actual);
       var missing = c3Number(item.missing_qty);
+      var poGapStatus = String(item.po_gap_status || '').trim() || (hasPo ? 'allocated' : 'no_po');
       var poPairs = c3ForecastPoPairs(item);
+      var trackingPo = c3ForecastHasTrackingPo(item, poPairs);
       var deliveryDate = String(item.po_delivery_date || '').trim();
       poPairs.forEach(function(pair){
         if (pair.expected_date && pair.expected_date > deliveryDate) deliveryDate = pair.expected_date;
@@ -1752,7 +1805,12 @@
 
       metric.total += 1;
       if (hasPo) metric.withPo += 1;
-      else metric.noPo += 1;
+      else if (poGapStatus === 'no_balance') metric.noBalance += 1;
+      else {
+        if (poGapStatus === 'not_allocated') metric.notAllocated += 1;
+        else if (poGapStatus === 'catalog_issue') metric.catalogIssue += 1;
+        metric.noPo += 1;
+      }
       if (hasPoGap) metric.noPoExposure += 1;
       c3AddUnique(metric.lineList, metric.lineMap, item.line);
       poPairs.forEach(function(pair){ c3AddUnique(metric.poList, metric.poMap, pair.po); });
@@ -1765,6 +1823,8 @@
         missing: missing,
         deliveryDate: deliveryDate,
         hasPoGap: hasPoGap,
+        poGapStatus: poGapStatus,
+        trackingPo: trackingPo,
         overdue: overdue,
         overduePairs: overduePairs,
         line: item.line || '-',
@@ -1777,8 +1837,9 @@
       var latestReadyByForecast = !!(metric.latestMaterialDate && metric.latestMaterialDate <= selectedDate);
       metric.items.forEach(function(item){
         var deliveryByDate = !!(item.hasPo && item.deliveryDate && item.deliveryDate <= selectedDate);
-        var noPoReadyByForecast = !!(!item.hasPo && item.hasPoGap && latestReadyByForecast);
-        var availableByForecast = item.yardActual || deliveryByDate || noPoReadyByForecast;
+        var trackingPoReadyByForecast = !!(item.trackingPo && item.hasPo && !item.yardActual && latestReadyByForecast);
+        var noPoReadyByForecast = !!(!item.hasPo && item.poGapStatus === 'no_po' && item.hasPoGap && latestReadyByForecast);
+        var availableByForecast = item.yardActual || deliveryByDate || trackingPoReadyByForecast || noPoReadyByForecast;
         item.overduePairs.forEach(function(pair){
           var poKey = pair.po + '|' + pair.expected_date;
           var po = metric.overduePoMap[poKey];
@@ -1821,7 +1882,7 @@
           metric.latePo += 1;
           metric.noYard += 1;
           metric.blockingPending += 1;
-        } else if (item.hasPoGap && latestReadyByForecast) {
+        } else if (item.poGapStatus === 'no_po' && item.hasPoGap && latestReadyByForecast) {
           metric.noPoAssumption += 1;
         } else if (item.hasPoGap && metric.latestMaterialDate) {
           metric.latePo += 1;
@@ -1874,9 +1935,42 @@
       scope: payload?.scope || scopeKey,
       scopeLabel: payload?.label || scopeKey,
       forecastDate: dateValue,
-      scenarioLabel: 'Forecast by ' + c3ForecastDateLabel(dateValue),
-      scenarioDetail: 'Forecast uses the latest planned material delivery per drawing; PO gaps inherit that date and are listed only in PO GAP.',
+      scenarioLabel: 'PO Overview',
+      scenarioDetail: c3ForecastScenarioDetail({ forecastDate: dateValue }),
     };
+  }
+
+  function c3ForecastScenarioDetail(context) {
+    var dateValue = context?.forecastDate || c3ActiveForecastDate();
+    if (!dateValue) return '';
+    var dateLabel = c3ForecastDateLabel(dateValue);
+    if (context?.stage === 'yard') {
+      return 'Forecast ' + dateLabel + ': material already at yard plus material expected by the forecast date; pending buckets show remaining blockers.';
+    }
+    return 'Forecast ' + dateLabel + ': all drawings in scope recalculated; pending buckets show remaining blockers.';
+  }
+
+  function c3ContextWithForecast(context, scopeKey, payload) {
+    if (!context) return context;
+    var next = Object.assign({}, context);
+    if (!next.scope && (payload?.scope || scopeKey)) next.scope = payload?.scope || scopeKey;
+    if (!next.scopeLabel && (payload?.label || scopeKey)) next.scopeLabel = payload?.label || scopeKey;
+    var dateValue = c3ActiveForecastDate();
+    if (!dateValue) {
+      delete next.forecastDate;
+      if (next._c3ForecastDetail) {
+        if (next.baseScenarioDetail) next.scenarioDetail = next.baseScenarioDetail;
+        else delete next.scenarioDetail;
+        delete next.baseScenarioDetail;
+        delete next._c3ForecastDetail;
+      }
+      return next;
+    }
+    next.forecastDate = dateValue;
+    if (!next.baseScenarioDetail && next.scenarioDetail) next.baseScenarioDetail = next.scenarioDetail;
+    next.scenarioDetail = c3ForecastScenarioDetail(next);
+    next._c3ForecastDetail = '1';
+    return next;
   }
 
   function c3BuildForecastChartPayload(scopeKey, payload) {
@@ -1888,6 +1982,9 @@
         total: 0,
         po: 0,
         no_po: 0,
+        no_balance: 0,
+        not_allocated: 0,
+        catalog_issue: 0,
         no_yard: 0,
         yard: 0,
         finalized: c.finalized || 0,
@@ -1902,7 +1999,10 @@
       if (index == null) return;
       campaigns[index].total += metric.total;
       campaigns[index].po += metric.withPo;
-      campaigns[index].no_po += 0;
+      campaigns[index].no_po += metric.noPo;
+      campaigns[index].no_balance += metric.noBalance;
+      campaigns[index].not_allocated += metric.notAllocated;
+      campaigns[index].catalog_issue += metric.catalogIssue;
       campaigns[index].no_yard += metric.noYard;
       campaigns[index].yard += metric.forecastAvailable;
     });
@@ -1912,6 +2012,9 @@
         total: campaigns.reduce(function(sum, c){ return sum + (c.total || 0); }, 0),
         po: campaigns.reduce(function(sum, c){ return sum + (c.po || 0); }, 0),
         no_po: campaigns.reduce(function(sum, c){ return sum + (c.no_po || 0); }, 0),
+        no_balance: campaigns.reduce(function(sum, c){ return sum + (c.no_balance || 0); }, 0),
+        not_allocated: campaigns.reduce(function(sum, c){ return sum + (c.not_allocated || 0); }, 0),
+        catalog_issue: campaigns.reduce(function(sum, c){ return sum + (c.catalog_issue || 0); }, 0),
         no_yard: campaigns.reduce(function(sum, c){ return sum + (c.no_yard || 0); }, 0),
         yard: campaigns.reduce(function(sum, c){ return sum + (c.yard || 0); }, 0),
       }),
@@ -1986,7 +2089,7 @@
     var campaignIndex = {};
     campaigns.forEach(function(c, index){ campaignIndex[c3Norm(c.label)] = index; });
     rows.forEach(function(drawingRow){
-      var bucket = c3DrawingPendingBucket(drawingRow);
+      var bucket = c3DrawingPendingBucket(drawingRow, context);
       var row = bucketMap[bucket] || bucketMap[8];
       var index = campaignIndex[c3Norm(drawingRow.dataset.campaign || '-')];
       if (index == null) return;
@@ -2005,7 +2108,7 @@
 
     var filteredRows = bucketOrder
       .map(function(bucket){ return bucketMap[bucket]; })
-      .filter(function(row){ return row.total > 0 || row.pending !== -1; });
+      .filter(function(row){ return row.pending === -1 || row.pending >= 0; });
     return {
       scope: payload.scope || scopeKey,
       label: payload.label || scopeKey,
@@ -2192,7 +2295,7 @@
     if (trigger.dataset.pendingBucket != null) context.pendingBucket = trigger.dataset.pendingBucket;
     if (trigger.dataset.scenarioLabel) context.scenarioLabel = trigger.dataset.scenarioLabel;
     if (trigger.dataset.scenarioDetail) context.scenarioDetail = trigger.dataset.scenarioDetail;
-    return context;
+    return c3ContextWithForecast(context, context.scope, null);
   }
 
   function c3ActiveLinkedContextForScope(scopeKey, payload) {
@@ -2237,7 +2340,8 @@
       if (forecast.noDeliveryDate > 0) return 'Pending - no delivery date';
       return 'Pending by forecast';
     }
-    if (c3DatasetNumber(row, 'withPo') <= 0) return 'Without PO';
+    if (c3DatasetNumber(row, 'noBalance') > 0) return 'No Balance';
+    if (c3DatasetNumber(row, 'withoutPo') > 0 || c3DatasetNumber(row, 'withPo') <= 0) return 'Without PO';
     if (c3DatasetNumber(row, 'poNotArrived') > 0) return 'Item not arrived';
     if (c3DatasetNumber(row, 'yardActual') > 0) return 'At Yard';
     return 'Item not arrived';
@@ -2336,253 +2440,6 @@
     });
   }
 
-  function initC3ForecastExports() {
-    document.addEventListener('click', function(event){
-      var button = event.target.closest('[data-c3-export-forecast]');
-      if (!button) return;
-      event.preventDefault();
-      var scopeKey = button.getAttribute('data-scope') || '';
-      var report = button.getAttribute('data-c3-export-forecast') || '';
-      c3ExportForecastReport(scopeKey, report);
-      button.classList.add('is-exported');
-      window.setTimeout(function(){ button.classList.remove('is-exported'); }, 1000);
-    });
-  }
-
-  function c3ShortList(list, max) {
-    var values = (list || []).filter(Boolean);
-    var clipped = values.slice(0, max || 3).join(', ');
-    if (values.length > (max || 3)) clipped += ' +' + (values.length - (max || 3));
-    return clipped || '-';
-  }
-
-  function c3JoinList(list) {
-    return (list || []).filter(Boolean).join(', ') || '-';
-  }
-
-  function c3ForecastMetricsForScope(scopeKey) {
-    var dateValue = c3ActiveForecastDate();
-    if (!dateValue) return [];
-    if (!c3ForecastState.metrics) c3ForecastState.metrics = c3BuildForecastMetrics(dateValue);
-    return Object.keys(c3ForecastState.metrics || {})
-      .map(function(key){ return c3ForecastState.metrics[key]; })
-      .filter(function(metric){ return metric && c3Same(metric.scope, scopeKey); });
-  }
-
-  function c3ForecastDaysLate(expectedDate) {
-    var today = c3LocalIsoDate(new Date());
-    if (!expectedDate || expectedDate >= today) return 0;
-    var from = new Date(expectedDate + 'T00:00:00');
-    var to = new Date(today + 'T00:00:00');
-    return Math.max(0, Math.round((to - from) / 86400000));
-  }
-
-  function c3ForecastInsightRows(metrics) {
-    return (metrics || [])
-      .filter(function(metric){ return metric.confirmedReady || metric.readyIfPoByDate; })
-      .sort(function(a, b){
-        if (a.readyIfPoByDate !== b.readyIfPoByDate) return a.readyIfPoByDate ? -1 : 1;
-        if ((a.noPoAssumption || 0) !== (b.noPoAssumption || 0)) return (b.noPoAssumption || 0) - (a.noPoAssumption || 0);
-        return String(a.latestMaterialDate || '9999-12-31').localeCompare(String(b.latestMaterialDate || '9999-12-31')) || String(a.drawing).localeCompare(String(b.drawing));
-      });
-  }
-
-  function c3ForecastOverduePoRows(metrics) {
-    var poMap = {};
-    (metrics || []).forEach(function(metric){
-      (metric.overduePoList || []).forEach(function(entry){
-        var key = entry.po + '|' + entry.expectedDate;
-        var row = poMap[key];
-        if (!row) {
-          row = poMap[key] = {
-            po: entry.po,
-            expectedDate: entry.expectedDate,
-            daysLate: c3ForecastDaysLate(entry.expectedDate),
-            items: 0,
-            drawings: [],
-            drawingMap: {},
-            lines: [],
-            lineMap: {},
-          };
-        }
-        row.items += entry.items || 0;
-        c3AddUnique(row.drawings, row.drawingMap, metric.drawing);
-        (entry.lineList || metric.lineList || []).forEach(function(line){ c3AddUnique(row.lines, row.lineMap, line); });
-      });
-    });
-    return Object.keys(poMap).map(function(key){ return poMap[key]; })
-      .sort(function(a, b){ return a.expectedDate.localeCompare(b.expectedDate) || a.po.localeCompare(b.po); });
-  }
-
-  function c3ForecastOverdueDrawingPoRows(metrics) {
-    return (metrics || [])
-      .filter(function(metric){ return (metric.overduePoList || []).length > 0; })
-      .flatMap(function(metric){
-        return (metric.overduePoList || []).map(function(entry){
-          return {
-            drawing: metric.drawing || '-',
-            campaign: metric.campaign || '-',
-            lines: entry.lineList && entry.lineList.length ? entry.lineList : (metric.lineList || []),
-            po: entry.po || '-',
-            dueDate: entry.expectedDate || '',
-            daysLate: c3ForecastDaysLate(entry.expectedDate),
-            items: entry.items || 0,
-          };
-        });
-      })
-      .sort(function(a, b){
-        return String(a.dueDate || '').localeCompare(String(b.dueDate || ''))
-          || String(a.drawing || '').localeCompare(String(b.drawing || ''))
-          || String(a.po || '').localeCompare(String(b.po || ''));
-      });
-  }
-
-  function c3ExportForecastReport(scopeKey, report) {
-    var dateValue = c3ActiveForecastDate();
-    if (!dateValue) return;
-    var payload = c3OriginalPoPayload(scopeKey) || {};
-    var scopeLabel = payload.label || scopeKey || 'Scope';
-    var metrics = c3ForecastMetricsForScope(scopeKey);
-    var rows = [];
-    var filePart = report === 'overdue' ? 'overdue-pos-by-drawing' : 'would-close';
-
-    if (report === 'overdue') {
-      rows.push([
-        'forecast_date',
-        'scope',
-        'drawing',
-        'campaign',
-        'lines',
-        'overdue_po',
-        'due_date',
-        'days_late',
-        'overdue_items'
-      ]);
-      c3ForecastOverdueDrawingPoRows(metrics).forEach(function(row){
-        rows.push([
-          c3ForecastDateLabel(dateValue),
-          scopeLabel,
-          row.drawing || '-',
-          row.campaign || '-',
-          c3JoinList(row.lines),
-          row.po || '-',
-          row.dueDate ? c3ForecastDateLabel(row.dueDate) : '-',
-          row.daysLate || 0,
-          row.items || 0
-        ]);
-      });
-    } else {
-      rows.push([
-        'forecast_date',
-        'scope',
-        'status',
-        'drawing',
-        'campaign',
-        'lines',
-        'latest_material_delivery',
-        'po_gap_to_ready',
-        'forecast_assumption',
-        'total_items',
-        'covered_by_forecast',
-        'pending_items',
-        'overdue_items',
-        'undated_po_items',
-        'after_forecast_items',
-        'po_numbers'
-      ]);
-      c3ForecastInsightRows(metrics).forEach(function(metric){
-        rows.push([
-          c3ForecastDateLabel(dateValue),
-          scopeLabel,
-          metric.readyIfPoByDate ? 'Ready if PO' : 'Ready',
-          metric.drawing || '-',
-          metric.campaign || '-',
-          c3JoinList(metric.lineList),
-          metric.latestMaterialDate ? c3ForecastDateLabel(metric.latestMaterialDate) : '-',
-          metric.noPoAssumption || 0,
-          metric.noPoAssumption > 0 ? 'Assume missing PO is assigned by forecast date' : 'Assume planned delivery date is met',
-          metric.total || 0,
-          metric.confirmedCovered || 0,
-          metric.pending || 0,
-          metric.overduePo || 0,
-          metric.undatedPo || 0,
-          metric.latePo || 0,
-          c3JoinList(metric.poList)
-        ]);
-      });
-    }
-
-    if (rows.length === 1) rows.push([c3ForecastDateLabel(dateValue), scopeLabel, 'No rows']);
-    var slug = c3ExportConditionSlug({ scopeLabel: scopeLabel, forecastDate: dateValue }, payload, scopeKey);
-    c3DownloadCsv('bonga-north-forecast-' + filePart + '-' + slug + '.csv', rows);
-  }
-
-  function c3RenderForecastInsights(scopeKey, payload) {
-    var host = document.querySelector('[data-c3-forecast-insights="' + scopeKey + '"]');
-    if (!host) return;
-    var dateValue = c3ActiveForecastDate();
-    if (!dateValue) {
-      host.hidden = true;
-      host.innerHTML = '';
-      return;
-    }
-    var metrics = c3ForecastMetricsForScope(scopeKey);
-    var closeRows = c3ForecastInsightRows(metrics);
-    var overduePoRows = c3ForecastOverduePoRows(metrics);
-    var overdueRows = c3ForecastOverdueDrawingPoRows(metrics);
-    var readyCount = metrics.filter(function(metric){ return metric.confirmedReady; }).length;
-    var readyIfPoCount = metrics.filter(function(metric){ return metric.readyIfPoByDate; }).length;
-    var blockedCount = metrics.filter(function(metric){ return !metric.confirmedReady && !metric.readyIfPoByDate; }).length;
-    var notArrivedItems = metrics.reduce(function(sum, metric){ return sum + (metric.noYard || 0); }, 0);
-    var overdueItems = metrics.reduce(function(sum, metric){ return sum + (metric.overduePo || 0); }, 0);
-    var undatedItems = metrics.reduce(function(sum, metric){ return sum + (metric.undatedPo || 0); }, 0);
-    var afterForecastItems = metrics.reduce(function(sum, metric){ return sum + (metric.latePo || 0); }, 0);
-    var closePoGapItems = closeRows.reduce(function(sum, metric){ return sum + (metric.noPoAssumption || 0); }, 0);
-
-    var html = [];
-    html.push('<div class="c3-forecast-insight-head"><div><span class="tag">FORECAST CHECK</span><h4>' + c3Attr((payload?.label || scopeKey || 'Scope') + ' · ' + c3ForecastDateLabel(dateValue)) + '</h4></div><p>Scenario view only: each PO gap inherits the latest planned material date for its drawing and appears in PO GAP, not in the chart.</p></div>');
-    html.push('<div class="c3-forecast-kpis">');
-    html.push('<div><span>Ready by forecast</span><strong>' + readyCount.toLocaleString('pt-BR') + '</strong><small>drawings/lines with dated material covered by this date</small></div>');
-    html.push('<div><span>Ready if PO</span><strong>' + readyIfPoCount.toLocaleString('pt-BR') + '</strong><small>PO GAP shown separately from the chart</small></div>');
-    html.push('<div><span>Not arrived still</span><strong>' + notArrivedItems.toLocaleString('pt-BR') + '</strong><small>' + blockedCount.toLocaleString('pt-BR') + ' blocked drawings · ' + undatedItems.toLocaleString('pt-BR') + ' no date · ' + afterForecastItems.toLocaleString('pt-BR') + ' after forecast</small></div>');
-    html.push('<div><span>Overdue POs</span><strong>' + overduePoRows.length.toLocaleString('pt-BR') + '</strong><small>' + overdueItems.toLocaleString('pt-BR') + ' item(s) listed as attention, not blockers</small></div>');
-    html.push('</div>');
-    html.push('<div class="c3-forecast-detail-grid">');
-
-    html.push('<section><div class="c3-forecast-section-head"><h5>Drawings/lines that would close</h5><div class="c3-forecast-section-actions"><span>' + closeRows.length.toLocaleString('pt-BR') + ' result(s)</span><button type="button" class="c3-forecast-export" data-c3-export-forecast="closing" data-scope="' + c3Attr(scopeKey) + '">Export</button></div></div>');
-    if (closeRows.length) {
-      html.push('<div class="c3-forecast-table-wrap"><table class="c3-forecast-table c3-forecast-close-table"><thead><tr><th>Status</th><th>Drawing</th><th>Line</th><th>Campaign</th><th>Latest material</th><th>PO GAP</th><th>Assumption</th></tr></thead><tbody>');
-      closeRows.slice(0, 14).forEach(function(metric){
-        var poGapValue = metric.noPoAssumption || 0;
-        var assumption = poGapValue > 0
-          ? '<strong>PO by forecast date</strong><small>' + c3Attr(poGapValue.toLocaleString('pt-BR')) + ' item(s) without PO</small>'
-          : '<strong>Delivery date met</strong><small>planned material date assumed</small>';
-        html.push('<tr><td><span class="c3-mini-status ' + (metric.readyIfPoByDate ? 'warn' : 'ok') + '">' + (metric.readyIfPoByDate ? 'Ready if PO' : 'Ready') + '</span></td><td>' + c3Attr(metric.drawing || '-') + '</td><td>' + c3Attr(c3ShortList(metric.lineList, 2)) + '</td><td>' + c3Attr(metric.campaign || '-') + '</td><td>' + c3Attr(metric.latestMaterialDate ? c3ForecastDateLabel(metric.latestMaterialDate) : '-') + '</td><td class="c3-po-gap-cell ' + (poGapValue > 0 ? 'has-gap' : '') + '">' + c3Attr(String(poGapValue)) + '</td><td class="c3-assumption-cell ' + (poGapValue > 0 ? 'has-gap' : '') + '">' + assumption + '</td></tr>');
-      });
-      html.push('</tbody></table></div>');
-      if (closeRows.length > 14) html.push('<p class="c3-forecast-note">Showing first 14 of ' + closeRows.length.toLocaleString('pt-BR') + ' result(s). Use the linked matrix/table below to filter the full list.</p>');
-    } else {
-      html.push('<div class="c3-forecast-empty">No drawing/line would close in this scenario.</div>');
-    }
-    html.push('</section>');
-
-    html.push('<section><div class="c3-forecast-section-head"><h5>Drawings with overdue POs</h5><div class="c3-forecast-section-actions"><span>' + overdueRows.length.toLocaleString('pt-BR') + ' drawing/PO row(s)</span><button type="button" class="c3-forecast-export" data-c3-export-forecast="overdue" data-scope="' + c3Attr(scopeKey) + '">Export</button></div></div>');
-    if (overdueRows.length) {
-      html.push('<div class="c3-forecast-table-wrap"><table class="c3-forecast-table c3-forecast-overdue-table"><thead><tr><th>Drawing</th><th>Line</th><th>Overdue PO</th><th>Due date</th><th>Late</th><th>Items</th></tr></thead><tbody>');
-      overdueRows.slice(0, 14).forEach(function(row){
-        html.push('<tr><td><strong>' + c3Attr(row.drawing || '-') + '</strong><small>' + c3Attr(row.campaign || '-') + '</small></td><td>' + c3Attr(c3ShortList(row.lines, 2)) + '</td><td>' + c3Attr(row.po || '-') + '</td><td>' + c3Attr(row.dueDate ? c3ForecastDateLabel(row.dueDate) : '-') + '</td><td>' + row.daysLate.toLocaleString('pt-BR') + 'd</td><td>' + (row.items || 0).toLocaleString('pt-BR') + '</td></tr>');
-      });
-      html.push('</tbody></table></div>');
-      if (overdueRows.length > 14) html.push('<p class="c3-forecast-note">Showing first 14 drawing/PO row(s). Drawings repeat when more than one overdue PO is listed.</p>');
-    } else {
-      html.push('<div class="c3-forecast-empty">No overdue PO was found for this scope.</div>');
-    }
-    html.push('</section></div>');
-
-    host.hidden = false;
-    host.innerHTML = html.join('');
-  }
-
   function c3RenderPoPlacedScope(key, context) {
     var payload = c3OriginalPoPayload(key);
     if (!payload) return;
@@ -2591,12 +2448,10 @@
       var activeScenario = document.querySelector('[data-supply-scope="' + key + '"] .c3-supply-stage-actions button.active');
       if (activeScenario) context = c3ContextFromLinkedTrigger(activeScenario, null);
     }
-    if (!context || c3ActiveForecastDate()) {
-      context = Object.assign({}, c3ForecastDefaultContext(key, payload) || {}, context || {});
-    }
+    if (!context) context = c3ForecastDefaultContext(key, payload);
+    context = c3ContextWithForecast(context, key, payload);
     renderC3PoPlacedChart(key, payload);
     renderC3PoPlacedTable(key, payload, context || null);
-    c3RenderForecastInsights(key, payload);
   }
 
   function renderAllPoPlaced() {
@@ -2784,7 +2639,7 @@
     var root = document.querySelector('[data-c3-probe]');
     if (!root || !key) return;
     var button = root.querySelector('[data-c3-probe-tab="' + key + '"]');
-    if (button) button.click();
+    if (button && !button.classList.contains('is-active')) button.click();
   }
 
   function c3ApplyProbeContext(gridKey, context, options) {
@@ -2801,14 +2656,12 @@
     var el = document.querySelector('[data-c3-poplaced-table="' + scopeKey + '"]');
     var wrap = el ? el.querySelector('.c3-pending-table-wrap') : null;
     if (wrap) wrap.classList.add('is-updating');
-    window.requestAnimationFrame(function(){
-      renderC3PoPlacedTable(scopeKey, payload, context || null);
-      var nextWrap = el ? el.querySelector('.c3-pending-table-wrap') : null;
-      if (nextWrap) {
-        nextWrap.classList.add('is-entering');
-        window.requestAnimationFrame(function(){ nextWrap.classList.remove('is-entering', 'is-updating'); });
-      }
-    });
+    renderC3PoPlacedTable(scopeKey, payload, c3ContextWithForecast(context || null, scopeKey, payload));
+    var nextWrap = el ? el.querySelector('.c3-pending-table-wrap') : null;
+    if (nextWrap) {
+      nextWrap.classList.add('is-entering');
+      window.requestAnimationFrame(function(){ nextWrap.classList.remove('is-entering', 'is-updating'); });
+    }
   }
 
   function c3ResetPendingMatrices() {
@@ -2955,6 +2808,16 @@
       if (currentSort.col) {
         url.searchParams.set('sort_col', currentSort.col);
         url.searchParams.set('sort_dir', String(currentSort.dir));
+      }
+      if (linkedContext) {
+        if (linkedContext.scope) url.searchParams.set('lf_scope', linkedContext.scope);
+        if (linkedContext.campaign) url.searchParams.set('lf_campaign', linkedContext.campaign);
+        if (linkedContext.stage) url.searchParams.set('lf_stage', linkedContext.stage);
+        if (linkedContext.pendingBucket != null) url.searchParams.set('lf_pending_bucket', linkedContext.pendingBucket);
+      } else {
+        ['lf_scope', 'lf_campaign', 'lf_stage', 'lf_pending_bucket'].forEach(function(key){
+          url.searchParams.delete(key);
+        });
       }
       return url;
     }
@@ -3207,8 +3070,14 @@
     if (pageNext) pageNext.addEventListener('click', function(){ loadServerPage(pageState.page + 1); });
     if (clearBtn) {
       clearBtn.addEventListener('click', function(){
+        document.querySelectorAll('[data-c3-probe-grid]').forEach(function(otherTable){
+          if (otherTable === table) return;
+          if (otherTable._c3ProbeGrid && otherTable._c3ProbeGrid.clearLinkedFilter) {
+            otherTable._c3ProbeGrid.clearLinkedFilter();
+          }
+        });
         linkedContext = null;
-        document.querySelectorAll('[data-c3-linked-filter].is-linked-active').forEach(function(item){
+        document.querySelectorAll('[data-c3-linked-filter]').forEach(function(item){
           item.classList.remove('is-linked-active');
           item.classList.remove('active');
           item.setAttribute('aria-pressed', 'false');
@@ -3227,19 +3096,38 @@
     }
     table._c3ProbeGrid = {
       applyLinkedFilter: function(context, options) {
-        linkedContext = context || null;
+        document.querySelectorAll('[data-c3-probe-grid]').forEach(function(otherTable){
+          if (otherTable === table) return;
+          if (otherTable._c3ProbeGrid && otherTable._c3ProbeGrid.clearLinkedFilter) {
+            otherTable._c3ProbeGrid.clearLinkedFilter();
+          }
+        });
+        linkedContext = c3ContextWithForecast(context || null, context?.scope || key, null);
         clearManualFilters();
-        window.requestAnimationFrame(function(){
+        if (serverPaged) {
+          loadServerPage(1);
+          return;
+        }
+        var run = function(){
           applyFilters();
           var first = rows.find(function(row){ return !row.hidden; });
           if (first && !(options && options.noScroll)) first.scrollIntoView({ block: 'center', behavior: 'smooth' });
-        });
+        };
+        if (options && options.noScroll) run();
+        else window.requestAnimationFrame(run);
       },
       clearLinkedFilter: function() {
         linkedContext = null;
+        if (serverPaged) {
+          loadServerPage(1);
+          return;
+        }
         applyFilters();
       },
       refresh: function() {
+        if (linkedContext) linkedContext = c3ContextWithForecast(linkedContext, linkedContext.scope || key, null);
+        populateSelects();
+        updatePager();
         applyFilters();
       }
     };
@@ -3369,7 +3257,6 @@
     });
     renderAllPoPlaced();
     initC3PendingExports();
-    initC3ForecastExports();
     setupPoPlacedResize();
     initC3ForecastControls();
     initC3ProbeTabs();

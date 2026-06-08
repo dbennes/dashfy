@@ -536,6 +536,155 @@ def _truthy_flag(value: Any) -> bool:
         return False
 
 
+def _supply_float(value: Any) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _supply_int(value: Any) -> int:
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+PO_GAP_LABELS = {
+    "allocated": "Allocated",
+    "no_po": "Without PO",
+    "no_balance": "No balance",
+    "not_allocated": "Not allocated",
+    "catalog_issue": "Catalog issue",
+}
+
+
+def _supply_po_gap_status(row: dict[str, Any]) -> str:
+    if _truthy_flag(row.get("has_po")) or _supply_float(row.get("allocated_qty")) > 0:
+        return "allocated"
+    if _truthy_flag(row.get("stock_free_na")):
+        return "catalog_issue"
+    stock_free = _supply_float(row.get("stock_free_qty"))
+    stock_piece_count = _supply_int(row.get("stock_piece_count"))
+    if stock_free > 0:
+        return "not_allocated"
+    if stock_piece_count > 0:
+        return "no_balance"
+    return "no_po"
+
+
+def _supply_apply_po_gap_status(row: dict[str, Any]) -> str:
+    status = _supply_po_gap_status(row)
+    row["po_gap_status"] = status
+    row["po_gap_label"] = PO_GAP_LABELS.get(status, "Without PO")
+    row["has_compatible_po"] = 1 if status in {"allocated", "no_balance", "not_allocated"} else 0
+    row["has_stock_balance"] = 1 if _supply_float(row.get("stock_free_qty")) > 0 else 0
+    if not str(row.get("po_covering") or "").strip():
+        if status == "no_balance":
+            stock_pos = str(row.get("stock_po_numbers") or "").strip()
+            row["po_covering"] = f"No balance ({stock_pos})" if stock_pos else "No balance"
+        elif status == "not_allocated":
+            stock_pos = str(row.get("stock_po_numbers") or "").strip()
+            row["po_covering"] = f"Not allocated ({stock_pos})" if stock_pos else "Not allocated"
+        elif status == "catalog_issue":
+            row["po_covering"] = "Catalog issue"
+        else:
+            row["po_covering"] = "No linked PO"
+    return status
+
+
+def _supply_spdm_stock_lookup(material_ids: list[Any] | set[Any]) -> dict[Any, dict[str, Any]]:
+    ids = [mid for mid in material_ids if mid not in (None, "")]
+    if not ids:
+        return {}
+    try:
+        with _spdm_conn() as conn:
+            cur = conn.cursor()
+            lookup: dict[Any, dict[str, Any]] = {}
+            for start in range(0, len(ids), 800):
+                chunk = ids[start:start + 800]
+                placeholders = ", ".join(["?"] * len(chunk))
+                cur.execute(
+                    f"""
+                    with match_one as (
+                        select material_item_id, min(catalog_item_id) as catalog_item_id
+                        from catalog_catalogmatch
+                        where material_item_id in ({placeholders})
+                          and material_item_id is not null
+                        group by material_item_id
+                    )
+                    select cm.material_item_id,
+                           cm.catalog_item_id,
+                           count(sp.id) as stock_piece_count,
+                           coalesce(sum(sp.remaining_qty), 0) as stock_free_qty,
+                           coalesce(sum(sp.original_qty), 0) as stock_total_qty,
+                           group_concat(distinct nullif(po.po_number, '')) as stock_po_numbers
+                    from match_one cm
+                    left join catalog_stockpiece sp on sp.catalog_item_id = cm.catalog_item_id
+                    left join core_purchaseorderitem poi on poi.id = sp.po_item_id
+                    left join core_purchaseorder po on po.id = poi.purchase_order_id
+                    group by cm.material_item_id, cm.catalog_item_id
+                    """,
+                    tuple(chunk),
+                )
+                for row in cur.fetchall():
+                    data = dict(row)
+                    lookup[data["material_item_id"]] = data
+            return lookup
+    except Exception:
+        return {}
+
+
+def _supply_enrich_stock_metadata(
+    rows: list[dict[str, Any]],
+    reference_rows: list[dict[str, Any]] | None = None,
+) -> None:
+    reference_by_id: dict[Any, dict[str, Any]] = {}
+    for ref in reference_rows or []:
+        material_id = ref.get("material_item_id")
+        if material_id in (None, ""):
+            continue
+        reference_by_id[material_id] = ref
+
+    missing_ids = []
+    stock_fields = ("stock_free_na", "stock_free_qty", "stock_piece_count", "stock_total_qty", "stock_po_numbers")
+    for row in rows:
+        material_id = row.get("material_item_id")
+        ref = reference_by_id.get(material_id)
+        if ref:
+            for field in stock_fields:
+                if row.get(field) in (None, "") and ref.get(field) not in (None, ""):
+                    row[field] = ref.get(field)
+        if row.get("stock_piece_count") in (None, "") and material_id not in (None, ""):
+            missing_ids.append(material_id)
+
+    lookup = _supply_spdm_stock_lookup(missing_ids)
+    for row in rows:
+        material_id = row.get("material_item_id")
+        data = lookup.get(material_id)
+        if not data:
+            continue
+        row["catalog_item_id"] = row.get("catalog_item_id") or data.get("catalog_item_id")
+        row["stock_piece_count"] = data.get("stock_piece_count") or 0
+        row["stock_total_qty"] = data.get("stock_total_qty") or 0
+        if row.get("stock_free_qty") in (None, ""):
+            row["stock_free_qty"] = data.get("stock_free_qty") or 0
+        if row.get("stock_free_na") in (None, ""):
+            row["stock_free_na"] = 0
+        stock_pos = str(data.get("stock_po_numbers") or "").strip()
+        if stock_pos and not str(row.get("stock_po_numbers") or "").strip():
+            row["stock_po_numbers"] = stock_pos
+
+    for row in rows:
+        if row.get("stock_piece_count") in (None, ""):
+            row["stock_piece_count"] = 0
+        if row.get("stock_total_qty") in (None, ""):
+            row["stock_total_qty"] = 0
+        if row.get("stock_free_qty") in (None, "") and not _truthy_flag(row.get("stock_free_na")):
+            row["stock_free_qty"] = 0
+        _supply_apply_po_gap_status(row)
+
+
 def _supply_po_covering_has_po(value: Any) -> bool:
     text = str(value or "").strip()
     if not text:
@@ -574,9 +723,10 @@ def _supply_enrich_material_rows(
         row["status_label"] = label
         row["has_po"] = 1 if has_po else 0
         row["yard_actual"] = 1 if yard_actual else 0
+        _supply_apply_po_gap_status(row)
         row["stock_free_label"] = "n/a" if row.get("stock_free_na") else row.get("stock_free_qty") or 0
         if not row.get("po_covering"):
-            row["po_covering"] = "No linked PO" if status != "ok" else "Covered"
+            row["po_covering"] = "Covered" if status == "ok" else row.get("po_gap_label") or "No linked PO"
     return counts
 
 
@@ -617,6 +767,10 @@ def _supply_build_drawing_line_rows(
             "pending": 0,
             "with_po": 0,
             "without_po": 0,
+            "no_balance": 0,
+            "not_allocated": 0,
+            "catalog_issue": 0,
+            "unallocated": 0,
             "po_not_arrived": 0,
             "yard_actual": 0,
             "stage_total_items": 0,
@@ -625,6 +779,12 @@ def _supply_build_drawing_line_rows(
             "stage_po_pending": 0,
             "stage_no_po_items": 0,
             "stage_no_po_pending": 0,
+            "stage_no_balance_items": 0,
+            "stage_no_balance_pending": 0,
+            "stage_not_allocated_items": 0,
+            "stage_not_allocated_pending": 0,
+            "stage_catalog_issue_items": 0,
+            "stage_catalog_issue_pending": 0,
             "stage_no_yard_items": 0,
             "stage_no_yard_pending": 0,
             "stage_yard_items": 0,
@@ -645,6 +805,7 @@ def _supply_build_drawing_line_rows(
         missing = float(row.get("missing_qty") or 0)
         allocated = float(row.get("allocated_qty") or 0)
         has_po = _truthy_flag(row.get("has_po"))
+        po_gap_status = row.get("po_gap_status") or _supply_apply_po_gap_status(row)
         yard_actual = _truthy_flag(row.get("yard_actual"))
         if missing <= 0:
             group["covered"] += 1
@@ -654,8 +815,20 @@ def _supply_build_drawing_line_rows(
                 group["partial"] += 1
         if has_po:
             group["with_po"] += 1
+        elif po_gap_status == "no_balance":
+            group["no_balance"] += 1
+            group["unallocated"] += 1
+        elif po_gap_status == "not_allocated":
+            group["not_allocated"] += 1
+            group["without_po"] += 1
+            group["unallocated"] += 1
+        elif po_gap_status == "catalog_issue":
+            group["catalog_issue"] += 1
+            group["without_po"] += 1
+            group["unallocated"] += 1
         else:
             group["without_po"] += 1
+            group["unallocated"] += 1
         if has_po and not yard_actual:
             group["po_not_arrived"] += 1
         if yard_actual:
@@ -668,6 +841,22 @@ def _supply_build_drawing_line_rows(
             group["stage_po_items"] += 1
             if missing > 0:
                 group["stage_po_pending"] += 1
+        elif po_gap_status == "no_balance":
+            group["stage_no_balance_items"] += 1
+            if missing > 0:
+                group["stage_no_balance_pending"] += 1
+        elif po_gap_status == "not_allocated":
+            group["stage_not_allocated_items"] += 1
+            group["stage_no_po_items"] += 1
+            if missing > 0:
+                group["stage_not_allocated_pending"] += 1
+                group["stage_no_po_pending"] += 1
+        elif po_gap_status == "catalog_issue":
+            group["stage_catalog_issue_items"] += 1
+            group["stage_no_po_items"] += 1
+            if missing > 0:
+                group["stage_catalog_issue_pending"] += 1
+                group["stage_no_po_pending"] += 1
         else:
             group["stage_no_po_items"] += 1
             if missing > 0:
@@ -716,11 +905,14 @@ def _supply_build_drawing_line_rows(
             group["pending_bucket"] = 8 if pending >= 8 else pending
         group["drawing_pending"] = pending
         group["line_pending_bucket"] = group["pending_bucket"]
-        for stage in ("total", "po", "no_po", "no_yard", "yard"):
+        for stage in ("total", "po", "no_po", "no_balance", "not_allocated", "catalog_issue", "no_yard", "yard"):
             stage_pending = int(group.get(f"stage_{stage}_pending") or 0)
             group[f"stage_{stage}_pending_bucket"] = 8 if stage_pending >= 8 else stage_pending
         group["has_po"] = 1 if int(group.get("with_po") or 0) > 0 else 0
         group["without_po_flag"] = 1 if int(group.get("without_po") or 0) > 0 else 0
+        group["no_balance_flag"] = 1 if int(group.get("no_balance") or 0) > 0 else 0
+        group["not_allocated_flag"] = 1 if int(group.get("not_allocated") or 0) > 0 else 0
+        group["catalog_issue_flag"] = 1 if int(group.get("catalog_issue") or 0) > 0 else 0
         group["po_not_arrived_flag"] = 1 if int(group.get("po_not_arrived") or 0) > 0 else 0
         lines = sorted(group["lines"])
         group["line_count"] = len(lines)
@@ -892,6 +1084,10 @@ def _supply_forecast_items_from_rows(material_rows: list[dict[str, Any]]) -> lis
             "allocated_qty": float(row.get("allocated_qty") or 0),
             "missing_qty": float(row.get("missing_qty") or 0),
             "has_po": 1 if _truthy_flag(row.get("has_po")) else 0,
+            "po_gap_status": row.get("po_gap_status") or _supply_po_gap_status(row),
+            "stock_free_qty": float(row.get("stock_free_qty") or 0),
+            "stock_piece_count": int(row.get("stock_piece_count") or 0),
+            "stock_free_na": 1 if _truthy_flag(row.get("stock_free_na")) else 0,
             "yard_actual": 1 if _truthy_flag(row.get("yard_actual")) else 0,
             "po_delivery_date": row.get("po_delivery_date") or _supply_forecast_delivery_date(row),
             "po_numbers": row.get("po_numbers") or row.get("po_covering") or "",
@@ -902,6 +1098,7 @@ def _supply_forecast_items_from_rows(material_rows: list[dict[str, Any]]) -> lis
 
 def _supply_normalize_operational_payload(payload: dict[str, Any]) -> None:
     material_rows = payload.get("material_rows") or []
+    _supply_enrich_stock_metadata(material_rows)
     status_counts = _supply_enrich_material_rows(material_rows)
     payload["material_status_counts"] = {
         "covered": status_counts.get("ok", 0),
@@ -910,10 +1107,13 @@ def _supply_normalize_operational_payload(payload: dict[str, Any]) -> None:
         "unknown": status_counts.get("unknown", 0),
     }
     drawing_source_rows = payload.get("material_scope_items") or material_rows
+    if drawing_source_rows is not material_rows:
+        _supply_enrich_stock_metadata(drawing_source_rows, material_rows)
     payload["drawing_line_rows"] = _supply_build_drawing_line_rows(drawing_source_rows)
     _supply_enrich_drawing_line_families(payload["drawing_line_rows"], material_rows)
+    payload["supply_campaign_views"] = _supply_campaign_views(drawing_source_rows, [])
     payload["supply_forecast_items_json"] = json.dumps(
-        _supply_forecast_items_from_rows(material_rows),
+        _supply_forecast_items_from_rows(drawing_source_rows),
         ensure_ascii=False,
     )
     for view in payload.get("supply_campaign_views") or []:
@@ -1052,7 +1252,8 @@ def _supply_campaign_views(
     stage_defs = [
         ("total", "Total scope", "All items in the campaign"),
         ("po", "With PO", "Items with a linked purchase order"),
-        ("no_po", "Without PO", "Items still without a purchase order"),
+        ("no_po", "Without PO", "Items without PO, allocation, or catalog match"),
+        ("no_balance", "No balance", "Compatible PO/stock exists, but remaining balance is zero"),
         ("no_yard", "Item not arrived", "Items with PO, awaiting yard arrival confirmation"),
         ("yard", "At Yard", "Items with confirmed yard arrival"),
     ]
@@ -1088,6 +1289,10 @@ def _supply_campaign_views(
                 **campaign,
                 "total": 0,
                 "po": 0,
+                "no_po": 0,
+                "no_balance": 0,
+                "not_allocated": 0,
+                "catalog_issue": 0,
                 "yard": 0,
                 "finalized": 0,
             }
@@ -1106,6 +1311,10 @@ def _supply_campaign_views(
                     **campaign,
                     "total": 0,
                     "po": 0,
+                    "no_po": 0,
+                    "no_balance": 0,
+                    "not_allocated": 0,
+                    "catalog_issue": 0,
                     "yard": 0,
                     "finalized": 0,
                 }
@@ -1120,9 +1329,23 @@ def _supply_campaign_views(
                 continue
 
             campaign_row["total"] += 1
-            if material_id in covered_ids:
+            has_po = material_id in covered_ids if po_rows else _truthy_flag(item.get("has_po"))
+            if has_po:
                 campaign_row["po"] += 1
-            if material_id in yard_ids:
+            else:
+                po_gap_status = item.get("po_gap_status") or _supply_apply_po_gap_status(item)
+                if po_gap_status == "no_balance":
+                    campaign_row["no_balance"] += 1
+                elif po_gap_status == "not_allocated":
+                    campaign_row["not_allocated"] += 1
+                    campaign_row["no_po"] += 1
+                elif po_gap_status == "catalog_issue":
+                    campaign_row["catalog_issue"] += 1
+                    campaign_row["no_po"] += 1
+                else:
+                    campaign_row["no_po"] += 1
+            has_yard = material_id in yard_ids if po_rows else _truthy_flag(item.get("yard_actual"))
+            if has_yard:
                 campaign_row["yard"] += 1
 
             drawing = drawing_pending.setdefault(drawing_key, {
@@ -1134,7 +1357,7 @@ def _supply_campaign_views(
             drawing["total"] += 1
             if float(item.get("missing_qty") or 0) > 0:
                 drawing["pending"] += 1
-            if material_id in yard_ids:
+            if has_yard:
                 drawing["yard"] += 1
 
         campaigns = list(campaign_rows.values())
@@ -1147,14 +1370,21 @@ def _supply_campaign_views(
         finalized_drawings = sum(finalized_counts.values())
         for row in campaigns:
             row["finalized"] = finalized_counts.get(row["key"], 0)
-            row["no_po"] = max(int(row["total"] or 0) - int(row["po"] or 0), 0)
             row["no_yard"] = max(int(row["po"] or 0) - int(row["yard"] or 0), 0)
+            row["unallocated"] = (
+                int(row.get("no_po") or 0)
+                + int(row.get("no_balance") or 0)
+            )
         total_items = sum(row["total"] for row in campaigns)
         po_items = sum(row["po"] for row in campaigns)
         yard_items = sum(row["yard"] for row in campaigns)
         no_po_items = sum(row["no_po"] for row in campaigns)
+        no_balance_items = sum(row["no_balance"] for row in campaigns)
+        not_allocated_items = sum(row["not_allocated"] for row in campaigns)
+        catalog_issue_items = sum(row["catalog_issue"] for row in campaigns)
+        unallocated_items = no_po_items + no_balance_items
         no_yard_items = sum(row["no_yard"] for row in campaigns)
-        max_stage = max(total_items, po_items, no_po_items, no_yard_items, yard_items, 1)
+        max_stage = max(total_items, po_items, no_po_items, no_balance_items, no_yard_items, yard_items, 1)
         stages = []
         for key, label, detail in stage_defs:
             stage_total = sum(row[key] for row in campaigns)
@@ -1291,11 +1521,19 @@ def _supply_campaign_views(
             total = int(row["total"] or 0)
             po = int(row["po"] or 0)
             yard = int(row["yard"] or 0)
-            no_po = int(row.get("no_po") or max(total - po, 0))
+            no_po = int(row.get("no_po") or 0)
+            no_balance = int(row.get("no_balance") or 0)
+            not_allocated = int(row.get("not_allocated") or 0)
+            catalog_issue = int(row.get("catalog_issue") or 0)
+            unallocated = no_po + no_balance
             no_yard = int(row.get("no_yard") or max(po - yard, 0))
             campaign_exec_rows.append({
                 **row,
                 "no_po": no_po,
+                "no_balance": no_balance,
+                "not_allocated": not_allocated,
+                "catalog_issue": catalog_issue,
+                "unallocated": unallocated,
                 "no_yard": no_yard,
                 "total_width_css": _supply_ratio_css(total, campaign_max),
                 "po_total_width_css": _supply_ratio_css(po, campaign_max),
@@ -1305,7 +1543,7 @@ def _supply_campaign_views(
                 "po_pct": _supply_ratio(po, total),
                 "yard_pct": _supply_ratio(yard, total),
                 "yard_of_po_pct": _supply_ratio(yard, po),
-                "risk_items": no_po + no_yard,
+                "risk_items": unallocated + no_yard,
             })
         bottleneck_rows = sorted(
             campaign_exec_rows,
@@ -1320,14 +1558,26 @@ def _supply_campaign_views(
             "po_pct_css": _supply_ratio_css(po_items, total_items),
             "no_po_pct": _supply_ratio(no_po_items, total_items),
             "no_po_pct_css": _supply_ratio_css(no_po_items, total_items),
+            "no_balance": no_balance_items,
+            "no_balance_pct": _supply_ratio(no_balance_items, total_items),
+            "no_balance_pct_css": _supply_ratio_css(no_balance_items, total_items),
+            "not_allocated": not_allocated_items,
+            "not_allocated_pct": _supply_ratio(not_allocated_items, total_items),
+            "not_allocated_pct_css": _supply_ratio_css(not_allocated_items, total_items),
+            "catalog_issue": catalog_issue_items,
+            "catalog_issue_pct": _supply_ratio(catalog_issue_items, total_items),
+            "catalog_issue_pct_css": _supply_ratio_css(catalog_issue_items, total_items),
+            "unallocated": unallocated_items,
+            "unallocated_pct": _supply_ratio(unallocated_items, total_items),
+            "unallocated_pct_css": _supply_ratio_css(unallocated_items, total_items),
             "yard_pct": _supply_ratio(yard_items, total_items),
             "yard_pct_css": _supply_ratio_css(yard_items, total_items),
             "yard_of_po_pct": _supply_ratio(yard_items, po_items),
             "yard_of_po_pct_css": _supply_ratio_css(yard_items, po_items),
             "po_gap": po_gap,
             "yard_gap": yard_gap,
-            "risk_items": po_gap + yard_gap,
-            "risk_pct": _supply_ratio(po_gap + yard_gap, total_items + po_items),
+            "risk_items": unallocated_items + yard_gap,
+            "risk_pct": _supply_ratio(unallocated_items + yard_gap, total_items + po_items),
             "critical_drawings": critical_drawings,
             "critical_pct": _supply_ratio(critical_drawings, total_drawings),
             "clean_drawings": clean_drawings,
@@ -1358,6 +1608,13 @@ def _supply_campaign_views(
                     "pct": _supply_ratio(no_po_items, total_items),
                 },
                 {
+                    "key": "no_balance",
+                    "label": "No balance",
+                    "value": no_balance_items,
+                    "width_css": _supply_ratio_css(no_balance_items, total_items),
+                    "pct": _supply_ratio(no_balance_items, total_items),
+                },
+                {
                     "key": "no_yard",
                     "label": "Item not arrived",
                     "value": no_yard_items,
@@ -1384,6 +1641,10 @@ def _supply_campaign_views(
                 "po": int(row["po"] or 0),
                 "yard": int(row["yard"] or 0),
                 "no_po": int(row["no_po"] or 0),
+                "no_balance": int(row["no_balance"] or 0),
+                "not_allocated": int(row["not_allocated"] or 0),
+                "catalog_issue": int(row["catalog_issue"] or 0),
+                "unallocated": int(row["unallocated"] or 0),
                 "no_yard": int(row["no_yard"] or 0),
                 "finalized": int(row["finalized"] or 0),
                 "po_pct": float(row["po_pct"] or 0),
@@ -1415,6 +1676,10 @@ def _supply_campaign_views(
                 "total": total_items,
                 "po": po_items,
                 "no_po": no_po_items,
+                "no_balance": no_balance_items,
+                "not_allocated": not_allocated_items,
+                "catalog_issue": catalog_issue_items,
+                "unallocated": unallocated_items,
                 "no_yard": no_yard_items,
                 "finalized": finalized_drawings,
                 "yard": yard_items,
@@ -1434,6 +1699,12 @@ def _supply_campaign_views(
             "totals": {
                 "total": total_items,
                 "po": po_items,
+                "no_po": no_po_items,
+                "no_balance": no_balance_items,
+                "not_allocated": not_allocated_items,
+                "catalog_issue": catalog_issue_items,
+                "unallocated": unallocated_items,
+                "no_yard": no_yard_items,
                 "yard": yard_items,
                 "drawings": len({item.get("document_id") for item in scoped_items if item.get("scope") == scope_key}),
             },
@@ -5018,9 +5289,15 @@ def _construction_datafy(filters: dict) -> dict:
                 group by a.material_item_id
             ),
             stock as (
-                select catalog_item_id, sum(remaining_qty) as stock_free_qty
-                from catalog_stockpiece
-                group by catalog_item_id
+                select sp.catalog_item_id,
+                       count(*) as stock_piece_count,
+                       sum(sp.remaining_qty) as stock_free_qty,
+                       sum(sp.original_qty) as stock_total_qty,
+                       string_agg(distinct nullif(po.po_number, ''), ', ') as stock_po_numbers
+                from catalog_stockpiece sp
+                left join core_purchaseorderitem poi on poi.id = sp.po_item_id
+                left join core_purchaseorder po on po.id = poi.purchase_order_id
+                group by sp.catalog_item_id
             )
             select d.priority,
                    d.id as document_id,
@@ -5059,10 +5336,13 @@ def _construction_datafy(filters: dict) -> dict:
                    coalesce(alloc.allocated_qty, 0) as allocated_qty,
                    greatest(coalesce(mi.quantity, 0) - coalesce(alloc.allocated_qty, 0), 0) as missing_qty,
                    case when ci.id is null then 1 else 0 end as stock_free_na,
+                   coalesce(stock.stock_piece_count, 0) as stock_piece_count,
+                   coalesce(stock.stock_total_qty, 0) as stock_total_qty,
                    case
                        when ci.id is null then null
                        else coalesce(stock.stock_free_qty, 0)
                    end as stock_free_qty,
+                   coalesce(nullif(stock.stock_po_numbers, ''), '') as stock_po_numbers,
                    coalesce(nullif(alloc.po_covering, ''), '') as po_covering,
                    alloc.po_expected_date,
                    coalesce(nullif(alloc.po_expected_dates, ''), '') as po_expected_dates,
@@ -5156,6 +5436,17 @@ def _construction_datafy(filters: dict) -> dict:
                 from catalog_allocation a
                 group by a.material_item_id
             ),
+            stock as (
+                select sp.catalog_item_id,
+                       count(*) as stock_piece_count,
+                       sum(sp.remaining_qty) as stock_free_qty,
+                       sum(sp.original_qty) as stock_total_qty,
+                       string_agg(distinct nullif(po.po_number, ''), ', ') as stock_po_numbers
+                from catalog_stockpiece sp
+                left join core_purchaseorderitem poi on poi.id = sp.po_item_id
+                left join core_purchaseorder po on po.id = poi.purchase_order_id
+                group by sp.catalog_item_id
+            ),
             doc_tables as (
                 select d.id as document_id,
                        max(case
@@ -5183,6 +5474,14 @@ def _construction_datafy(filters: dict) -> dict:
                        coalesce(mi.quantity, 0) as requested_qty,
                        coalesce(alloc.allocated_qty, 0) as allocated_qty,
                        greatest(coalesce(mi.quantity, 0) - coalesce(alloc.allocated_qty, 0), 0) as missing_qty,
+                       case when ci.id is null then 1 else 0 end as stock_free_na,
+                       coalesce(stock.stock_piece_count, 0) as stock_piece_count,
+                       coalesce(stock.stock_total_qty, 0) as stock_total_qty,
+                       case
+                         when ci.id is null then null
+                         else coalesce(stock.stock_free_qty, 0)
+                       end as stock_free_qty,
+                       coalesce(nullif(stock.stock_po_numbers, ''), '') as stock_po_numbers,
                        case when {finalized_doc_sql} then 1 else 0 end as is_finalized,
                        case
                          when upper(coalesce(t.name, '')) like '%DEMOLISH%'
@@ -5207,6 +5506,7 @@ def _construction_datafy(filters: dict) -> dict:
                 left join catalog_catalogitem ci on ci.id = cm.catalog_item_id
                 left join catalog_materialfamily mf on mf.id = ci.family_id
                 left join alloc on alloc.material_item_id = mi.id
+                left join stock on stock.catalog_item_id = ci.id
                 left join doc_tables dt on dt.document_id = d.id
                 {material_where_sql}
             )
@@ -5217,7 +5517,8 @@ def _construction_datafy(filters: dict) -> dict:
             {material_scope_cte}
             select material_item_id, document_id, priority, drawing_number, original_filename,
                    revision, revision_detail, discipline, line, campaign, scope, is_finalized,
-                   requested_qty, allocated_qty, missing_qty
+                   requested_qty, allocated_qty, missing_qty, stock_free_na, stock_piece_count,
+                   stock_total_qty, stock_free_qty, stock_po_numbers
             from scoped_items
             where scope in ('fabrication', 'erection')
             """,
@@ -5273,6 +5574,8 @@ def _construction_datafy(filters: dict) -> dict:
             row["po_delivery_date"] = material_delivery_by_id.get(material_id, "")
             row["po_numbers"] = ", ".join(sorted(material_po_numbers_by_id.get(material_id, set())))
             row["po_delivery_pairs"] = material_delivery_pairs_by_id.get(material_id, [])
+        _supply_enrich_stock_metadata(material_rows)
+        _supply_enrich_stock_metadata(material_scope_items, material_rows)
         material_status_counts = _supply_enrich_material_rows(material_rows, material_yard_ids, material_po_ids)
         drawing_line_rows = _supply_build_drawing_line_rows(material_scope_items)
         _supply_enrich_drawing_line_families(drawing_line_rows, material_rows)
@@ -5294,6 +5597,10 @@ def _construction_datafy(filters: dict) -> dict:
                 "allocated_qty": float(item.get("allocated_qty") or 0),
                 "missing_qty": float(item.get("missing_qty") or 0),
                 "has_po": 1 if _truthy_flag(item.get("has_po")) else 0,
+                "po_gap_status": item.get("po_gap_status") or _supply_po_gap_status(item),
+                "stock_free_qty": float(item.get("stock_free_qty") or 0),
+                "stock_piece_count": int(item.get("stock_piece_count") or 0),
+                "stock_free_na": 1 if _truthy_flag(item.get("stock_free_na")) else 0,
                 "yard_actual": 1 if _truthy_flag(item.get("yard_actual")) else 0,
                 "po_delivery_date": item.get("po_delivery_date") or "",
                 "po_numbers": item.get("po_numbers") or "",
