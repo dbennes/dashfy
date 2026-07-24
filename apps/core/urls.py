@@ -6,6 +6,7 @@ app_name = "core"
 
 urlpatterns = [
     path("", views.home_view, name="home"),
+    path("aveon-material-availability/", views.aveon_material_availability_view, name="aveon_material_availability"),
     path("search/", views.search_view, name="search"),
     path("p6-curves/import/", views.import_p6_curves_view, name="import_p6_curves"),
     path("engineering-status/import/", views.import_engineering_status_view, name="import_engineering_status"),

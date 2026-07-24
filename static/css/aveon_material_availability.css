@@ -1,0 +1,263 @@
+.cockpit-v3 .aveon-page {
+  padding-bottom: 18px;
+}
+
+.cockpit-v3 .aveon-page .section-head {
+  margin-bottom: 10px;
+}
+
+.cockpit-v3 .aveon-react-root {
+  min-width: 0;
+}
+
+.cockpit-v3 .aveon-loading-line {
+  height: 3px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-3);
+}
+
+.cockpit-v3 .aveon-loading-line::after {
+  content: "";
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--signal-cyan), transparent);
+  animation: aveon-loading 1.1s linear infinite;
+}
+
+@keyframes aveon-loading {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(270%); }
+}
+
+.cockpit-v3 .aveon-workbook {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg-1);
+  box-shadow: var(--shadow-panel);
+}
+
+.cockpit-v3 .aveon-sheet-tabs {
+  display: flex;
+  gap: 4px;
+  min-height: 40px;
+  padding: 6px 8px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line-soft);
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.015));
+}
+
+.cockpit-v3 .aveon-sheet-tab {
+  flex: 0 0 auto;
+  min-width: 86px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line-soft);
+  border-bottom: 0;
+  border-radius: 7px 7px 0 0;
+  color: var(--fg-2);
+  background: var(--bg-2);
+  font: 700 11px/1 var(--font-ui);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.cockpit-v3 .aveon-sheet-tab:hover {
+  color: var(--fg-0);
+  border-color: var(--line-strong);
+}
+
+.cockpit-v3 .aveon-sheet-tab.is-active {
+  color: var(--fg-0);
+  background: var(--bg-0);
+  border-color: rgba(104, 213, 255, .38);
+  box-shadow: inset 0 2px 0 var(--signal-cyan);
+}
+
+.cockpit-v3 .aveon-sheet-frame {
+  min-width: 0;
+  background: var(--bg-0);
+}
+
+.cockpit-v3 .aveon-sheet-scroll {
+  max-height: calc(100vh - 238px);
+  min-height: 420px;
+  overflow: auto;
+}
+
+.cockpit-v3 .aveon-workbook-grid {
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 100%;
+  color: var(--fg-1);
+  font: 500 11px/1.28 var(--font-mono);
+}
+
+.cockpit-v3 .aveon-workbook-grid col:not(.aveon-row-number-col) {
+  width: var(--sheet-col-width);
+}
+
+.cockpit-v3 .aveon-row-number-col {
+  width: 48px;
+}
+
+.cockpit-v3 .aveon-workbook-grid th,
+.cockpit-v3 .aveon-workbook-grid td {
+  height: var(--sheet-row-height, 26px);
+  min-height: 22px;
+  padding: 4px 6px;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid rgba(255,255,255,.07);
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.cockpit-v3 .aveon-workbook-grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: 28px;
+  color: var(--fg-2);
+  background: var(--bg-2);
+  font: 700 11px/1 var(--font-ui);
+  text-align: center;
+}
+
+.cockpit-v3 .aveon-corner-cell {
+  left: 0;
+  z-index: 6 !important;
+  background: var(--bg-3) !important;
+}
+
+.cockpit-v3 .aveon-row-number {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 48px;
+  color: var(--fg-3);
+  background: var(--bg-2);
+  font: 700 10px/1 var(--font-ui);
+  text-align: right;
+}
+
+.cockpit-v3 .aveon-cell {
+  background: rgba(255,255,255,.018);
+}
+
+.cockpit-v3 .aveon-cell > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cockpit-v3 .aveon-cell.is-empty {
+  background: rgba(255,255,255,.01);
+}
+
+.cockpit-v3 .aveon-cell.type-number,
+.cockpit-v3 .aveon-cell.type-date,
+.cockpit-v3 .aveon-cell.align-right {
+  text-align: right;
+}
+
+.cockpit-v3 .aveon-cell.align-center {
+  text-align: center;
+}
+
+.cockpit-v3 .aveon-cell.valign-center {
+  vertical-align: middle;
+}
+
+.cockpit-v3 .aveon-cell.wrap {
+  white-space: normal;
+}
+
+.cockpit-v3 .aveon-cell.wrap > span {
+  white-space: normal;
+}
+
+.cockpit-v3 .aveon-cell.is-bold {
+  color: var(--fg-0);
+  font-weight: 800;
+}
+
+.cockpit-v3 .aveon-cell.is-italic {
+  font-style: italic;
+}
+
+.cockpit-v3 .aveon-cell[style*="--sheet-fill"] {
+  background: color-mix(in srgb, var(--sheet-fill) 26%, var(--bg-0));
+}
+
+.cockpit-v3 .aveon-cell.fill-dark {
+  color: #fff;
+  background: var(--bg-3);
+}
+
+.cockpit-v3 .aveon-cell.fill-light {
+  color: var(--fg-0);
+  background: rgba(255,255,255,.08);
+}
+
+.cockpit-v3 .aveon-cell.fill-amber,
+.cockpit-v3 .aveon-cell.fill-yellow {
+  color: #241a00;
+  background: var(--signal-amber);
+}
+
+.cockpit-v3 .aveon-cell.fill-green,
+.cockpit-v3 .aveon-cell.fill-green-soft {
+  color: #061b10;
+  background: var(--signal-green);
+}
+
+.cockpit-v3 .aveon-cell.fill-cyan,
+.cockpit-v3 .aveon-cell.fill-cyan-soft,
+.cockpit-v3 .aveon-cell.fill-blue {
+  color: #031923;
+  background: var(--signal-cyan);
+}
+
+.cockpit-v3 .aveon-cell.fill-red,
+.cockpit-v3 .aveon-cell.fill-red-soft {
+  color: #fff;
+  background: var(--signal-red);
+}
+
+.cockpit-v3 .aveon-cell.fill-gray {
+  background: rgba(255,255,255,.14);
+}
+
+.cockpit-v3 .aveon-empty-workbook {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .cockpit-v3 .aveon-sheet-scroll {
+    max-height: calc(100vh - 220px);
+    min-height: 360px;
+  }
+
+  .cockpit-v3 .aveon-workbook-grid {
+    font-size: 10px;
+  }
+
+  .cockpit-v3 .aveon-row-number-col {
+    width: 40px;
+  }
+
+  .cockpit-v3 .aveon-row-number {
+    width: 40px;
+  }
+}

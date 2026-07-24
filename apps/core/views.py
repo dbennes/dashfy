@@ -6,6 +6,7 @@ import re
 from collections import Counter
 from datetime import date, datetime
 
+from django.conf import settings
 from django.core.cache import cache
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -435,6 +436,31 @@ def home_view(request):
         },
     }
     return render(request, "core/home.html", context)
+
+
+def _aveon_material_payload():
+    data_path = settings.BASE_DIR / "static" / "data" / "aveon_material_availability.json"
+    with data_path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+@login_required
+def aveon_material_availability_view(request):
+    """React workbook view generated from the AVEON material availability file."""
+    payload = _aveon_material_payload()
+    return render(
+        request,
+        "core/aveon_material_availability.html",
+        {
+            "aveon_payload": payload,
+            "aveon_meta": payload.get("meta", {}),
+            "sources": {
+                "datafy": {"available": True},
+                "taskfy": {"available": True},
+                "p6": {"available": True},
+            },
+        },
+    )
 
 
 @login_required

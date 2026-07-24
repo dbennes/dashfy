@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}AVEON Dates | {{ APP_NAME }}{% endblock %}
+{% block crumb_current %}AVEON DATES{% endblock %}
+{% block project_code %}BN-EPC1{% endblock %}
+{% block project_name %}Bonga North | AVEON Material Availability{% endblock %}
+{% block project_horiz %}Workbook view{% endblock %}
+
+{% block tickers %}
+{% endblock %}
+
+{% block extra_css %}
+<link href="{% static 'css/aveon_material_availability.css' %}?v=20260627-sheet-v2" rel="stylesheet">
+{% endblock %}
+
+{% block content %}
+<section id="aveon-material-availability" class="section aveon-page">
+  <div class="section-head">
+    <div>
+      <span class="tag">WORKBOOK</span>
+      <h2>{{ aveon_meta.sourceFile }}</h2>
+    </div>
+  </div>
+
+  <div id="aveon-material-root" class="aveon-react-root">
+    <div class="card">
+      <div class="card-head">
+        <div class="lhs">
+          <span class="tag">REACT</span>
+          <h3>Loading workbook</h3>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="aveon-loading-line"></div>
+      </div>
+    </div>
+  </div>
+  {{ aveon_payload|json_script:"aveon-material-data" }}
+</section>
+{% endblock %}
+
+{% block vendor_js %}
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'js/aveon_material_availability.js' %}?v=20260627-sheet-v2"></script>
+{% endblock %}

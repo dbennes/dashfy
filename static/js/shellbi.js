@@ -225,6 +225,40 @@
 
   initMobileDisclosureControls();
 
+  const initPmsOutline = () => {
+    document.querySelectorAll('[data-pms-outline]').forEach(outline => {
+      const rows = Array.from(outline.querySelectorAll('[data-pms-outline-row]'));
+      if (!rows.length) return;
+
+      const childrenOf = parentId => rows.filter(row => (row.dataset.pmsParent || '') === parentId);
+      const setExpanded = (row, expanded) => {
+        const rowId = row.dataset.pmsId || '';
+        row.classList.toggle('is-expanded', expanded);
+        if (!row.disabled) {
+          row.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+          row.setAttribute('aria-label', `${expanded ? 'Recolher' : 'Expandir'} ${row.dataset.pmsLabel || ''}`.trim());
+        }
+        childrenOf(rowId).forEach(child => {
+          child.hidden = !expanded;
+          if (!expanded) setExpanded(child, false);
+        });
+      };
+
+      rows.forEach(row => {
+        if (row.disabled) return;
+        row.addEventListener('click', () => {
+          setExpanded(row, !row.classList.contains('is-expanded'));
+        });
+      });
+
+      rows
+        .filter(row => !row.disabled && !(row.dataset.pmsParent || ''))
+        .forEach(row => setExpanded(row, true));
+    });
+  };
+
+  initPmsOutline();
+
   // Sidebar toggle (mobile)
   const sidebar = document.getElementById('app-sidebar');
   const backdrop = document.getElementById('sidebar-backdrop');

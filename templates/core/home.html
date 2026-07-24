@@ -306,23 +306,43 @@
         </div>
         <div class="rhs"><b>{{ manager.p6.executive_rows|length }}</b> areas</div>
       </div>
-      <div class="card-body flush">
-        <div class="bar-list">
-          {% for row in manager.p6.executive_rows %}
-            <div class="bar-row is-{{ row.status|default:'on' }}" style="grid-template-columns: 1.5fr 1fr 90px">
-              <div class="main">
-                <strong>{{ row.label }}</strong>
-                <small>LEVEL {{ row.level }} · WEIGHT {{ row.weight_label }} · FINISH {{ row.finish_label|default:'-' }}</small>
-              </div>
-              <div class="bars" style="--plan-w: {{ row.planned_pct_css|default:'0' }}%; --actual-w: {{ row.actual_pct_css|default:'0' }}%;">
-                <div class="actual"></div>
-                <div class="plan-tick"></div>
-              </div>
-              <div class="delta-cell">
+      <div class="card-body flush" data-pms-outline>
+        <div class="bar-list c3-outline-scroll" data-pms-outline-list>
+          {% for row in manager.p6.outline_rows %}
+            <button
+              class="bar-row c3-outline-row is-{{ row.status|default:'on' }}{% if row.level > 1 %} has-parent-level{% endif %}{% if not row.has_children %} is-leaf{% endif %}"
+              type="button"
+              data-pms-outline-row
+              data-pms-id="{{ row.id }}"
+              data-pms-parent="{{ row.parent_id }}"
+              data-pms-label="{{ row.label }}"
+              data-pms-level="{{ row.level }}"
+              {% if not row.has_children %}disabled aria-label="{{ row.label }} — não possui níveis abaixo"{% else %}aria-expanded="false" aria-label="Expandir {{ row.label }}"{% endif %}
+              {% if row.parent_id %}hidden{% endif %}
+              style="--outline-depth: {{ row.level|add:'-1' }}; grid-template-columns: 1.5fr 1fr 90px"
+            >
+              <span class="main">
+                <strong class="c3-outline-title">
+                  <span class="c3-outline-level-badge">L{{ row.level }}</span>
+                  <span class="c3-outline-name">{{ row.label }}</span>
+                </strong>
+                <small class="c3-outline-meta">
+                  <span>WEIGHT {{ row.weight_label }}</span>
+                  {% if row.finish_label and row.finish_label != "-" %}
+                    <span>FINISH {{ row.finish_label }}</span>
+                  {% endif %}
+                </small>
+              </span>
+              <span class="bars" style="--plan-w: {{ row.planned_pct_css|default:'0' }}%; --actual-w: {{ row.actual_pct_css|default:'0' }}%;">
+                <span class="actual"></span>
+                <span class="plan-tick"></span>
+              </span>
+              <span class="delta-cell">
                 <span class="mono">{{ row.delta_label|default:'—' }}</span>
                 <small>{{ row.planned_label }} / {{ row.actual_label }}</small>
-              </div>
-            </div>
+              </span>
+              {% if row.has_children %}<i class="bi bi-chevron-right c3-outline-chevron" aria-hidden="true"></i>{% endif %}
+            </button>
           {% empty %}
             <div class="card-body" style="text-align:center; color: var(--fg-3); padding: var(--s-5);">No executive areas found in the Progress PMS sheet.</div>
           {% endfor %}
@@ -549,7 +569,6 @@
       </div>
     </div>
   </div>
-
   <div class="kpi-strip">
     <div class="kpi">
       <div class="lbl"><span class="marker"></span><span>Total Scope</span></div>

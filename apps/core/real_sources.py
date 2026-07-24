@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 from collections import Counter
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -2091,7 +2094,7 @@ def _p6_curves_from_database(*, today: date) -> dict[str, Any]:
     cache_token = hashlib.sha1(
         f"db:{latest.pk}:{latest.updated_at.isoformat()}:{today.isoformat()}".encode("utf-8")
     ).hexdigest()
-    cache_key = f"p6-curves-db:{cache_token}"
+    cache_key = f"p6-curves-db:outline-v1:{cache_token}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -2101,24 +2104,28 @@ def _p6_curves_from_database(*, today: date) -> dict[str, Any]:
 
     total_snapshot: dict[str, Any] = {}
     executive_rows: list[dict[str, Any]] = []
+    outline_rows: list[dict[str, Any]] = []
+    outline_stack: list[tuple[int, str]] = []
     for row in progress_rows:
         planned = float(row.planned_pct or 0)
         actual = float(row.actual_pct or 0)
         baseline = float(row.baseline_pct or 0)
         weight = float(row.weight_pct or 0)
-        if row.level == 0 and not total_snapshot:
-            total_snapshot = {
-                "name": row.name,
-                "planned_pct": planned,
-                "actual_pct": actual,
-                "baseline_pct": baseline,
-                "delta_pct": actual - planned,
-            }
-            continue
-        if row.level != 1:
+        if row.level == 0:
+            if not total_snapshot:
+                total_snapshot = {
+                    "name": row.name,
+                    "planned_pct": planned,
+                    "actual_pct": actual,
+                    "baseline_pct": baseline,
+                    "delta_pct": actual - planned,
+                }
+            outline_stack.clear()
             continue
         delta = actual - planned
-        executive_rows.append({
+        outline_row = {
+            "id": f"pms-{row.row_number}",
+            "parent_id": "",
             "level": int(row.level),
             "label": row.name,
             "weight_pct": weight,
@@ -2134,7 +2141,20 @@ def _p6_curves_from_database(*, today: date) -> dict[str, Any]:
             "delta_pct": delta,
             "delta_label": f"{delta:+.2f} p.p.",
             "status": "ahead" if delta >= 0 else "late",
-        })
+            "has_children": False,
+        }
+        while outline_stack and outline_stack[-1][0] >= row.level:
+            outline_stack.pop()
+        if outline_stack:
+            outline_row["parent_id"] = outline_stack[-1][1]
+        outline_stack.append((int(row.level), outline_row["id"]))
+        outline_rows.append(outline_row)
+        if row.level == 1:
+            executive_rows.append(outline_row)
+
+    outline_ids_with_children = {row["parent_id"] for row in outline_rows if row["parent_id"]}
+    for row in outline_rows:
+        row["has_children"] = row["id"] in outline_ids_with_children
 
     result = {
         "curves_source_path": "Base importada",
@@ -2146,6 +2166,7 @@ def _p6_curves_from_database(*, today: date) -> dict[str, Any]:
         "curve_point_count": latest.curve_point_count,
         "executive_row_count": latest.executive_row_count,
         "executive_rows": executive_rows,
+        "outline_rows": outline_rows,
         "total_snapshot": total_snapshot,
         "charts": {"physical_curve": _p6_curve_chart_from_points(curve_points, today=today)},
     }
@@ -2161,7 +2182,7 @@ def _p6_curves_from_workbook(path: Path, *, today: date) -> dict[str, Any]:
     if not path.exists():
         return {}
     cache_token = hashlib.sha1(f"{path}:{path.stat().st_mtime_ns}:{today.isoformat()}".encode("utf-8")).hexdigest()
-    cache_key = f"p6-curves:{cache_token}"
+    cache_key = f"p6-curves:outline-v1:{cache_token}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -2174,6 +2195,8 @@ def _p6_curves_from_workbook(path: Path, *, today: date) -> dict[str, Any]:
 
     total_snapshot: dict[str, Any] = {}
     executive_rows: list[dict[str, Any]] = []
+    outline_rows: list[dict[str, Any]] = []
+    outline_stack: list[tuple[int, str]] = []
     if progress_sheet:
         for row_idx in range(1, progress_sheet.max_row + 1):
             level = progress_sheet.cell(row_idx, 3).value
@@ -2192,11 +2215,12 @@ def _p6_curves_from_workbook(path: Path, *, today: date) -> dict[str, Any]:
                     "baseline_pct": baseline * 100,
                     "delta_pct": (actual - planned) * 100,
                 }
-                continue
-            if level != 1:
+                outline_stack.clear()
                 continue
             delta = (actual - planned) * 100
-            executive_rows.append({
+            outline_row = {
+                "id": f"pms-{row_idx}",
+                "parent_id": "",
                 "level": int(level),
                 "label": name,
                 "weight_pct": weight * 100,
@@ -2212,7 +2236,20 @@ def _p6_curves_from_workbook(path: Path, *, today: date) -> dict[str, Any]:
                 "delta_pct": delta,
                 "delta_label": f"{delta:+.2f} p.p.",
                 "status": "ahead" if delta >= 0 else "late",
-            })
+                "has_children": False,
+            }
+            while outline_stack and outline_stack[-1][0] >= level:
+                outline_stack.pop()
+            if outline_stack:
+                outline_row["parent_id"] = outline_stack[-1][1]
+            outline_stack.append((int(level), outline_row["id"]))
+            outline_rows.append(outline_row)
+            if level == 1:
+                executive_rows.append(outline_row)
+
+    outline_ids_with_children = {row["parent_id"] for row in outline_rows if row["parent_id"]}
+    for row in outline_rows:
+        row["has_children"] = row["id"] in outline_ids_with_children
 
     chart = _p6_curve_chart_from_workbook(curve_sheet, today=today) if curve_sheet else _empty_chart("Sem curva fisica no XLSX")
     result = {
@@ -2220,6 +2257,7 @@ def _p6_curves_from_workbook(path: Path, *, today: date) -> dict[str, Any]:
         "curves_file_name": path.name,
         "curves_sheet": "Progress PMS (%)",
         "executive_rows": executive_rows,
+        "outline_rows": outline_rows,
         "total_snapshot": total_snapshot,
         "charts": {"physical_curve": chart},
     }
@@ -2410,6 +2448,7 @@ def _p6_dashboard_from_curve_snapshot(curves: dict[str, Any], *, today: date) ->
     snapshot_kpis = management_snapshot.get("management_kpis") or {}
     total_snapshot = curves.get("total_snapshot") or {}
     executive_rows = curves.get("executive_rows") or []
+    outline_rows = curves.get("outline_rows") or []
 
     physical_pct = round(float(snapshot_kpis.get("physical_pct") or total_snapshot.get("actual_pct") or 0), 2)
     planned_today_pct = round(float(snapshot_kpis.get("planned_today_pct") or total_snapshot.get("planned_pct") or 0), 2)
@@ -2508,6 +2547,7 @@ def _p6_dashboard_from_curve_snapshot(curves: dict[str, Any], *, today: date) ->
         "level_summary": level_summary,
         "executive_level_summary": [row for row in level_summary if int(row["level"]) <= 2],
         "executive_rows": executive_rows,
+        "outline_rows": outline_rows,
         "management": {
             "areas": area_rows,
             "critical_packages": [],
@@ -5722,6 +5762,155 @@ def _construction_datafy_empty(message: str = "No active DATAFY SQLite snapshot.
     }
 
 
+def _spdm_db_mtime_token() -> int:
+    try:
+        db_path = Path(settings.SPDM_DB_PATH)
+        return int(db_path.stat().st_mtime_ns) if db_path.exists() else 0
+    except OSError:
+        return 0
+
+
+def _spdm_association_pending_summary(filters: dict[str, Any]) -> dict[str, Any]:
+    discipline = (
+        str(filters.get("supply_discipline") or filters.get("discipline") or "").strip()
+        or "structural"
+    )
+    scope = str(filters.get("supply_scope") or "fabrication").strip().lower() or "fabrication"
+    if scope not in {"fabrication", "erection"}:
+        scope = "fabrication"
+    family = str(filters.get("supply_family") or "").strip().upper()
+    counting = "counted"
+    db_path = Path(settings.SPDM_DB_PATH)
+    spdm_root = db_path.parent
+    if not db_path.exists() or not spdm_root.exists():
+        return {
+            "available": False,
+            "discipline": discipline,
+            "scope": scope,
+            "family": family,
+            "counting": counting,
+            "error": f"SPDM database not found: {db_path}",
+        }
+
+    cache_payload = {
+        "discipline": discipline,
+        "scope": scope,
+        "family": family,
+        "counting": counting,
+        "mtime": _spdm_db_mtime_token(),
+    }
+    cache_key = "spdm-association-pending:" + hashlib.sha1(
+        json.dumps(cache_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    python_candidates = [
+        spdm_root / "venv" / "Scripts" / "python.exe",
+        spdm_root / ".venv" / "Scripts" / "python.exe",
+        Path(sys.executable),
+    ]
+    python_exe = next((candidate for candidate in python_candidates if candidate.exists()), Path(sys.executable))
+    script = r"""
+import json
+import os
+import sys
+from decimal import Decimal
+
+args = json.loads(os.environ["DASHFY_SPDM_ASSOC_ARGS"])
+root = os.environ["DASHFY_SPDM_ROOT"]
+sys.path.insert(0, root)
+os.environ["DJANGO_SETTINGS_MODULE"] = "spdm.settings"
+
+import django
+django.setup()
+
+from catalog.views import _association_pending_groups_fast
+
+groups = _association_pending_groups_fast(
+    discipline=args.get("discipline") or "",
+    scope=args.get("scope") or "fabrication",
+    family_code=args.get("family") or "",
+    counting=args.get("counting") or "counted",
+    limit=50000,
+)
+
+statuses = {}
+for status in ("stock_available", "partial_balance", "no_balance", "no_po"):
+    selected = [group for group in groups if group.get("status") == status]
+    statuses[status] = {
+        "groups": len(selected),
+        "items": sum(int(group.get("items_count") or 0) for group in selected),
+        "missing": float(sum(Decimal(str(group.get("missing_total") or 0)) for group in selected)),
+    }
+payload = {
+    "available": True,
+    "discipline": args.get("discipline") or "",
+    "scope": args.get("scope") or "fabrication",
+    "family": args.get("family") or "",
+    "counting": args.get("counting") or "counted",
+    "groups": len(groups),
+    "items": sum(int(group.get("items_count") or 0) for group in groups),
+    "missing": float(sum(Decimal(str(group.get("missing_total") or 0)) for group in groups)),
+    "no_po_groups": statuses["no_po"]["groups"],
+    "no_po_items": statuses["no_po"]["items"],
+    "no_po_missing": statuses["no_po"]["missing"],
+    "no_balance_groups": statuses["no_balance"]["groups"],
+    "no_balance_items": statuses["no_balance"]["items"],
+    "no_balance_missing": statuses["no_balance"]["missing"],
+    "partial_balance_groups": statuses["partial_balance"]["groups"],
+    "partial_balance_items": statuses["partial_balance"]["items"],
+    "stock_available_groups": statuses["stock_available"]["groups"],
+    "stock_available_items": statuses["stock_available"]["items"],
+    "statuses": statuses,
+}
+print(json.dumps(payload, ensure_ascii=False))
+"""
+    env = os.environ.copy()
+    env.update({
+        "DASHFY_SPDM_ASSOC_ARGS": json.dumps(cache_payload, ensure_ascii=False),
+        "DASHFY_SPDM_ROOT": str(spdm_root),
+        "DJANGO_SETTINGS_MODULE": "spdm.settings",
+        "PYTHONIOENCODING": "utf-8",
+    })
+    try:
+        completed = subprocess.run(
+            [str(python_exe), "-c", script],
+            cwd=str(spdm_root),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=45,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError((completed.stderr or completed.stdout or "").strip()[-1000:])
+        output_line = (completed.stdout or "").strip().splitlines()[-1]
+        result = json.loads(output_line)
+    except Exception as exc:
+        result = {
+            "available": False,
+            "discipline": discipline,
+            "scope": scope,
+            "family": family,
+            "counting": counting,
+            "error": str(exc),
+        }
+    else:
+        query = f"discipline={discipline}&scope={scope}&family={family}&counting={counting}"
+        result["link_url"] = (
+            f"{settings.SPDM_BASE_URL.rstrip('/')}/catalog/association/?q=&status=&{query}"
+        )
+
+    cache.set(cache_key, result, 120)
+    return result
+
+
+def _supply_attach_spdm_association_pending(payload: dict[str, Any], filters: dict[str, Any]) -> None:
+    payload["spdm_association_pending"] = _spdm_association_pending_summary(filters)
+
+
 def _construction_datafy_snapshot(filters: dict, *, allow_live: bool | None = None) -> dict:
     if allow_live is None:
         allow_live = not settings.DASHFY_SQLITE_ONLY
@@ -5753,6 +5942,7 @@ def _construction_datafy_snapshot(filters: dict, *, allow_live: bool | None = No
     if snapshot:
         payload = json.loads(json.dumps(snapshot.payload, default=json_default, ensure_ascii=False))
         _supply_normalize_operational_payload(payload)
+        _supply_attach_spdm_association_pending(payload, filters)
         payload["source_mode"] = "sqlite_snapshot"
         payload["snapshot_id"] = snapshot.pk
         payload["snapshot_refreshed_at"] = snapshot.created_at
@@ -5761,9 +5951,12 @@ def _construction_datafy_snapshot(filters: dict, *, allow_live: bool | None = No
         return payload
 
     if not allow_live:
-        return _construction_datafy_empty()
+        payload = _construction_datafy_empty()
+        _supply_attach_spdm_association_pending(payload, filters)
+        return payload
 
     payload = _construction_datafy(filters)
+    _supply_attach_spdm_association_pending(payload, filters)
     payload["source_mode"] = "postgres_live"
     payload["snapshot_missing"] = True
     return payload
@@ -5855,13 +6048,14 @@ def management_dashboard(filters: dict | None = None) -> dict:
             {
                 "filters": parsed_filters,
                 "sqlite_only": settings.DASHFY_SQLITE_ONLY,
+                "spdm_db_mtime": _spdm_db_mtime_token(),
             },
             sort_keys=True,
             default=json_default,
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
-    cache_key = f"management-dashboard:{cache_token}"
+    cache_key = f"management-dashboard:outline-v2:{cache_token}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached

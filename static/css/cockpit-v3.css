@@ -1194,6 +1194,10 @@ button.c3-export-link {
   grid-template-columns: minmax(680px, 1.45fr) minmax(420px, .95fr);
   align-items: stretch;
 }
+.cockpit-v3 .c3-p6-layout > .card {
+  height: 410px;
+  min-height: 0;
+}
 .cockpit-v3 .c3-engineering-layout {
   grid-template-columns: minmax(360px, .82fr) minmax(680px, 1.28fr);
   align-items: stretch;
@@ -1249,6 +1253,49 @@ button.c3-export-link {
 
 /* Bar list (plan vs actual) */
 .cockpit-v3 .bar-list { display: flex; flex-direction: column; }
+.cockpit-v3 .c3-discipline-card .card-head {
+  flex-direction: row;
+  align-items: center;
+  min-height: 40px;
+  padding: 7px 10px;
+}
+.cockpit-v3 .c3-discipline-card .card-head .lhs {
+  width: auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 7px;
+}
+.cockpit-v3 .c3-discipline-card .card-head .tag {
+  padding: 2px 6px;
+  font-size: 8px;
+}
+.cockpit-v3 .c3-discipline-card .card-head h3 { font-size: 12px; }
+.cockpit-v3 .c3-discipline-card .card-head .rhs {
+  width: auto;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.cockpit-v3 .c3-discipline-card .card-body[data-pms-outline] {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.cockpit-v3 .c3-outline-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-2) transparent;
+}
+.cockpit-v3 .c3-outline-scroll::-webkit-scrollbar { width: 6px; }
+.cockpit-v3 .c3-outline-scroll::-webkit-scrollbar-thumb {
+  background: var(--line-2);
+  border-radius: 999px;
+}
 .cockpit-v3 .bar-row {
   display: grid;
   grid-template-columns: 1.4fr 1fr 80px;
@@ -1259,8 +1306,91 @@ button.c3-export-link {
   cursor: pointer;
   transition: background .12s;
 }
+.cockpit-v3 button.bar-row { width: 100%; border: 0; background: transparent; text-align: left; font: inherit; color: inherit; }
+.cockpit-v3 button.bar-row:disabled { opacity: 1; color: inherit; }
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-outline-row] {
+  grid-template-columns: minmax(0, 1.45fr) minmax(64px, .9fr) 72px 12px !important;
+  align-items: center !important;
+  column-gap: 8px;
+  row-gap: 0;
+  min-height: 34px;
+  padding: 5px 9px;
+  padding-left: calc(9px + (var(--outline-depth, 0) * 10px));
+  transition: background .12s ease, opacity .14s ease;
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="1"] {
+  min-height: 39px;
+  margin-top: 5px;
+  border-top: 1px solid var(--line-2);
+  background: var(--bg-2);
+  box-shadow: inset 2px 0 var(--fg-3);
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="1"]:first-child {
+  margin-top: 0;
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="1"].is-late {
+  box-shadow: inset 2px 0 var(--signal-red);
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="1"].is-ahead {
+  box-shadow: inset 2px 0 var(--signal-green);
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="1"].is-on {
+  box-shadow: inset 2px 0 var(--signal-amber);
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row.has-parent-level {
+  opacity: .86;
+  background: color-mix(in srgb, var(--bg-2) 38%, var(--bg-1));
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="2"] {
+  border-top-color: color-mix(in srgb, var(--line-1) 75%, transparent);
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="3"] {
+  opacity: .68;
+  background: color-mix(in srgb, var(--bg-2) 18%, var(--bg-1));
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="4"],
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="5"],
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="6"] { opacity: .58; }
+.cockpit-v3 .c3-discipline-card .c3-outline-row.has-parent-level:hover,
+.cockpit-v3 .c3-discipline-card .c3-outline-row.has-parent-level:focus-visible,
+.cockpit-v3 .c3-discipline-card .c3-outline-row.is-expanded {
+  opacity: 1;
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row.is-expanded {
+  background: var(--bg-3);
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row.has-parent-level.is-leaf:hover {
+  background: color-mix(in srgb, var(--bg-hover) 70%, var(--bg-1));
+}
+.cockpit-v3 .c3-outline-row.has-parent-level::before {
+  content: '';
+  position: absolute;
+  left: calc(9px + ((var(--outline-depth, 0) - 1) * 10px));
+  top: 50%;
+  width: 5px;
+  border-top: 1px solid var(--line-2);
+  opacity: .65;
+}
+.cockpit-v3 .c3-outline-row.has-parent-level::after {
+  content: none;
+}
+.cockpit-v3 .c3-outline-row { position: relative; }
 .cockpit-v3 .bar-row:first-child { border-top: none; }
 .cockpit-v3 .bar-row:hover { background: var(--bg-hover); }
+.cockpit-v3 .bar-row:focus-visible { outline: 1px solid var(--signal-cyan); outline-offset: -2px; }
+.cockpit-v3 .bar-row.is-leaf { cursor: default; }
+.cockpit-v3 .bar-row.is-leaf:hover { background: transparent; }
+.cockpit-v3 .c3-outline-chevron {
+  align-self: center;
+  justify-self: center;
+  width: 12px;
+  color: var(--fg-3);
+  font-size: 10px;
+  line-height: 1;
+  text-align: center;
+  transition: transform .14s ease;
+}
+.cockpit-v3 .c3-outline-row.is-expanded .c3-outline-chevron { transform: rotate(90deg); }
 .cockpit-v3 .bar-row.active { background: var(--bg-3); }
 .cockpit-v3 .bar-row .main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .cockpit-v3 .bar-row .main strong {
@@ -1324,6 +1454,99 @@ button.c3-export-link {
   color: var(--fg-3);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+.cockpit-v3 .c3-discipline-card .bar-row .main strong {
+  font-size: 11px;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.cockpit-v3 .c3-discipline-card .bar-row .main {
+  justify-content: center;
+  gap: 2px;
+  min-height: 24px;
+}
+.cockpit-v3 .c3-outline-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.cockpit-v3 .c3-outline-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cockpit-v3 .c3-outline-level-badge {
+  flex: 0 0 auto;
+  min-width: 20px;
+  padding: 1px 4px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  background: var(--bg-3);
+  color: var(--fg-2);
+  font: 600 7px/1.2 var(--font-mono);
+  letter-spacing: .04em;
+  text-align: center;
+}
+.cockpit-v3 .c3-outline-row[data-pms-level="1"] .c3-outline-level-badge {
+  background: var(--bg-3);
+  border-color: var(--line-2);
+  color: var(--fg-1);
+}
+.cockpit-v3 .c3-outline-row[data-pms-level="2"] .c3-outline-level-badge {
+  border-color: var(--line-1);
+  background: var(--bg-2);
+  color: var(--fg-3);
+}
+.cockpit-v3 .c3-outline-row[data-pms-level="2"] .c3-outline-name {
+  color: var(--fg-1);
+}
+.cockpit-v3 .c3-discipline-card .bar-row .main small {
+  font-size: 8px;
+  line-height: 1.15;
+  letter-spacing: .035em;
+}
+.cockpit-v3 .c3-outline-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 9px;
+}
+.cockpit-v3 .c3-outline-meta span + span::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--line-2);
+}
+.cockpit-v3 .c3-discipline-card .bar-row .bars {
+  align-self: center;
+  height: 12px;
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="2"] .bars .actual {
+  filter: saturate(.48) brightness(.82);
+  opacity: .78;
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="2"] .plan-tick {
+  opacity: .35;
+}
+.cockpit-v3 .c3-discipline-card .bar-row .delta-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 1px;
+  min-height: 24px;
+  font-size: 10px;
+  line-height: 1.1;
+  text-align: right;
+}
+.cockpit-v3 .c3-discipline-card .c3-outline-row[data-pms-level="2"] .delta-cell {
+  filter: saturate(.45);
+  opacity: .78;
+}
+.cockpit-v3 .c3-discipline-card .bar-row .delta-cell small {
+  font-size: 7px;
+  letter-spacing: .035em;
 }
 
 /* Tables */
