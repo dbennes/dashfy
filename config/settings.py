@@ -43,16 +43,11 @@ APP_BRAND_PRIMARY = env("APP_BRAND_PRIMARY", "#4F46E5")
 APP_BRAND_SECONDARY = env("APP_BRAND_SECONDARY", "#06B6D4")
 APP_BRAND_DARK = env("APP_BRAND_DARK", "#0F172A")
 APP_BRAND_ACCENT = env("APP_BRAND_ACCENT", "#A78BFA")
-DASHFY_SQLITE_ONLY = env_bool("DASHFY_SQLITE_ONLY", True)
 DASHFY_ENABLE_LEGACY_MODULES = env_bool("DASHFY_ENABLE_LEGACY_MODULES", False)
 
 # ------------------------------------------------------------------
 # Real source systems (read-only dashboard integrations)
 # ------------------------------------------------------------------
-SPDM_DB_PATH = env(
-    "SPDM_DB_PATH",
-    str(BASE_DIR.parent.parent / "03 - SPDM" / "db.sqlite3"),
-)
 SPDM_BASE_URL = env("SPDM_BASE_URL", "http://127.0.0.1:8000")
 
 DATAFY_DB_NAME = env("DATAFY_DB_NAME", "DATAFY")
@@ -151,28 +146,42 @@ ASGI_APPLICATION = "config.asgi.application"
 # ------------------------------------------------------------------
 # Database
 # ------------------------------------------------------------------
-def _db_config(prefix: str = "DB") -> dict:
-    engine = env(f"{prefix}_ENGINE", env("DB_ENGINE", "django.db.backends.postgresql"))
-    name = env(f"{prefix}_NAME", env("DB_NAME", "shellbi"))
-    cfg: dict = {"ENGINE": engine}
-    if "sqlite" in engine:
-        cfg["NAME"] = str(BASE_DIR / name) if not name.startswith("/") and ":" not in name else name
-    else:
-        cfg.update({
-            "NAME": name,
-            "USER": env(f"{prefix}_USER", env("DB_USER", "postgres")),
-            "PASSWORD": env(f"{prefix}_PASSWORD", env("DB_PASSWORD", "")),
-            "HOST": env(f"{prefix}_HOST", env("DB_HOST", "localhost")),
-            "PORT": env(f"{prefix}_PORT", env("DB_PORT", "5432")),
-            "CONN_MAX_AGE": 60,
-            "OPTIONS": {"connect_timeout": 10},
-        })
-    return cfg
+def _db_config(
+    prefix: str,
+    *,
+    default_name: str,
+    fallback_prefix: str | None = None,
+) -> dict:
+    def value(suffix: str, default: str) -> str:
+        if fallback_prefix:
+            default = env(f"{fallback_prefix}_{suffix}", default)
+        return env(f"{prefix}_{suffix}", default)
+
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        # The database name never inherits from an integration. This prevents
+        # migrations from targeting DATAFY/Taskfy when DB_NAME is omitted.
+        "NAME": env(f"{prefix}_NAME", default_name),
+        "USER": value("USER", "postgres"),
+        "PASSWORD": value("PASSWORD", ""),
+        "HOST": value("HOST", "localhost"),
+        "PORT": value("PORT", "5432"),
+        "CONN_MAX_AGE": 60,
+        "OPTIONS": {"connect_timeout": 10},
+    }
 
 
 DATABASES = {
-    "default": _db_config("DB"),
-    "business": _db_config("BUSINESS_DB"),
+    "default": _db_config(
+        "DB",
+        default_name="shellbi",
+        fallback_prefix=env("DB_CREDENTIALS_PREFIX", "").strip() or None,
+    ),
+    "business": _db_config(
+        "BUSINESS_DB",
+        default_name="DATAFY",
+        fallback_prefix="DATAFY_DB",
+    ),
 }
 
 DATABASE_ROUTERS = ["apps.core.db_router.BusinessRouter"]

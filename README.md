@@ -74,9 +74,13 @@ DB_PASSWORD=...
 DB_HOST=localhost
 DB_PORT=5432
 
-# Fonte real SPDM/DATAFY
-SPDM_DB_PATH=C:\...\SPDM\db.sqlite3
-SPDM_BASE_URL=http://127.0.0.1:8000
+# PostgreSQL DATAFY operacional
+DATAFY_DB_NAME=DATAFY
+DATAFY_DB_USER=postgres
+DATAFY_DB_PASSWORD=...
+DATAFY_DB_HOST=localhost
+DATAFY_DB_PORT=5432
+DATAFY_BASE_URL=http://127.0.0.1:8000
 
 # Fonte real Taskfy
 TASKFY_DB_NAME=taskfy
@@ -86,6 +90,9 @@ TASKFY_DB_HOST=localhost
 TASKFY_DB_PORT=5432
 TASKFY_BASE_URL=http://127.0.0.1:8080
 ```
+
+Usuarios, permissoes, imports e snapshots do cockpit ficam no PostgreSQL
+principal definido por `DB_*`. O runtime nao utiliza arquivo de banco local.
 
 ## Permissoes / multi-tenant
 

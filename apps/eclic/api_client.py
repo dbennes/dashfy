@@ -14,9 +14,9 @@ basic auth, paginacao por `?page=`/`next` cursor).
 from __future__ import annotations
 
 import logging
-import sqlite3
 from datetime import timedelta
-from pathlib import Path
+from functools import lru_cache
+from time import monotonic
 from typing import Any, Iterator
 
 import requests
@@ -25,9 +25,14 @@ from django.utils import timezone
 
 logger = logging.getLogger("shellbi.eclic")
 TOKEN_TTL = timedelta(minutes=55)
+DATAFY_SETTINGS_CACHE_TTL_SECONDS = 60
 
 
 class EclicAPIError(Exception):
+    pass
+
+
+class _DatafySettingsUnavailable(Exception):
     pass
 
 
@@ -40,14 +45,29 @@ class EclicClient:
                  timeout: int | None = None,
                  client_id: int | None = None,
                  project_id: int | None = None):
-        fallback = _spdm_eclic_settings_fallback()
-        self.base_url = (base_url or settings.ECLIC_API_BASE_URL or fallback.get("base_url") or "").rstrip("/")
-        self.api_key = api_key or settings.ECLIC_API_KEY
-        self.user = user or settings.ECLIC_API_USER or fallback.get("username") or ""
-        self.password = password or settings.ECLIC_API_PASSWORD or fallback.get("password") or ""
+        configured_base_url = base_url or settings.ECLIC_API_BASE_URL or ""
+        configured_api_key = api_key or settings.ECLIC_API_KEY or ""
+        configured_user = user or settings.ECLIC_API_USER or ""
+        configured_password = password or settings.ECLIC_API_PASSWORD or ""
+        configured_client_id = client_id or settings.ECLIC_API_CLIENT_ID or 0
+        configured_project_id = project_id or settings.ECLIC_API_PROJECT_ID or 0
+        needs_fallback = (
+            not configured_base_url
+            or (
+                not configured_api_key
+                and (not configured_user or not configured_password)
+            )
+            or not configured_client_id
+            or not configured_project_id
+        )
+        fallback = _datafy_eclic_settings_fallback() if needs_fallback else {}
+        self.base_url = (configured_base_url or fallback.get("base_url") or "").rstrip("/")
+        self.api_key = configured_api_key
+        self.user = configured_user or fallback.get("username") or ""
+        self.password = configured_password or fallback.get("password") or ""
         self.timeout = timeout or settings.ECLIC_API_TIMEOUT
-        self.client_id = client_id or settings.ECLIC_API_CLIENT_ID or fallback.get("client_id") or 0
-        self.project_id = project_id or settings.ECLIC_API_PROJECT_ID or fallback.get("project_id") or 0
+        self.client_id = configured_client_id or fallback.get("client_id") or 0
+        self.project_id = configured_project_id or fallback.get("project_id") or 0
         self._token = ""
         self._token_expires_at = None
         self.session = requests.Session()
@@ -164,29 +184,49 @@ class EclicClient:
         return r.content
 
 
-def _spdm_eclic_settings_fallback() -> dict[str, Any]:
-    """Reuse SPDM local E-CLIC connection settings when Dashfy env is blank."""
-    db_path = Path(getattr(settings, "SPDM_DB_PATH", "") or "")
-    if not db_path.exists():
-        return {}
+def _datafy_eclic_settings_fallback() -> dict[str, Any]:
+    """Reuse E-CLIC connection settings stored in DATAFY PostgreSQL."""
     try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
+        cache_bucket = int(monotonic() // DATAFY_SETTINGS_CACHE_TTL_SECONDS)
+        return _cached_datafy_eclic_settings(cache_bucket)
+    except _DatafySettingsUnavailable:
+        # Failures are not cached, so a later request can recover without
+        # requiring a worker restart.
+        return {}
+
+
+@lru_cache(maxsize=2)
+def _cached_datafy_eclic_settings(_cache_bucket: int) -> dict[str, Any]:
+    """Load successful DATAFY settings for at most one short TTL bucket."""
+    import psycopg2
+    import psycopg2.extras
+
+    try:
+        conn = psycopg2.connect(
+            dbname=settings.DATAFY_DB_NAME,
+            user=settings.DATAFY_DB_USER,
+            password=settings.DATAFY_DB_PASSWORD,
+            host=settings.DATAFY_DB_HOST,
+            port=settings.DATAFY_DB_PORT,
+            connect_timeout=5,
+        )
         try:
-            row = conn.execute(
-                """
-                select eclic_base_url, eclic_username, eclic_password,
-                       eclic_default_client_id, eclic_default_project_id
-                from core_appsettings
-                where singleton_id = 1
-                """
-            ).fetchone()
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    select eclic_base_url, eclic_username, eclic_password,
+                           eclic_default_client_id, eclic_default_project_id
+                    from core_appsettings
+                    where singleton_id = 1
+                    """
+                )
+                row = cursor.fetchone()
         finally:
             conn.close()
-    except sqlite3.Error:
-        return {}
+    except psycopg2.Error as exc:
+        raise _DatafySettingsUnavailable from exc
     if not row:
-        return {}
+        raise _DatafySettingsUnavailable
     return {
         "base_url": row["eclic_base_url"] or "",
         "username": row["eclic_username"] or "",

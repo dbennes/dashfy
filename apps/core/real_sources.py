@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import sqlite3
-import subprocess
-import sys
 from collections import Counter
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -328,7 +324,37 @@ def _is_delivery_at_yard_actual(stage: Any, kind: Any) -> bool:
     return "delivery" in stage_text and "yard" in stage_text and kind_text == "actual"
 
 
+SUPPLY_PARALLEL_YARD_PO_PREFIX = "PO-AVEON-PARALLEL"
+
+
+def _supply_has_parallel_yard_po(value: Any) -> bool:
+    if isinstance(value, (list, tuple, set)):
+        return any(_supply_has_parallel_yard_po(item) for item in value)
+    candidates = (
+        str(value or "")
+        .replace(";", ",")
+        .replace("\n", ",")
+        .split(",")
+    )
+    return any(
+        candidate.strip().upper().startswith(SUPPLY_PARALLEL_YARD_PO_PREFIX)
+        for candidate in candidates
+    )
+
+
+def _supply_row_has_parallel_yard_po(row: dict[str, Any]) -> bool:
+    return any(
+        _supply_has_parallel_yard_po(row.get(field))
+        for field in ("po_number", "po_numbers")
+    )
+
+
 def _po_row_has_yard_actual(row: dict[str, Any]) -> bool:
+    # DATAFY treats the parallel-supply tracking PO as physically available at
+    # the yard even though it does not pass through the procurement timeline.
+    if _supply_row_has_parallel_yard_po(row):
+        return True
+
     candidates: list[str] = []
     raw_payload = row.get("procurement_plan_payload")
     payload = {}
@@ -502,6 +528,17 @@ def _supply_scope_from_table(value: Any) -> str:
     return "fabrication"
 
 
+def _supply_normalize_scope(value: Any, table_name: Any = "") -> str:
+    scope = str(value or "").strip().lower()
+    if scope in {"fabrication", "fabrication_assumed"}:
+        return "fabrication"
+    if scope == "erection":
+        return "erection"
+    if scope in {"other", "demolition"}:
+        return "other"
+    return _supply_scope_from_table(table_name or value)
+
+
 def _supply_scope_label(value: Any) -> str:
     scope = str(value or "").strip().lower()
     if scope == "erection":
@@ -537,6 +574,17 @@ def _truthy_flag(value: Any) -> bool:
         return float(text.replace(",", ".")) > 0
     except ValueError:
         return False
+
+
+def _supply_item_is_pending(row: dict[str, Any]) -> bool:
+    return _supply_float(row.get("missing_qty")) > 0
+
+
+def _supply_item_is_at_yard(row: dict[str, Any]) -> bool:
+    return (
+        _truthy_flag(row.get("yard_actual"))
+        or _supply_row_has_parallel_yard_po(row)
+    )
 
 
 def _supply_float(value: Any) -> float:
@@ -596,12 +644,12 @@ def _supply_apply_po_gap_status(row: dict[str, Any]) -> str:
     return status
 
 
-def _supply_spdm_stock_lookup(material_ids: list[Any] | set[Any]) -> dict[Any, dict[str, Any]]:
+def _supply_datafy_stock_lookup(material_ids: list[Any] | set[Any]) -> dict[Any, dict[str, Any]]:
     ids = [mid for mid in material_ids if mid not in (None, "")]
     if not ids:
         return {}
     try:
-        with _spdm_conn() as conn:
+        with _datafy_conn() as conn:
             cur = conn.cursor()
             lookup: dict[Any, dict[str, Any]] = {}
             for start in range(0, len(ids), 800):
@@ -621,7 +669,7 @@ def _supply_spdm_stock_lookup(material_ids: list[Any] | set[Any]) -> dict[Any, d
                            count(sp.id) as stock_piece_count,
                            coalesce(sum(sp.remaining_qty), 0) as stock_free_qty,
                            coalesce(sum(sp.original_qty), 0) as stock_total_qty,
-                           group_concat(distinct nullif(po.po_number, '')) as stock_po_numbers
+                           string_agg(distinct nullif(po.po_number, ''), ', ') as stock_po_numbers
                     from match_one cm
                     left join catalog_stockpiece sp on sp.catalog_item_id = cm.catalog_item_id
                     left join core_purchaseorderitem poi on poi.id = sp.po_item_id
@@ -661,7 +709,7 @@ def _supply_enrich_stock_metadata(
         if row.get("stock_piece_count") in (None, "") and material_id not in (None, ""):
             missing_ids.append(material_id)
 
-    lookup = _supply_spdm_stock_lookup(missing_ids)
+    lookup = _supply_datafy_stock_lookup(missing_ids)
     for row in rows:
         material_id = row.get("material_item_id")
         data = lookup.get(material_id)
@@ -709,7 +757,7 @@ def _supply_enrich_material_rows(
     for row in rows:
         status, label = _supply_material_status(row)
         counts[status] = counts.get(status, 0) + 1
-        scope = row.get("scope") or _supply_scope_from_table(row.get("table_name"))
+        scope = _supply_normalize_scope(row.get("scope"), row.get("table_name"))
         if has_po_ids:
             has_po = row.get("material_item_id") in po_material_ids
         elif row.get("has_po") is not None:
@@ -719,7 +767,7 @@ def _supply_enrich_material_rows(
         if has_yard_ids:
             yard_actual = row.get("material_item_id") in yard_material_ids
         else:
-            yard_actual = _truthy_flag(row.get("yard_actual"))
+            yard_actual = _supply_item_is_at_yard(row)
         row["scope"] = scope
         row["scope_label"] = _supply_scope_label(scope)
         row["status"] = status
@@ -740,7 +788,7 @@ def _supply_build_drawing_line_rows(
 ) -> list[dict[str, Any]]:
     groups: dict[tuple[Any, ...], dict[str, Any]] = {}
     for row in material_rows:
-        scope = row.get("scope") or _supply_scope_from_table(row.get("table_name"))
+        scope = _supply_normalize_scope(row.get("scope"), row.get("table_name"))
         if scope == "other":
             continue
         drawing_number = row.get("drawing_number") or row.get("original_filename") or "-"
@@ -805,17 +853,17 @@ def _supply_build_drawing_line_rows(
             continue
 
         group["active_items"] += 1
-        missing = float(row.get("missing_qty") or 0)
         allocated = float(row.get("allocated_qty") or 0)
+        item_pending = _supply_item_is_pending(row)
         has_po = _truthy_flag(row.get("has_po"))
         po_gap_status = row.get("po_gap_status") or _supply_apply_po_gap_status(row)
-        yard_actual = _truthy_flag(row.get("yard_actual"))
-        if missing <= 0:
-            group["covered"] += 1
-        else:
+        yard_actual = _supply_item_is_at_yard(row)
+        if item_pending:
             group["pending"] += 1
             if allocated > 0:
                 group["partial"] += 1
+        else:
+            group["covered"] += 1
         if has_po:
             group["with_po"] += 1
         elif po_gap_status == "no_balance":
@@ -838,45 +886,45 @@ def _supply_build_drawing_line_rows(
             group["yard_actual"] += 1
 
         group["stage_total_items"] += 1
-        if missing > 0:
+        if item_pending:
             group["stage_total_pending"] += 1
         if has_po:
             group["stage_po_items"] += 1
-            if missing > 0:
+            if item_pending:
                 group["stage_po_pending"] += 1
         elif po_gap_status == "no_balance":
             group["stage_no_balance_items"] += 1
-            if missing > 0:
+            if item_pending:
                 group["stage_no_balance_pending"] += 1
         elif po_gap_status == "not_allocated":
             group["stage_not_allocated_items"] += 1
             group["stage_no_po_items"] += 1
-            if missing > 0:
+            if item_pending:
                 group["stage_not_allocated_pending"] += 1
                 group["stage_no_po_pending"] += 1
         elif po_gap_status == "catalog_issue":
             group["stage_catalog_issue_items"] += 1
             group["stage_no_po_items"] += 1
-            if missing > 0:
+            if item_pending:
                 group["stage_catalog_issue_pending"] += 1
                 group["stage_no_po_pending"] += 1
         else:
             group["stage_no_po_items"] += 1
-            if missing > 0:
+            if item_pending:
                 group["stage_no_po_pending"] += 1
         if has_po and not yard_actual:
             group["stage_no_yard_items"] += 1
-            if missing > 0:
+            if item_pending:
                 group["stage_no_yard_pending"] += 1
         if yard_actual:
             group["stage_yard_items"] += 1
-            if missing > 0:
+            if item_pending:
                 group["stage_yard_pending"] += 1
 
         family = str(row.get("family") or "").strip()
         if family and family != "-":
             group["families"].add(family)
-            if missing > 0:
+            if item_pending:
                 group["pending_families"].add(family)
 
     output = []
@@ -1091,7 +1139,7 @@ def _supply_forecast_items_from_rows(material_rows: list[dict[str, Any]]) -> lis
             "stock_free_qty": float(row.get("stock_free_qty") or 0),
             "stock_piece_count": int(row.get("stock_piece_count") or 0),
             "stock_free_na": 1 if _truthy_flag(row.get("stock_free_na")) else 0,
-            "yard_actual": 1 if _truthy_flag(row.get("yard_actual")) else 0,
+            "yard_actual": 1 if _supply_item_is_at_yard(row) else 0,
             "po_delivery_date": row.get("po_delivery_date") or _supply_forecast_delivery_date(row),
             "po_numbers": row.get("po_numbers") or row.get("po_covering") or "",
             "po_delivery_pairs": _supply_forecast_delivery_pairs(row),
@@ -1242,6 +1290,9 @@ def _supply_campaign_views(
     scoped_items: list[dict[str, Any]],
     po_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    for item in scoped_items:
+        item["scope"] = _supply_normalize_scope(item.get("scope"), item.get("table_name"))
+
     covered_ids = {row["material_item_id"] for row in po_rows}
     yard_ids = {
         row["material_item_id"]
@@ -1347,7 +1398,7 @@ def _supply_campaign_views(
                     campaign_row["no_po"] += 1
                 else:
                     campaign_row["no_po"] += 1
-            has_yard = material_id in yard_ids if po_rows else _truthy_flag(item.get("yard_actual"))
+            has_yard = material_id in yard_ids if po_rows else _supply_item_is_at_yard(item)
             if has_yard:
                 campaign_row["yard"] += 1
 
@@ -1358,7 +1409,7 @@ def _supply_campaign_views(
                 "yard": 0,
             })
             drawing["total"] += 1
-            if float(item.get("missing_qty") or 0) > 0:
+            if _supply_item_is_pending(item):
                 drawing["pending"] += 1
             if has_yard:
                 drawing["yard"] += 1
@@ -3036,19 +3087,6 @@ def _p6_dashboard(filters: dict) -> dict:
     }
 
 
-@contextmanager
-def _spdm_conn():
-    db_path = Path(settings.SPDM_DB_PATH)
-    if not db_path.exists():
-        raise FileNotFoundError(f"SPDM database not found: {db_path}")
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-
 class _PostgresCompatCursor:
     def __init__(self, cursor):
         self.cursor = cursor
@@ -3122,7 +3160,7 @@ def _taskfy_conn():
 def _safe_source(name: str, fn):
     try:
         data = fn()
-        data["available"] = True
+        data.setdefault("available", True)
         data["source_name"] = name
         return data
     except Exception as exc:
@@ -3136,24 +3174,7 @@ def _safe_source(name: str, fn):
         }
 
 
-def _sqlite_only_source(name: str, message: str = "External source disabled; using local SQLite snapshots.") -> dict:
-    return {
-        "available": True,
-        "source_name": f"{name} SQLite-only",
-        "source_mode": "sqlite_only",
-        "external_disabled": True,
-        "error": "",
-        "message": message,
-        "base_url": "",
-        "kpis": {},
-        "charts": {},
-        "rows": [],
-    }
-
-
 def datafy_dashboard() -> dict:
-    if settings.DASHFY_SQLITE_ONLY:
-        return _sqlite_only_source("DATAFY")
     return _safe_source("DATAFY PostgreSQL", _datafy_dashboard)
 
 
@@ -3253,8 +3274,6 @@ def datafy_documents(
     priority: str = "",
     limit: int = 500,
 ) -> dict:
-    if settings.DASHFY_SQLITE_ONLY:
-        return _sqlite_only_source("DATAFY documents")
     return _safe_source(
         "DATAFY PostgreSQL",
         lambda: _datafy_documents(q, status, discipline, revision, priority, limit),
@@ -3364,9 +3383,7 @@ def _datafy_documents(q: str, status: str, discipline: str, revision: str, prior
 
 
 def taskfy_dashboard() -> dict:
-    if settings.DASHFY_SQLITE_ONLY:
-        return _sqlite_only_source("Taskfy")
-    return _safe_source("Taskfy", _taskfy_dashboard)
+    return _safe_source("Taskfy PostgreSQL", _taskfy_dashboard)
 
 
 def _taskfy_dashboard() -> dict:
@@ -3467,9 +3484,10 @@ def _taskfy_dashboard() -> dict:
 
 
 def taskfy_jobcards(q: str = "", status: str = "", discipline: str = "", limit: int = 500) -> dict:
-    if settings.DASHFY_SQLITE_ONLY:
-        return _sqlite_only_source("Taskfy jobcards")
-    return _safe_source("Taskfy", lambda: _taskfy_jobcards(q, status, discipline, limit))
+    return _safe_source(
+        "Taskfy PostgreSQL",
+        lambda: _taskfy_jobcards(q, status, discipline, limit),
+    )
 
 
 def _taskfy_jobcards(q: str, status: str, discipline: str, limit: int) -> dict:
@@ -3511,8 +3529,6 @@ def _taskfy_jobcards(q: str, status: str, discipline: str, limit: int) -> dict:
 
 
 def taskfy_kanban() -> dict:
-    if settings.DASHFY_SQLITE_ONLY:
-        return _sqlite_only_source("Taskfy kanban")
     def _load():
         with _taskfy_conn() as conn:
             cur = conn.cursor()
@@ -3543,7 +3559,7 @@ def taskfy_kanban() -> dict:
                 columns.append({"label": status, "total": int(row["total"]), "cards": [dict(r) for r in cur.fetchall()]})
         return {"base_url": settings.TASKFY_BASE_URL.rstrip("/"), "columns": columns}
 
-    return _safe_source("Taskfy", _load)
+    return _safe_source("Taskfy PostgreSQL", _load)
 
 
 def _contract_week_start(contract_week: str) -> int | str:
@@ -3867,7 +3883,7 @@ _ENGINEERING_MONITOR_ISSUED_STATUSES = {*_ENGINEERING_MONITOR_AFC_STATUSES, "AFC
 def _engineering_monitor_empty(error: str = "") -> dict[str, Any]:
     return {
         "source": "Engineering base monitor",
-        "source_mode": "sqlite_monitor_missing",
+        "source_mode": "postgres_import_missing",
         "error": error,
         "import_id": None,
         "imported_at": None,
@@ -4069,7 +4085,7 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
 
     return {
         "source": "Engineering base monitor",
-        "source_mode": "sqlite_monitor",
+        "source_mode": "postgres_import",
         "error": "",
         "import_id": latest.pk,
         "imported_at": latest.created_at,
@@ -4320,7 +4336,7 @@ def _engineering_from_ded_snapshot(filters: dict) -> dict:
     engineering_flow = _engineering_control_summary(filtered_docs, engineering_summary)
     return {
         "source": "DED XLSX / Base importada",
-        "source_mode": "sqlite_snapshot",
+        "source_mode": "postgres_snapshot",
         "error": "",
         "import_id": latest.pk,
         "imported_at": latest.created_at,
@@ -4495,6 +4511,118 @@ def _engineering_from_eclic_api(filters: dict) -> dict:
         "engineering_status_rows": engineering_status_rows,
         "engineering_documents": filtered_docs[:24],
         "choices": choices,
+    }
+
+
+def _construction_engineering_fallback(filters: dict, taskfy_error: Exception | str) -> dict:
+    """Keep PostgreSQL engineering imports available when Taskfy is offline."""
+    engineering = _engineering_from_ded_snapshot(filters) or _engineering_from_eclic_api(filters)
+    engineering_monitor = _engineering_monitor_from_snapshot(filters)
+    engineering_revision_rows = engineering["engineering_revision_rows"]
+    engineering_status_rows = engineering["engineering_status_rows"]
+
+    revision_labels: list[str] = []
+    revision_names: list[str] = []
+    for row in engineering_revision_rows:
+        label = str(row["label"])
+        revision = str(row["revision"])
+        if label not in revision_labels:
+            revision_labels.append(label)
+        if revision not in revision_names:
+            revision_names.append(revision)
+    revision_names = [
+        name for name in ("REV. R", "REV. A", "REV. C")
+        if name in revision_names
+    ]
+    revision_series = [
+        {
+            "name": revision,
+            "values": [
+                int(next((
+                    row["total"]
+                    for row in engineering_revision_rows
+                    if row["label"] == label and row["revision"] == revision
+                ), 0))
+                for label in revision_labels
+            ],
+        }
+        for revision in revision_names
+    ]
+
+    choices = {
+        "disciplines": [],
+        "campaigns": [],
+        "weeks": [],
+    }
+    choices.update(engineering["choices"])
+    error_text = str(taskfy_error)
+    unavailable_chart = _empty_chart("Taskfy PostgreSQL unavailable")
+    return {
+        "available": True,
+        "partial": True,
+        "taskfy_available": False,
+        "taskfy_error": error_text,
+        "error": error_text,
+        "filters": filters,
+        "choices": choices,
+        "engineering_source": engineering["source"],
+        "engineering_source_mode": engineering.get("source_mode", "live_api"),
+        "engineering_import_id": engineering.get("import_id"),
+        "engineering_imported_at": engineering.get("imported_at"),
+        "engineering_source_file_name": engineering.get("source_file_name", ""),
+        "engineering_summary_sheet": engineering.get("summary_sheet", ""),
+        "engineering_detail_sheet": engineering.get("detail_sheet", ""),
+        "engineering_error": engineering["error"],
+        "kpis": {
+            "p6_activities": 0,
+            "p6_jobcards": 0,
+            "p6_hh": 0,
+            "programmed_packs": 0,
+            "programmed_jobcards": 0,
+            "programmed_hh": 0,
+            "dfrs": 0,
+            "dfr_jobcards": 0,
+            "actual_hh": 0,
+            "released_pool": 0,
+            "completed": 0,
+            "active": 0,
+            "due_period": 0,
+            "engineering_docs": engineering["engineering_docs"],
+            "program_execution_pct": 0,
+            "hh_realized_pct": 0,
+            "p6_realized_pct": 0,
+        },
+        "charts": {
+            "s_curve": unavailable_chart,
+            "weekly_histogram": unavailable_chart,
+            "gantt": unavailable_chart,
+            "dfr_by_discipline": unavailable_chart,
+            "engineering_revisions": _stacked_horizontal_chart(
+                revision_labels,
+                revision_series,
+                height=360,
+            ),
+            "engineering_status": _bar_chart(
+                [str(row["label"]) for row in engineering_status_rows],
+                [int(row["value"]) for row in engineering_status_rows],
+                color="#525252",
+            ),
+        },
+        "planned_week": [],
+        "programmed_week": [],
+        "actual_week": [],
+        "gantt_rows": [],
+        "packs": [],
+        "recent_dfrs": [],
+        "dfr_by_discipline": [],
+        "engineering_counts": engineering["engineering_counts"],
+        "engineering_flow": engineering["engineering_flow"],
+        "engineering_summary": engineering["engineering_summary"],
+        "engineering_discipline_groups": engineering["engineering_discipline_groups"],
+        "engineering_revision_rows": engineering_revision_rows,
+        "engineering_status_rows": engineering_status_rows,
+        "engineering_documents": engineering.get("engineering_documents", []),
+        "engineering_monitor": engineering_monitor,
     }
 
 
@@ -4793,6 +4921,8 @@ def _construction_taskfy(filters: dict) -> dict:
 
     return {
         "available": True,
+        "taskfy_available": True,
+        "taskfy_error": "",
         "filters": filters,
         "choices": choices,
         "engineering_source": engineering["source"],
@@ -5441,6 +5571,7 @@ def _construction_datafy(filters: dict) -> dict:
             f"""
             {material_filter_cte}
             select distinct fm.material_item_id,
+                   po.po_number,
                    po.procurement_plan_stage,
                    po.procurement_plan_kind,
                    po.procurement_plan_date,
@@ -5641,7 +5772,7 @@ def _construction_datafy(filters: dict) -> dict:
                 "stock_free_qty": float(item.get("stock_free_qty") or 0),
                 "stock_piece_count": int(item.get("stock_piece_count") or 0),
                 "stock_free_na": 1 if _truthy_flag(item.get("stock_free_na")) else 0,
-                "yard_actual": 1 if _truthy_flag(item.get("yard_actual")) else 0,
+                "yard_actual": 1 if _supply_item_is_at_yard(item) else 0,
                 "po_delivery_date": item.get("po_delivery_date") or "",
                 "po_numbers": item.get("po_numbers") or "",
                 "po_delivery_pairs": item.get("po_delivery_pairs") or [],
@@ -5721,10 +5852,10 @@ def _construction_datafy(filters: dict) -> dict:
     }
 
 
-def _construction_datafy_empty(message: str = "No active DATAFY SQLite snapshot.") -> dict:
+def _construction_datafy_empty(message: str = "DATAFY PostgreSQL is unavailable.") -> dict:
     return {
-        "available": True,
-        "source_mode": "sqlite_snapshot_missing",
+        "available": False,
+        "source_mode": "postgres_unavailable",
         "snapshot_missing": True,
         "snapshot_error": message,
         "kpis": {
@@ -5762,158 +5893,17 @@ def _construction_datafy_empty(message: str = "No active DATAFY SQLite snapshot.
     }
 
 
-def _spdm_db_mtime_token() -> int:
+def _construction_datafy_snapshot(filters: dict) -> dict:
     try:
-        db_path = Path(settings.SPDM_DB_PATH)
-        return int(db_path.stat().st_mtime_ns) if db_path.exists() else 0
-    except OSError:
-        return 0
-
-
-def _spdm_association_pending_summary(filters: dict[str, Any]) -> dict[str, Any]:
-    discipline = (
-        str(filters.get("supply_discipline") or filters.get("discipline") or "").strip()
-        or "structural"
-    )
-    scope = str(filters.get("supply_scope") or "fabrication").strip().lower() or "fabrication"
-    if scope not in {"fabrication", "erection"}:
-        scope = "fabrication"
-    family = str(filters.get("supply_family") or "").strip().upper()
-    counting = "counted"
-    db_path = Path(settings.SPDM_DB_PATH)
-    spdm_root = db_path.parent
-    if not db_path.exists() or not spdm_root.exists():
-        return {
-            "available": False,
-            "discipline": discipline,
-            "scope": scope,
-            "family": family,
-            "counting": counting,
-            "error": f"SPDM database not found: {db_path}",
-        }
-
-    cache_payload = {
-        "discipline": discipline,
-        "scope": scope,
-        "family": family,
-        "counting": counting,
-        "mtime": _spdm_db_mtime_token(),
-    }
-    cache_key = "spdm-association-pending:" + hashlib.sha1(
-        json.dumps(cache_payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
-
-    python_candidates = [
-        spdm_root / "venv" / "Scripts" / "python.exe",
-        spdm_root / ".venv" / "Scripts" / "python.exe",
-        Path(sys.executable),
-    ]
-    python_exe = next((candidate for candidate in python_candidates if candidate.exists()), Path(sys.executable))
-    script = r"""
-import json
-import os
-import sys
-from decimal import Decimal
-
-args = json.loads(os.environ["DASHFY_SPDM_ASSOC_ARGS"])
-root = os.environ["DASHFY_SPDM_ROOT"]
-sys.path.insert(0, root)
-os.environ["DJANGO_SETTINGS_MODULE"] = "spdm.settings"
-
-import django
-django.setup()
-
-from catalog.views import _association_pending_groups_fast
-
-groups = _association_pending_groups_fast(
-    discipline=args.get("discipline") or "",
-    scope=args.get("scope") or "fabrication",
-    family_code=args.get("family") or "",
-    counting=args.get("counting") or "counted",
-    limit=50000,
-)
-
-statuses = {}
-for status in ("stock_available", "partial_balance", "no_balance", "no_po"):
-    selected = [group for group in groups if group.get("status") == status]
-    statuses[status] = {
-        "groups": len(selected),
-        "items": sum(int(group.get("items_count") or 0) for group in selected),
-        "missing": float(sum(Decimal(str(group.get("missing_total") or 0)) for group in selected)),
-    }
-payload = {
-    "available": True,
-    "discipline": args.get("discipline") or "",
-    "scope": args.get("scope") or "fabrication",
-    "family": args.get("family") or "",
-    "counting": args.get("counting") or "counted",
-    "groups": len(groups),
-    "items": sum(int(group.get("items_count") or 0) for group in groups),
-    "missing": float(sum(Decimal(str(group.get("missing_total") or 0)) for group in groups)),
-    "no_po_groups": statuses["no_po"]["groups"],
-    "no_po_items": statuses["no_po"]["items"],
-    "no_po_missing": statuses["no_po"]["missing"],
-    "no_balance_groups": statuses["no_balance"]["groups"],
-    "no_balance_items": statuses["no_balance"]["items"],
-    "no_balance_missing": statuses["no_balance"]["missing"],
-    "partial_balance_groups": statuses["partial_balance"]["groups"],
-    "partial_balance_items": statuses["partial_balance"]["items"],
-    "stock_available_groups": statuses["stock_available"]["groups"],
-    "stock_available_items": statuses["stock_available"]["items"],
-    "statuses": statuses,
-}
-print(json.dumps(payload, ensure_ascii=False))
-"""
-    env = os.environ.copy()
-    env.update({
-        "DASHFY_SPDM_ASSOC_ARGS": json.dumps(cache_payload, ensure_ascii=False),
-        "DASHFY_SPDM_ROOT": str(spdm_root),
-        "DJANGO_SETTINGS_MODULE": "spdm.settings",
-        "PYTHONIOENCODING": "utf-8",
-    })
-    try:
-        completed = subprocess.run(
-            [str(python_exe), "-c", script],
-            cwd=str(spdm_root),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=45,
-            check=False,
-        )
-        if completed.returncode != 0:
-            raise RuntimeError((completed.stderr or completed.stdout or "").strip()[-1000:])
-        output_line = (completed.stdout or "").strip().splitlines()[-1]
-        result = json.loads(output_line)
-    except Exception as exc:
-        result = {
-            "available": False,
-            "discipline": discipline,
-            "scope": scope,
-            "family": family,
-            "counting": counting,
-            "error": str(exc),
-        }
+        payload = _construction_datafy(filters)
+    except Exception as live_error:
+        live_error_text = str(live_error)
     else:
-        query = f"discipline={discipline}&scope={scope}&family={family}&counting={counting}"
-        result["link_url"] = (
-            f"{settings.SPDM_BASE_URL.rstrip('/')}/catalog/association/?q=&status=&{query}"
-        )
+        payload["source_mode"] = "postgres_live"
+        payload["source_database"] = settings.DATAFY_DB_NAME
+        payload["source_host"] = f"{settings.DATAFY_DB_HOST}:{settings.DATAFY_DB_PORT}"
+        return payload
 
-    cache.set(cache_key, result, 120)
-    return result
-
-
-def _supply_attach_spdm_association_pending(payload: dict[str, Any], filters: dict[str, Any]) -> None:
-    payload["spdm_association_pending"] = _spdm_association_pending_summary(filters)
-
-
-def _construction_datafy_snapshot(filters: dict, *, allow_live: bool | None = None) -> dict:
-    if allow_live is None:
-        allow_live = not settings.DASHFY_SQLITE_ONLY
     requested_snapshot_filters = normalized_supply_snapshot_filters(filters)
     try:
         snapshot = (
@@ -5942,103 +5932,18 @@ def _construction_datafy_snapshot(filters: dict, *, allow_live: bool | None = No
     if snapshot:
         payload = json.loads(json.dumps(snapshot.payload, default=json_default, ensure_ascii=False))
         _supply_normalize_operational_payload(payload)
-        _supply_attach_spdm_association_pending(payload, filters)
-        payload["source_mode"] = "sqlite_snapshot"
+        payload["source_mode"] = "postgres_snapshot"
         payload["snapshot_id"] = snapshot.pk
         payload["snapshot_refreshed_at"] = snapshot.created_at
         payload["source_database"] = snapshot.source_database
         payload["source_host"] = snapshot.source_host
+        payload["source_warning"] = live_error_text
         return payload
 
-    if not allow_live:
-        payload = _construction_datafy_empty()
-        _supply_attach_spdm_association_pending(payload, filters)
-        return payload
-
-    payload = _construction_datafy(filters)
-    _supply_attach_spdm_association_pending(payload, filters)
-    payload["source_mode"] = "postgres_live"
-    payload["snapshot_missing"] = True
+    payload = _construction_datafy_empty(live_error_text)
+    payload["source_database"] = settings.DATAFY_DB_NAME
+    payload["source_host"] = f"{settings.DATAFY_DB_HOST}:{settings.DATAFY_DB_PORT}"
     return payload
-
-
-def _construction_sqlite_snapshot(filters: dict) -> dict:
-    engineering = _engineering_from_ded_snapshot(filters)
-    if not engineering:
-        engineering = _engineering_empty("No active DED SQLite snapshot.")
-        engineering["source"] = "SQLite DED snapshot"
-        engineering["source_mode"] = "sqlite_snapshot_missing"
-    engineering_monitor = _engineering_monitor_from_snapshot(filters)
-    choices = {
-        "disciplines": [],
-        "campaigns": [],
-        "weeks": [],
-        "engineering_disciplines": [],
-        "engineering_statuses": [],
-        "engineering_issue_statuses": [],
-        "engineering_responsibles": [],
-        "engineering_revisions": [
-            {"value": "R", "label": "REV. R"},
-            {"value": "A", "label": "REV. A"},
-            {"value": "C", "label": "REV. C"},
-        ],
-    }
-    choices.update(engineering.get("choices") or {})
-    return {
-        "available": True,
-        "source_mode": "sqlite_only",
-        "filters": filters,
-        "choices": choices,
-        "engineering_source": engineering.get("source", "SQLite DED snapshot"),
-        "engineering_source_mode": engineering.get("source_mode", "sqlite_snapshot"),
-        "engineering_import_id": engineering.get("import_id"),
-        "engineering_imported_at": engineering.get("imported_at"),
-        "engineering_source_file_name": engineering.get("source_file_name", ""),
-        "engineering_summary_sheet": engineering.get("summary_sheet", ""),
-        "engineering_detail_sheet": engineering.get("detail_sheet", ""),
-        "engineering_error": engineering.get("error", ""),
-        "kpis": {
-            "p6_activities": 0,
-            "p6_jobcards": 0,
-            "p6_hh": 0,
-            "programmed_packs": 0,
-            "programmed_jobcards": 0,
-            "programmed_hh": 0,
-            "dfrs": 0,
-            "dfr_jobcards": 0,
-            "actual_hh": 0,
-            "released_pool": 0,
-            "completed": 0,
-            "active": 0,
-            "due_period": 0,
-            "engineering_docs": engineering.get("engineering_docs", 0),
-            "program_execution_pct": 0,
-            "hh_realized_pct": 0,
-            "p6_realized_pct": 0,
-        },
-        "charts": {
-            "s_curve": _empty_chart("Taskfy disabled in SQLite-only mode"),
-            "weekly_histogram": _empty_chart("Taskfy disabled in SQLite-only mode"),
-            "gantt": _empty_chart("Taskfy disabled in SQLite-only mode"),
-            "dfr_by_discipline": _empty_chart("Taskfy disabled in SQLite-only mode"),
-            "engineering_revisions": _empty_chart(),
-            "engineering_status": _empty_chart(),
-        },
-        "planned_week": [],
-        "actual_week": [],
-        "gantt_rows": [],
-        "packs": [],
-        "recent_dfrs": [],
-        "dfr_by_discipline": [],
-        "engineering_counts": engineering.get("engineering_counts", {}),
-        "engineering_flow": engineering.get("engineering_flow", {}),
-        "engineering_summary": engineering.get("engineering_summary", []),
-        "engineering_discipline_groups": engineering.get("engineering_discipline_groups", []),
-        "engineering_revision_rows": engineering.get("engineering_revision_rows", []),
-        "engineering_status_rows": engineering.get("engineering_status_rows", []),
-        "engineering_documents": engineering.get("engineering_documents", []),
-        "engineering_monitor": engineering_monitor,
-    }
 
 
 def management_dashboard(filters: dict | None = None) -> dict:
@@ -6047,33 +5952,43 @@ def management_dashboard(filters: dict | None = None) -> dict:
         json.dumps(
             {
                 "filters": parsed_filters,
-                "sqlite_only": settings.DASHFY_SQLITE_ONLY,
-                "spdm_db_mtime": _spdm_db_mtime_token(),
+                "source": "postgres-live-v2",
             },
             sort_keys=True,
             default=json_default,
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
-    cache_key = f"management-dashboard:outline-v2:{cache_token}"
+    cache_key = f"management-dashboard:outline-v4:{cache_token}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
 
     p6 = _safe_source("P6 base importada", lambda: _p6_dashboard(parsed_filters))
-    if settings.DASHFY_SQLITE_ONLY:
-        material = _safe_source(
-            "SQLite DATAFY snapshot",
-            lambda: _construction_datafy_snapshot(parsed_filters, allow_live=False),
-        )
-        construction = _safe_source("SQLite DED snapshot", lambda: _construction_sqlite_snapshot(parsed_filters))
-        datafy = _sqlite_only_source("DATAFY")
-        taskfy = _sqlite_only_source("Taskfy")
-    else:
-        datafy = datafy_dashboard()
-        taskfy = taskfy_dashboard()
-        construction = _safe_source("Taskfy obra", lambda: _construction_taskfy(parsed_filters))
-        material = _safe_source("DATAFY suprimentos", lambda: _construction_datafy_snapshot(parsed_filters))
+    try:
+        construction = _construction_taskfy(parsed_filters)
+    except Exception as taskfy_error:
+        construction = _construction_engineering_fallback(parsed_filters, taskfy_error)
+    construction["source_name"] = "Taskfy PostgreSQL"
+    taskfy = {
+        "available": bool(construction.get("taskfy_available")),
+        "source_name": "Taskfy PostgreSQL",
+        "error": construction.get("taskfy_error", ""),
+    }
+    material = _safe_source(
+        "DATAFY PostgreSQL",
+        lambda: _construction_datafy_snapshot(parsed_filters),
+    )
+    datafy = {
+        "available": material.get("source_mode") == "postgres_live",
+        "source_name": "DATAFY PostgreSQL",
+        "error": (
+            material.get("source_warning")
+            or material.get("snapshot_error")
+            or material.get("error")
+            or ""
+        ),
+    }
 
     k_task = construction.get("kpis", {})
     k_mat = material.get("kpis", {})
@@ -6134,7 +6049,6 @@ def management_dashboard(filters: dict | None = None) -> dict:
         "available": bool(datafy.get("available") or taskfy.get("available") or p6.get("available")),
         "sources_online": int(bool(datafy.get("available"))) + int(bool(taskfy.get("available"))) + int(bool(p6.get("available"))),
         "sources_total": 3,
-        "sqlite_only": settings.DASHFY_SQLITE_ONLY,
         "filters": parsed_filters,
         "datafy": datafy,
         "taskfy": taskfy,

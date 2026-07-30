@@ -1,7 +1,7 @@
 # Deploy do DASHFY
 
-Este repositorio e publico. Nao envie `.env`, `db.sqlite3`, `media/`, `logs/`,
-backups ou dumps para o GitHub. Esses arquivos devem ir direto para o servidor
+Este repositorio e publico. Nao envie `.env`, `media/`, `logs`, backups ou
+dumps PostgreSQL para o GitHub. Esses arquivos devem ir direto para o servidor
 por SSH/SCP, SFTP ou outro canal privado.
 
 ## 1. Clonar no servidor
@@ -37,36 +37,61 @@ DJANGO_DEBUG=False
 DJANGO_ALLOWED_HOSTS=seu-dominio.com,www.seu-dominio.com,IP_DO_SERVIDOR
 DJANGO_SECRET_KEY=gere-uma-chave-longa-e-unica
 
-DB_ENGINE=django.db.backends.sqlite3
-DB_NAME=db.sqlite3
-BUSINESS_DB_ENGINE=django.db.backends.sqlite3
-BUSINESS_DB_NAME=db.sqlite3
+DB_NAME=shellbi
+DB_USER=postgres
+DB_PASSWORD=senha-segura
+DB_HOST=localhost
+DB_PORT=5432
+
+DATAFY_DB_NAME=DATAFY
+DATAFY_DB_USER=postgres
+DATAFY_DB_PASSWORD=senha-segura
+DATAFY_DB_HOST=localhost
+DATAFY_DB_PORT=5432
+DATAFY_BASE_URL=http://127.0.0.1:8000
+
+TASKFY_DB_NAME=taskfy
+TASKFY_DB_USER=postgres
+TASKFY_DB_PASSWORD=senha-segura
+TASKFY_DB_HOST=localhost
+TASKFY_DB_PORT=5432
+TASKFY_BASE_URL=http://127.0.0.1:8080
 ```
 
-Se for usar PostgreSQL, ajuste `DB_ENGINE`, `DB_NAME`, `DB_USER`,
-`DB_PASSWORD`, `DB_HOST` e `DB_PORT`.
+O DASHFY usa PostgreSQL tanto para os dados gerenciados pelo Django quanto
+para as fontes operacionais.
 
-## 4. Restaurar os dados atuais
+Em uma producao existente, mantenha `DB_*` apontando para o PostgreSQL
+principal que ja contem os dados do DASHFY. Nao copie arquivos ou backups de
+banco local para o servidor: eles nao fazem parte do deploy e nao sao lidos
+pela aplicacao.
 
-Para manter o banco SQLite atual, copie `db.sqlite3` direto para a raiz do
-projeto no servidor:
+O alias `BUSINESS_DB_*` e opcional. Quando ele nao for informado, usa as
+credenciais `DATAFY_DB_*`.
+
+## 4. Preparar ou restaurar o PostgreSQL
+
+Crie a base principal na primeira instalacao:
 
 ```bash
-scp db.sqlite3 usuario@servidor:/caminho/do/dashfy/db.sqlite3
+createdb -U postgres shellbi
 ```
 
-Se `media/` tiver uploads, copie tambem:
+Para restaurar um backup existente, transfira o dump por canal privado e use
+`pg_restore`:
 
 ```bash
-scp -r media usuario@servidor:/caminho/do/dashfy/media
+pg_restore -U postgres -d shellbi --clean --if-exists backup.dump
 ```
 
-Depois ajuste permissao/usuario conforme o usuario que roda o Gunicorn:
+Backups devem ser gerados com `pg_dump`:
 
 ```bash
-chown -R www-data:www-data db.sqlite3 media logs
-chmod 600 db.sqlite3 .env
+pg_dump -U postgres -Fc shellbi > backup.dump
 ```
+
+Se `media/` tiver uploads, copie o diretorio separadamente e ajuste as
+permissoes do usuario que roda o Gunicorn. Mantenha `.env` com permissao 600.
 
 ## 5. Preparar Django
 

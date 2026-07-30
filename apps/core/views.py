@@ -22,7 +22,7 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.accounts.permissions import has_module_permission
-from apps.core.datafy_supply import latest_supply_snapshot, refresh_supply_snapshot, supply_filters_hash
+from apps.core.datafy_supply import refresh_supply_snapshot, supply_filters_hash
 from apps.core.engineering_import import import_engineering_status_workbook
 from apps.core.engineering_monitor_import import import_engineering_monitor_workbook, normalize_monitor_discipline
 from apps.core.model_selection import SelectionTooLarge, selection_glb_path
@@ -1133,28 +1133,40 @@ def _supply_snapshot_redirect(request):
 
 @login_required
 def export_datafy_supply_view(request):
-    """Exporta o snapshot DATAFY usado na S02 para reimportacao identica."""
+    """Exporta exatamente o payload DATAFY que a S02 usa nesta selecao."""
     filters = real_sources._construction_filters(request.GET)
-    snapshot = latest_supply_snapshot(filters)
-    if snapshot is None:
-        messages.error(request, "Nao ha snapshot DATAFY ativo para exportar nesta selecao.")
+    current_payload = real_sources._construction_datafy_snapshot(filters)
+    source_mode = current_payload.get("source_mode")
+    if source_mode not in {"postgres_live", "postgres_snapshot"}:
+        messages.error(request, "DATAFY PostgreSQL indisponivel e sem snapshot para exportar.")
         return redirect(_supply_snapshot_redirect(request))
 
     exported_at = timezone.now()
+    exported_filters = _json_ready(filters)
+    exported_payload = _json_ready(current_payload)
+    total_materials, total_drawings, material_rows = _supply_snapshot_counts(exported_payload)
+    source_created_at = current_payload.get("snapshot_refreshed_at") or exported_at
     payload = {
         "kind": "datafy_supply_snapshot",
         "version": 1,
         "exported_at": exported_at.isoformat(),
         "snapshot": {
-            "source_database": snapshot.source_database,
-            "source_host": snapshot.source_host,
-            "filters_hash": snapshot.filters_hash,
-            "filters": snapshot.filters,
-            "payload": snapshot.payload,
-            "total_materials": snapshot.total_materials,
-            "total_drawings": snapshot.total_drawings,
-            "material_rows": snapshot.material_rows,
-            "created_at": snapshot.created_at.isoformat() if snapshot.created_at else None,
+            "source_database": current_payload.get("source_database") or settings.DATAFY_DB_NAME,
+            "source_host": current_payload.get("source_host") or (
+                f"{settings.DATAFY_DB_HOST}:{settings.DATAFY_DB_PORT}"
+            ),
+            "source_mode": source_mode,
+            "filters_hash": supply_filters_hash(filters),
+            "filters": exported_filters,
+            "payload": exported_payload,
+            "total_materials": total_materials,
+            "total_drawings": total_drawings,
+            "material_rows": material_rows,
+            "created_at": (
+                source_created_at.isoformat()
+                if hasattr(source_created_at, "isoformat")
+                else str(source_created_at)
+            ),
         },
     }
     content = json.dumps(payload, ensure_ascii=False, default=real_sources.json_default, indent=2)
@@ -1168,7 +1180,7 @@ def export_datafy_supply_view(request):
         filename=filename,
         file_format="json",
         module="supply",
-        rows=snapshot.material_rows,
+        rows=material_rows,
         query_params=request.GET.urlencode()[:1000],
     )
     response = HttpResponse(content, content_type="application/json; charset=utf-8")
@@ -1263,7 +1275,7 @@ def refresh_datafy_supply_view(request):
             request,
             (
                 "DATAFY database unavailable. The cockpit is still using the last "
-                f"SQLite snapshot. Details: {exc}"
+                f"snapshot persisted in PostgreSQL. Details: {exc}"
             ),
         )
     else:

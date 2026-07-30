@@ -364,7 +364,7 @@
       <div class="meta p6-source-meta c3-meta-inline c3-engineering-source">
         <div class="c3-meta-line">
           <b>{{ monitor.flow.total|default:0|intcomma }}</b> monitored docs · <b>{{ monitor.summary|length }}</b> disciplines
-          {% if monitor.source_mode == "sqlite_monitor" %}
+          {% if monitor.source_mode == "postgres_import" %}
             · Engineering base · import #{{ monitor.import_id }} · {{ monitor.imported_at|date:"d/m/Y H:i" }}
           {% else %}
             · {{ monitor.error|default:"No active engineering base import" }}
@@ -373,9 +373,9 @@
             · {{ monitor.source_file_name }} · {{ monitor.detail_sheet|default:"Sheet1" }}
           {% endif %}
         </div>
-        {% if monitor.source_mode == "sqlite_monitor" or request.user.is_admin %}
+        {% if monitor.source_mode == "postgres_import" or request.user.is_admin %}
           <div class="c3-source-actions" aria-label="Engineering monitor source actions">
-            {% if monitor.source_mode == "sqlite_monitor" %}
+            {% if monitor.source_mode == "postgres_import" %}
               <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_engineering_monitor' %}" download title="Exportar base normalizada editavel">
                 <i class="bi bi-download"></i><span>Exportar base</span>
               </a>
@@ -543,10 +543,12 @@
     <div class="meta p6-source-meta c3-meta-inline c3-supply-source">
       <div class="c3-meta-line">
         <b>{{ manager.material.material_flow.total|default:0|intcomma }}</b> items · <b>{{ manager.material.material_flow.covered_pct|default:0|floatformat:1 }}%</b> coverage
-        {% if manager.material.source_mode == "sqlite_snapshot" %}
-          · DATAFY · snapshot #{{ manager.material.snapshot_id }} · {{ manager.material.snapshot_refreshed_at|date:"d/m/Y H:i" }}
+        {% if manager.material.source_mode == "postgres_live" %}
+          · DATAFY · PostgreSQL live
+        {% elif manager.material.source_mode == "postgres_snapshot" %}
+          · DATAFY · PostgreSQL snapshot #{{ manager.material.snapshot_id }} · {{ manager.material.snapshot_refreshed_at|date:"d/m/Y H:i" }}
         {% else %}
-          · DATAFY · pending snapshot{% if manager.material.snapshot_missing %} · refresh source{% endif %}
+          · DATAFY · PostgreSQL unavailable
         {% endif %}
       </div>
       <div class="c3-source-actions" aria-label="Supply source actions">
@@ -569,6 +571,13 @@
       </div>
     </div>
   </div>
+  {% if manager.material.source_warning %}
+    <div class="c3-msg" style="border-left-color: var(--signal-amber);">
+      DATAFY live unavailable. Showing PostgreSQL snapshot
+      {% if manager.material.snapshot_refreshed_at %}from {{ manager.material.snapshot_refreshed_at|date:"d/m/Y H:i" }}{% endif %}.
+      {{ manager.material.source_warning }}
+    </div>
+  {% endif %}
   <div class="kpi-strip">
     <div class="kpi">
       <div class="lbl"><span class="marker"></span><span>Total Scope</span></div>
@@ -678,7 +687,7 @@
                 <div class="rhs">
                   <div class="scope-switch c3-supply-stage-actions" aria-label="Supply scenario filter">
                     <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-scenario-label="PO Overview" data-scenario-detail="Total scope, with PO and without PO">PO Overview</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard Overview" data-scenario-detail="Drawings with material already received at yard; pending buckets show what is still missing">At Yard Overview</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard Overview" data-scenario-detail="Drawings with material already received at yard; pending buckets use the DATAFY material gap">At Yard Overview</button>
                   </div>
                   <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
                   <button class="c3-export-link" type="button" data-c3-export-pending="{{ view.key }}" title="Export drawing list for the current pending condition">
@@ -1500,7 +1509,13 @@
   }
 
   function c3StagePendingBucket(row, stage) {
-    if (stage === 'yard' || stage === 'no_yard') {
+    if (stage === 'yard') {
+      var datafyPending = c3DatasetHas(row, 'drawingPending')
+        ? c3DatasetNumber(row, 'drawingPending')
+        : (row?.dataset?.pendingBucket || row?.dataset?.linePendingBucket || 0);
+      return String(c3PendingBucketFromCount(datafyPending));
+    }
+    if (stage === 'no_yard') {
       var arrivalPending = c3ArrivalPendingItems(row, stage);
       if (arrivalPending != null) return String(c3PendingBucketFromCount(arrivalPending));
     }
@@ -1524,7 +1539,7 @@
   }
 
   function c3ArrivalPendingItems(row, stage) {
-    if (!row || (stage !== 'yard' && stage !== 'no_yard')) return null;
+    if (!row || stage !== 'no_yard') return null;
     var forecast = c3ForecastMetricsForRow(row);
     if (forecast && !forecast.finalized) {
       var forecastRemaining = (forecast.total || 0) - (forecast.forecastAvailable || 0) + (forecast.noPoAssumption || 0);

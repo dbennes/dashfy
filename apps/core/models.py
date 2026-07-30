@@ -127,7 +127,7 @@ class P6CurvePoint(models.Model):
 
 
 class P6ManagementSnapshot(models.Model):
-    """Payload gerencial S03 extraido do Annex III e salvo no SQLite."""
+    """Payload gerencial S03 extraido do Annex III e salvo no PostgreSQL."""
 
     import_batch = models.OneToOneField(
         P6CurveImport,
