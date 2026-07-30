@@ -581,10 +581,20 @@ def _supply_item_is_pending(row: dict[str, Any]) -> bool:
 
 
 def _supply_item_is_at_yard(row: dict[str, Any]) -> bool:
-    return (
-        _truthy_flag(row.get("yard_actual"))
-        or _supply_row_has_parallel_yard_po(row)
-    )
+    # Live DATAFY rows receive a quantity-aware yard_actual value. Respect an
+    # explicit zero so a partially received parallel-tracking allocation is
+    # not promoted to a fully received material item. The PO-name heuristic is
+    # only a compatibility fallback for older payloads without this field.
+    if "yard_actual" in row and row.get("yard_actual") not in (None, ""):
+        return _truthy_flag(row.get("yard_actual"))
+    return _supply_row_has_parallel_yard_po(row)
+
+
+def _supply_item_has_yard_receipt(row: dict[str, Any]) -> bool:
+    """Return whether any requested quantity has physically reached the yard."""
+    if _supply_float(row.get("yard_allocated_qty")) > 0:
+        return True
+    return _supply_item_is_at_yard(row)
 
 
 def _supply_float(value: Any) -> float:
@@ -599,6 +609,64 @@ def _supply_int(value: Any) -> int:
         return int(float(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _supply_yard_allocation_qty_by_material(
+    po_rows: list[dict[str, Any]],
+) -> dict[Any, Decimal]:
+    """Return the allocated quantity that has actually reached the yard.
+
+    DATAFY can split one material item across several allocations/POs. A PO
+    having an actual yard date therefore does not mean the entire material
+    item is at the yard; only that allocation's quantity is available.
+    """
+    totals: dict[Any, Decimal] = {}
+    seen_allocations: set[tuple[Any, Any]] = set()
+    for index, row in enumerate(po_rows):
+        material_id = row.get("material_item_id")
+        if material_id in (None, "") or not _po_row_has_yard_actual(row):
+            continue
+        allocation_id = row.get("allocation_id")
+        allocation_key = (
+            material_id,
+            allocation_id if allocation_id not in (None, "") else ("row", index),
+        )
+        if allocation_key in seen_allocations:
+            continue
+        seen_allocations.add(allocation_key)
+        try:
+            allocated_qty = Decimal(str(row.get("qty_allocated") or 0))
+        except (ArithmeticError, TypeError, ValueError):
+            allocated_qty = Decimal("0")
+        totals[material_id] = totals.get(material_id, Decimal("0")) + allocated_qty
+    return totals
+
+
+def _supply_fully_at_yard_material_ids(
+    material_rows: list[dict[str, Any]],
+    po_rows: list[dict[str, Any]],
+) -> set[Any]:
+    requested_by_id: dict[Any, Decimal] = {}
+    for row in material_rows:
+        material_id = row.get("material_item_id")
+        if material_id in (None, ""):
+            continue
+        try:
+            requested_qty = Decimal(str(row.get("requested_qty") or 0))
+        except (ArithmeticError, TypeError, ValueError):
+            requested_qty = Decimal("0")
+        requested_by_id[material_id] = max(
+            requested_by_id.get(material_id, Decimal("0")),
+            requested_qty,
+        )
+
+    yard_qty_by_id = _supply_yard_allocation_qty_by_material(po_rows)
+    return {
+        material_id
+        for material_id, requested_qty in requested_by_id.items()
+        if requested_qty > 0
+        and yard_qty_by_id.get(material_id, Decimal("0")) >= requested_qty
+    }
 
 
 PO_GAP_LABELS = {
@@ -839,6 +907,7 @@ def _supply_build_drawing_line_rows(
             "stage_no_yard_items": 0,
             "stage_no_yard_pending": 0,
             "stage_yard_items": 0,
+            "stage_yard_received_items": 0,
             "stage_yard_pending": 0,
             "families": set(),
             "pending_families": set(),
@@ -848,8 +917,15 @@ def _supply_build_drawing_line_rows(
         if line and line != "-":
             group["lines"].add(line)
         group["total_items"] += 1
+        yard_actual = _supply_item_is_at_yard(row)
+        yard_received = _supply_item_has_yard_receipt(row)
         if _supply_is_finalized_item(row):
             group["finalized_items"] += 1
+            if yard_actual:
+                group["yard_actual"] += 1
+                group["stage_yard_items"] += 1
+            if yard_received:
+                group["stage_yard_received_items"] += 1
             continue
 
         group["active_items"] += 1
@@ -857,7 +933,6 @@ def _supply_build_drawing_line_rows(
         item_pending = _supply_item_is_pending(row)
         has_po = _truthy_flag(row.get("has_po"))
         po_gap_status = row.get("po_gap_status") or _supply_apply_po_gap_status(row)
-        yard_actual = _supply_item_is_at_yard(row)
         if item_pending:
             group["pending"] += 1
             if allocated > 0:
@@ -920,6 +995,8 @@ def _supply_build_drawing_line_rows(
             group["stage_yard_items"] += 1
             if item_pending:
                 group["stage_yard_pending"] += 1
+        if yard_received:
+            group["stage_yard_received_items"] += 1
 
         family = str(row.get("family") or "").strip()
         if family and family != "-":
@@ -936,7 +1013,8 @@ def _supply_build_drawing_line_rows(
         pending = int(group["pending"] or 0)
         group["row_no"] = index
         group["coverage_pct"] = 100.0 if finalized_only else (round(100 * covered / active_total, 1) if active_total else 0)
-        group["yard_pct"] = round(100 * int(group["yard_actual"] or 0) / active_total, 1) if active_total else 0
+        yard_total = active_total if active_total else total
+        group["yard_pct"] = round(100 * int(group["yard_actual"] or 0) / yard_total, 1) if yard_total else 0
         group["drawing_finalized"] = 1 if finalized_only else 0
         if finalized_only:
             group["status"] = "finalized"
@@ -1140,9 +1218,11 @@ def _supply_forecast_items_from_rows(material_rows: list[dict[str, Any]]) -> lis
             "stock_piece_count": int(row.get("stock_piece_count") or 0),
             "stock_free_na": 1 if _truthy_flag(row.get("stock_free_na")) else 0,
             "yard_actual": 1 if _supply_item_is_at_yard(row) else 0,
+            "yard_allocated_qty": float(row.get("yard_allocated_qty") or 0),
             "po_delivery_date": row.get("po_delivery_date") or _supply_forecast_delivery_date(row),
             "po_numbers": row.get("po_numbers") or row.get("po_covering") or "",
             "po_delivery_pairs": _supply_forecast_delivery_pairs(row),
+            "po_delivery_allocations": row.get("po_delivery_allocations") or [],
         })
     return items
 
@@ -1294,12 +1374,10 @@ def _supply_campaign_views(
         item["scope"] = _supply_normalize_scope(item.get("scope"), item.get("table_name"))
 
     covered_ids = {row["material_item_id"] for row in po_rows}
-    yard_ids = {
-        row["material_item_id"]
-        for row in po_rows
-        if _po_row_has_yard_actual(row)
-    }
+    yard_qty_by_id = _supply_yard_allocation_qty_by_material(po_rows)
+    yard_ids = _supply_fully_at_yard_material_ids(scoped_items, po_rows)
     scopes = [
+        ("all", "All"),
         ("fabrication", "Fabrication"),
         ("erection", "Erection"),
     ]
@@ -1328,7 +1406,7 @@ def _supply_campaign_views(
         labels = sorted({
             _campaign_label(item.get("campaign"))
             for item in scoped_items
-            if item.get("scope") == scope_key
+            if scope_key == "all" or item.get("scope") == scope_key
         }, key=_campaign_sort_key)
         campaigns = [
             _supply_campaign_for_label(label, index)
@@ -1352,10 +1430,10 @@ def _supply_campaign_views(
             }
             for campaign in campaigns
         }
-        drawing_pending: dict[tuple[Any, str], dict[str, Any]] = {}
-        drawing_finalized: dict[tuple[Any, str], dict[str, Any]] = {}
+        drawing_pending: dict[tuple[Any, str, str], dict[str, Any]] = {}
+        drawing_finalized: dict[tuple[Any, str, str], dict[str, Any]] = {}
         for item in scoped_items:
-            if item.get("scope") != scope_key:
+            if scope_key != "all" and item.get("scope") != scope_key:
                 continue
             campaign = campaign_by_label.get(_campaign_label(item.get("campaign")))
             if campaign is None:
@@ -1374,12 +1452,29 @@ def _supply_campaign_views(
                 }
             campaign_row = campaign_rows[campaign["key"]]
             material_id = item.get("material_item_id")
-            drawing_key = (item.get("document_id"), campaign["key"])
+            has_yard = material_id in yard_ids if po_rows else _supply_item_is_at_yard(item)
+            has_yard_receipt = (
+                yard_qty_by_id.get(material_id, Decimal("0")) > 0
+                if po_rows
+                else _supply_item_has_yard_receipt(item)
+            )
+            drawing_key = (
+                item.get("document_id"),
+                str(item.get("scope") or ""),
+                campaign["key"],
+            )
             if _supply_is_finalized_item(item):
                 drawing_finalized.setdefault(drawing_key, {
                     "campaign": campaign,
                     "total": 0,
-                })["total"] += 1
+                    "yard": 0,
+                    "yard_received": 0,
+                })
+                drawing_finalized[drawing_key]["total"] += 1
+                if has_yard:
+                    drawing_finalized[drawing_key]["yard"] += 1
+                if has_yard_receipt:
+                    drawing_finalized[drawing_key]["yard_received"] += 1
                 continue
 
             campaign_row["total"] += 1
@@ -1398,7 +1493,6 @@ def _supply_campaign_views(
                     campaign_row["no_po"] += 1
                 else:
                     campaign_row["no_po"] += 1
-            has_yard = material_id in yard_ids if po_rows else _supply_item_is_at_yard(item)
             if has_yard:
                 campaign_row["yard"] += 1
 
@@ -1407,12 +1501,15 @@ def _supply_campaign_views(
                 "pending": 0,
                 "total": 0,
                 "yard": 0,
+                "yard_received": 0,
             })
             drawing["total"] += 1
             if _supply_item_is_pending(item):
                 drawing["pending"] += 1
             if has_yard:
                 drawing["yard"] += 1
+            if has_yard_receipt:
+                drawing["yard_received"] += 1
 
         campaigns = list(campaign_rows.values())
         finalized_counts = {
@@ -1422,6 +1519,11 @@ def _supply_campaign_views(
         for drawing in drawing_finalized.values():
             finalized_counts[drawing["campaign"]["key"]] += 1
         finalized_drawings = sum(finalized_counts.values())
+        finalized_at_yard_drawings = sum(
+            1
+            for drawing in drawing_finalized.values()
+            if int(drawing.get("yard_received") or 0) > 0
+        )
         for row in campaigns:
             row["finalized"] = finalized_counts.get(row["key"], 0)
             row["no_yard"] = max(int(row["po"] or 0) - int(row["yard"] or 0), 0)
@@ -1471,14 +1573,21 @@ def _supply_campaign_views(
             }
             for pending, _label in bucket_defs
         }
-        # contagem de desenhos com pelo menos 1 item no yard, por bucket de pendencia
+        # At Yard includes a drawing as soon as any requested quantity is
+        # received. Its bucket is the number of active material items that are
+        # still awaiting full yard receipt (8 means 8 or more).
         at_yard_per_bucket = {pending: 0 for pending, _ in bucket_defs}
         for drawing in drawing_pending.values():
             pending = int(drawing["pending"] or 0)
             bucket = 8 if pending >= 8 else pending
             pending_counts[bucket][drawing["campaign"]["key"]] += 1
-            if drawing.get("yard", 0) > 0:
-                at_yard_per_bucket[bucket] += 1
+            total_at_yard_scope = int(drawing.get("total") or 0)
+            received_at_yard = int(drawing.get("yard") or 0)
+            started_at_yard = int(drawing.get("yard_received") or 0) > 0
+            if total_at_yard_scope > 0 and started_at_yard:
+                arrival_pending = max(total_at_yard_scope - received_at_yard, 0)
+                arrival_bucket = 8 if arrival_pending >= 8 else arrival_pending
+                at_yard_per_bucket[arrival_bucket] += 1
         pending_max = max(
             [sum(row.values()) for row in pending_counts.values()] + [finalized_drawings, 1]
         )
@@ -1499,7 +1608,7 @@ def _supply_campaign_views(
             "pending": -1,
             "label": "Finalizados",
             "value": finalized_drawings,
-            "at_yard": 0,
+            "at_yard": finalized_at_yard_drawings,
             "width_css": f"{100 * finalized_drawings / pending_max:.2f}",
             "segments": finalized_segments,
         })
@@ -1760,7 +1869,7 @@ def _supply_campaign_views(
                 "unallocated": unallocated_items,
                 "no_yard": no_yard_items,
                 "yard": yard_items,
-                "drawings": len({item.get("document_id") for item in scoped_items if item.get("scope") == scope_key}),
+                "drawings": total_drawings,
             },
             "chart_payload_json": json.dumps(chart_payload, ensure_ascii=False),
         })
@@ -5051,8 +5160,6 @@ def _construction_datafy(filters: dict) -> dict:
                 + ")"
             )
             drawing_params.extend(campaign_aliases)
-        drawing_where_sql = f"where {' and '.join(drawing_where)}" if drawing_where else ""
-
         material_where = []
         material_params: list[Any] = []
         if supply_priority:
@@ -5099,7 +5206,40 @@ def _construction_datafy(filters: dict) -> dict:
                 + ")"
             )
             material_params.extend(campaign_aliases)
-        material_where_sql = f"where {' and '.join(material_where)}" if material_where else ""
+        # Match DATAFY's filter_current_drawing_documents: a newer upload only
+        # supersedes the previous revision after it has extracted material
+        # rows. This keeps every dashboard count on the same drawing revision
+        # used by the DATAFY Drawings export.
+        current_drawing_sql = """
+            (
+                coalesce(nullif(trim(d.drawing_number), ''), '') = ''
+                or not exists (
+                    select 1
+                    from core_document newer_d
+                    where newer_d.project_id = d.project_id
+                      and lower(newer_d.drawing_number) = lower(d.drawing_number)
+                      and coalesce(nullif(trim(newer_d.drawing_number), ''), '') <> ''
+                      and (
+                          newer_d.uploaded_at > d.uploaded_at
+                          or (
+                              newer_d.uploaded_at = d.uploaded_at
+                              and newer_d.id > d.id
+                          )
+                      )
+                      and exists (
+                          select 1
+                          from core_extractedtable newer_t
+                          join core_materialitem newer_mi
+                            on newer_mi.table_id = newer_t.id
+                          where newer_t.document_id = newer_d.id
+                      )
+                )
+            )
+        """
+        drawing_where.append(current_drawing_sql)
+        material_where.append(current_drawing_sql)
+        drawing_where_sql = f"where {' and '.join(drawing_where)}"
+        material_where_sql = f"where {' and '.join(material_where)}"
         finalized_doc_sql = """
             (
                 coalesce(d.field_complete, false)
@@ -5570,7 +5710,9 @@ def _construction_datafy(filters: dict) -> dict:
             cur,
             f"""
             {material_filter_cte}
-            select distinct fm.material_item_id,
+            select fm.material_item_id,
+                   a.id as allocation_id,
+                   a.qty_allocated,
                    po.po_number,
                    po.procurement_plan_stage,
                    po.procurement_plan_kind,
@@ -5584,11 +5726,12 @@ def _construction_datafy(filters: dict) -> dict:
             """,
             tuple(material_params),
         )
-        material_at_aveon = len({
-            row["material_item_id"]
-            for row in material_flow_po_rows
-            if _po_row_has_yard_actual(row)
-        })
+        material_at_aveon = len(
+            _supply_fully_at_yard_material_ids(
+                material_rows,
+                material_flow_po_rows,
+            )
+        )
         material_flow = _material_flow_summary(
             int(material_flow_base.get("total") or 0),
             int(material_flow_base.get("covered") or 0),
@@ -5699,7 +5842,9 @@ def _construction_datafy(filters: dict) -> dict:
             cur,
             f"""
             {material_scope_cte}
-            select distinct si.material_item_id,
+            select si.material_item_id,
+                   a.id as allocation_id,
+                   a.qty_allocated,
                    po.po_number,
                    po.procurement_plan_stage,
                    po.procurement_plan_kind,
@@ -5714,16 +5859,20 @@ def _construction_datafy(filters: dict) -> dict:
             """,
             tuple(material_params),
         )
-        material_yard_ids = {
-            row["material_item_id"]
-            for row in material_scope_po_rows
-            if _po_row_has_yard_actual(row)
-        }
+        material_yard_qty_by_id = _supply_yard_allocation_qty_by_material(
+            material_scope_po_rows
+        )
+        material_yard_ids = _supply_fully_at_yard_material_ids(
+            material_scope_items,
+            material_scope_po_rows,
+        )
         material_po_ids = {row["material_item_id"] for row in material_scope_po_rows}
         material_delivery_by_id: dict[Any, str] = {}
         material_po_numbers_by_id: dict[Any, set[str]] = {}
         material_delivery_pairs_by_id: dict[Any, list[dict[str, str]]] = {}
-        for po_row in material_scope_po_rows:
+        material_delivery_allocations_by_id: dict[Any, list[dict[str, Any]]] = {}
+        seen_delivery_allocations: set[tuple[Any, Any]] = set()
+        for po_index, po_row in enumerate(material_scope_po_rows):
             material_id = po_row.get("material_item_id")
             if material_id is None:
                 continue
@@ -5738,13 +5887,34 @@ def _construction_datafy(filters: dict) -> dict:
                     "po": po_number,
                     "expected_date": delivery_date,
                 })
+            allocation_id = po_row.get("allocation_id")
+            allocation_key = (
+                material_id,
+                allocation_id
+                if allocation_id not in (None, "")
+                else ("row", po_index),
+            )
+            if allocation_key not in seen_delivery_allocations:
+                seen_delivery_allocations.add(allocation_key)
+                material_delivery_allocations_by_id.setdefault(material_id, []).append({
+                    "allocation_id": allocation_id,
+                    "po": po_number,
+                    "qty": float(po_row.get("qty_allocated") or 0),
+                    "expected_date": delivery_date,
+                    "yard_actual": 1 if _po_row_has_yard_actual(po_row) else 0,
+                })
         for row in material_scope_items:
             material_id = row.get("material_item_id")
             row["has_po"] = 1 if material_id in material_po_ids else 0
             row["yard_actual"] = 1 if material_id in material_yard_ids else 0
+            row["yard_allocated_qty"] = material_yard_qty_by_id.get(material_id, 0)
             row["po_delivery_date"] = material_delivery_by_id.get(material_id, "")
             row["po_numbers"] = ", ".join(sorted(material_po_numbers_by_id.get(material_id, set())))
             row["po_delivery_pairs"] = material_delivery_pairs_by_id.get(material_id, [])
+            row["po_delivery_allocations"] = material_delivery_allocations_by_id.get(
+                material_id,
+                [],
+            )
         _supply_enrich_stock_metadata(material_rows)
         _supply_enrich_stock_metadata(material_scope_items, material_rows)
         material_status_counts = _supply_enrich_material_rows(material_rows, material_yard_ids, material_po_ids)
@@ -5754,32 +5924,9 @@ def _construction_datafy(filters: dict) -> dict:
             material_scope_items,
             material_scope_po_rows,
         )
-        supply_forecast_items = [
-            {
-                "document_id": item.get("document_id"),
-                "drawing": item.get("drawing_number") or item.get("original_filename") or "-",
-                "scope": item.get("scope") or "",
-                "campaign": _campaign_label(item.get("campaign")),
-                "priority": item.get("priority"),
-                "material_item_id": item.get("material_item_id"),
-                "line": item.get("line") or "-",
-                "is_finalized": 1 if _truthy_flag(item.get("is_finalized")) else 0,
-                "requested_qty": float(item.get("requested_qty") or 0),
-                "allocated_qty": float(item.get("allocated_qty") or 0),
-                "missing_qty": float(item.get("missing_qty") or 0),
-                "has_po": 1 if _truthy_flag(item.get("has_po")) else 0,
-                "po_gap_status": item.get("po_gap_status") or _supply_po_gap_status(item),
-                "stock_free_qty": float(item.get("stock_free_qty") or 0),
-                "stock_piece_count": int(item.get("stock_piece_count") or 0),
-                "stock_free_na": 1 if _truthy_flag(item.get("stock_free_na")) else 0,
-                "yard_actual": 1 if _supply_item_is_at_yard(item) else 0,
-                "po_delivery_date": item.get("po_delivery_date") or "",
-                "po_numbers": item.get("po_numbers") or "",
-                "po_delivery_pairs": item.get("po_delivery_pairs") or [],
-            }
-            for item in material_scope_items
-            if item.get("scope") in {"fabrication", "erection"}
-        ]
+        supply_forecast_items = _supply_forecast_items_from_rows(
+            material_scope_items
+        )
         supply_documents = _rows(
             cur,
             """

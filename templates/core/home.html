@@ -687,7 +687,7 @@
                 <div class="rhs">
                   <div class="scope-switch c3-supply-stage-actions" aria-label="Supply scenario filter">
                     <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-scenario-label="PO Overview" data-scenario-detail="Total scope, with PO and without PO">PO Overview</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard Overview" data-scenario-detail="Drawings with material already received at yard; pending buckets use the DATAFY material gap">At Yard Overview</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard Overview" data-scenario-detail="Drawings with material received at yard; pending buckets show active items still awaiting full yard receipt">At Yard Overview</button>
                   </div>
                   <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
                   <button class="c3-export-link" type="button" data-c3-export-pending="{{ view.key }}" title="Export drawing list for the current pending condition">
@@ -918,7 +918,7 @@
             </thead>
             <tbody>
               {% for row in manager.material.drawing_line_rows %}
-                <tr class="c3-probe-row-{{ row.status|default:'missing' }}" data-grid-row data-status="{{ row.status|default:'missing' }}" data-document-id="{{ row.document_id|default:'' }}" data-campaign="{{ row.campaign|default:'-' }}" data-scope="{{ row.scope|default:'fabrication' }}" data-pending-bucket="{{ row.pending_bucket|default:0 }}" data-line-pending-bucket="{{ row.line_pending_bucket|default:row.pending_bucket|default:0 }}" data-drawing-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-has-po="{{ row.has_po|default:0 }}" data-with-po="{{ row.with_po|default:0 }}" data-without-po="{{ row.without_po|default:0 }}" data-no-balance="{{ row.no_balance|default:0 }}" data-not-allocated="{{ row.not_allocated|default:0 }}" data-catalog-issue="{{ row.catalog_issue|default:0 }}" data-unallocated="{{ row.unallocated|default:0 }}" data-po-not-arrived="{{ row.po_not_arrived|default:0 }}" data-yard-actual="{{ row.yard_actual|default:0 }}" data-drawing-finalized="{{ row.drawing_finalized|default:0 }}" data-stage-total-items="{{ row.stage_total_items|default:row.total_items|default:0 }}" data-stage-total-pending-bucket="{{ row.stage_total_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-po-items="{{ row.stage_po_items|default:row.with_po|default:0 }}" data-stage-po-pending-bucket="{{ row.stage_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-po-items="{{ row.stage_no_po_items|default:row.without_po|default:0 }}" data-stage-no-po-pending-bucket="{{ row.stage_no_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-balance-items="{{ row.stage_no_balance_items|default:row.no_balance|default:0 }}" data-stage-no-balance-pending-bucket="{{ row.stage_no_balance_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-not-allocated-items="{{ row.stage_not_allocated_items|default:row.not_allocated|default:0 }}" data-stage-not-allocated-pending-bucket="{{ row.stage_not_allocated_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-catalog-issue-items="{{ row.stage_catalog_issue_items|default:row.catalog_issue|default:0 }}" data-stage-catalog-issue-pending-bucket="{{ row.stage_catalog_issue_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-yard-items="{{ row.stage_no_yard_items|default:row.po_not_arrived|default:0 }}" data-stage-no-yard-pending-bucket="{{ row.stage_no_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-yard-items="{{ row.stage_yard_items|default:row.yard_actual|default:0 }}" data-stage-yard-pending-bucket="{{ row.stage_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-c3-3d-line="{{ row.lines_full|default:row.line|default:'' }}" data-c3-3d-drawing="{{ row.drawing_number|default:'-' }}" data-c3-datafy-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-c3-datafy-families="{{ row.pending_families|default:row.families|default:'' }}" data-c3-datafy-status="{{ row.status_label|default:row.status|default:'missing' }}">
+                <tr class="c3-probe-row-{{ row.status|default:'missing' }}" data-grid-row data-status="{{ row.status|default:'missing' }}" data-document-id="{{ row.document_id|default:'' }}" data-campaign="{{ row.campaign|default:'-' }}" data-scope="{{ row.scope|default:'fabrication' }}" data-pending-bucket="{{ row.pending_bucket|default:0 }}" data-line-pending-bucket="{{ row.line_pending_bucket|default:row.pending_bucket|default:0 }}" data-drawing-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-has-po="{{ row.has_po|default:0 }}" data-with-po="{{ row.with_po|default:0 }}" data-without-po="{{ row.without_po|default:0 }}" data-no-balance="{{ row.no_balance|default:0 }}" data-not-allocated="{{ row.not_allocated|default:0 }}" data-catalog-issue="{{ row.catalog_issue|default:0 }}" data-unallocated="{{ row.unallocated|default:0 }}" data-po-not-arrived="{{ row.po_not_arrived|default:0 }}" data-yard-actual="{{ row.yard_actual|default:0 }}" data-drawing-finalized="{{ row.drawing_finalized|default:0 }}" data-stage-total-items="{{ row.stage_total_items|default:row.total_items|default:0 }}" data-stage-total-pending-bucket="{{ row.stage_total_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-po-items="{{ row.stage_po_items|default:row.with_po|default:0 }}" data-stage-po-pending-bucket="{{ row.stage_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-po-items="{{ row.stage_no_po_items|default:row.without_po|default:0 }}" data-stage-no-po-pending-bucket="{{ row.stage_no_po_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-balance-items="{{ row.stage_no_balance_items|default:row.no_balance|default:0 }}" data-stage-no-balance-pending-bucket="{{ row.stage_no_balance_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-not-allocated-items="{{ row.stage_not_allocated_items|default:row.not_allocated|default:0 }}" data-stage-not-allocated-pending-bucket="{{ row.stage_not_allocated_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-catalog-issue-items="{{ row.stage_catalog_issue_items|default:row.catalog_issue|default:0 }}" data-stage-catalog-issue-pending-bucket="{{ row.stage_catalog_issue_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-no-yard-items="{{ row.stage_no_yard_items|default:row.po_not_arrived|default:0 }}" data-stage-no-yard-pending-bucket="{{ row.stage_no_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-stage-yard-items="{{ row.stage_yard_items|default:row.yard_actual|default:0 }}" data-stage-yard-received-items="{{ row.stage_yard_received_items|default:row.stage_yard_items|default:row.yard_actual|default:0 }}" data-stage-yard-pending-bucket="{{ row.stage_yard_pending_bucket|default:row.pending_bucket|default:0 }}" data-c3-3d-line="{{ row.lines_full|default:row.line|default:'' }}" data-c3-3d-drawing="{{ row.drawing_number|default:'-' }}" data-c3-datafy-pending="{{ row.drawing_pending|default:row.pending|default:0 }}" data-c3-datafy-families="{{ row.pending_families|default:row.families|default:'' }}" data-c3-datafy-status="{{ row.status_label|default:row.status|default:'missing' }}">
                   <td data-col="row-no" data-sort-value="{{ row.row_no }}" class="mono">{{ row.row_no }}</td>
                   <td data-col="priority" data-sort-value="{{ row.priority|default:999999 }}" class="mono">{{ row.priority|default:"-" }}</td>
                   <td data-col="drawing"><span class="c3-local-ref c3-3d-click-hint" data-c3-3d-line-trigger data-c3-3d-line="{{ row.lines_full|default:row.line|default:'' }}" data-c3-3d-drawing="{{ row.drawing_number|default:'-' }}" title="Show linked line in 3D">{{ row.drawing_number|default:"-" }}</span></td>
@@ -1496,26 +1496,28 @@
     var forecast = c3ForecastMetricsForRow(row);
     if (forecast && !forecast.finalized) {
       if (stage === 'no_yard') return forecast.noYard > 0;
-      if (stage === 'yard') return forecast.forecastAvailable > 0;
+      if (stage === 'yard') return forecast.forecastReceived > 0;
       return c3StageItems(row, stage) > 0;
+    }
+    if (stage === 'yard' && c3Flag(row.dataset.drawingFinalized)) {
+      return c3DatasetHas(row, 'stageYardReceivedItems')
+        ? c3DatasetNumber(row, 'stageYardReceivedItems') > 0
+        : c3StageItems(row, 'yard') > 0;
     }
     if ((stage === 'no_yard' || stage === 'yard') && c3DatasetHas(row, 'stageTotalItems') && c3DatasetHas(row, 'stageYardItems')) {
       var totalItems = c3DatasetNumber(row, 'stageTotalItems');
       var yardItems = c3DatasetNumber(row, 'stageYardItems');
       if (stage === 'no_yard') return totalItems > 0 && yardItems < totalItems;
-      return totalItems > 0 && yardItems > 0;
+      var yardReceivedItems = c3DatasetHas(row, 'stageYardReceivedItems')
+        ? c3DatasetNumber(row, 'stageYardReceivedItems')
+        : yardItems;
+      return totalItems > 0 && yardReceivedItems > 0;
     }
     return c3StageItems(row, stage) > 0;
   }
 
   function c3StagePendingBucket(row, stage) {
-    if (stage === 'yard') {
-      var datafyPending = c3DatasetHas(row, 'drawingPending')
-        ? c3DatasetNumber(row, 'drawingPending')
-        : (row?.dataset?.pendingBucket || row?.dataset?.linePendingBucket || 0);
-      return String(c3PendingBucketFromCount(datafyPending));
-    }
-    if (stage === 'no_yard') {
+    if (stage === 'yard' || stage === 'no_yard') {
       var arrivalPending = c3ArrivalPendingItems(row, stage);
       if (arrivalPending != null) return String(c3PendingBucketFromCount(arrivalPending));
     }
@@ -1539,10 +1541,10 @@
   }
 
   function c3ArrivalPendingItems(row, stage) {
-    if (!row || stage !== 'no_yard') return null;
+    if (!row || (stage !== 'yard' && stage !== 'no_yard')) return null;
     var forecast = c3ForecastMetricsForRow(row);
     if (forecast && !forecast.finalized) {
-      var forecastRemaining = (forecast.total || 0) - (forecast.forecastAvailable || 0) + (forecast.noPoAssumption || 0);
+      var forecastRemaining = (forecast.total || 0) - (forecast.forecastAvailable || 0);
       return Math.max(0, forecastRemaining);
     }
     if (c3DatasetHas(row, 'stageTotalItems') && c3DatasetHas(row, 'stageYardItems')) {
@@ -1569,7 +1571,7 @@
 
   function c3RowMatchesLinkedContext(row, ctx) {
     if (!row || !ctx) return true;
-    if (ctx.scope && row.dataset.scope && !c3Same(row.dataset.scope, ctx.scope)) return false;
+    if (ctx.scope && ctx.scope !== 'all' && row.dataset.scope && !c3Same(row.dataset.scope, ctx.scope)) return false;
     if (ctx.campaign && row.dataset.campaign && !c3Same(row.dataset.campaign, ctx.campaign)) return false;
     if (ctx.stage && !c3DrawingStageMatches(row, ctx.stage)) return false;
     if (ctx.pendingBucket != null) {
@@ -1792,6 +1794,7 @@
       deliveryBlockers: 0,
       latestMaterialDate: '',
       forecastAvailable: 0,
+      forecastReceived: 0,
       confirmedCovered: 0,
       pending: 0,
       blockingPending: 0,
@@ -1828,6 +1831,17 @@
       var poPairs = c3ForecastPoPairs(item);
       var trackingPo = c3ForecastHasTrackingPo(item, poPairs);
       var deliveryDate = String(item.po_delivery_date || '').trim();
+      var requestedQty = c3Number(item.requested_qty);
+      var yardAllocatedQty = c3Number(item.yard_allocated_qty);
+      var deliveryAllocations = Array.isArray(item.po_delivery_allocations)
+        ? item.po_delivery_allocations.map(function(allocation){
+            return {
+              qty: c3Number(allocation?.qty),
+              expectedDate: String(allocation?.expected_date || '').trim(),
+              yardActual: c3Flag(allocation?.yard_actual),
+            };
+          })
+        : [];
       poPairs.forEach(function(pair){
         if (pair.expected_date && pair.expected_date > deliveryDate) deliveryDate = pair.expected_date;
       });
@@ -1859,6 +1873,9 @@
         hasPoGap: hasPoGap,
         poGapStatus: poGapStatus,
         trackingPo: trackingPo,
+        requestedQty: requestedQty,
+        yardAllocatedQty: yardAllocatedQty,
+        deliveryAllocations: deliveryAllocations,
         overdue: overdue,
         overduePairs: overduePairs,
         line: item.line || '-',
@@ -1873,7 +1890,20 @@
         var deliveryByDate = !!(item.hasPo && item.deliveryDate && item.deliveryDate <= selectedDate);
         var trackingPoReadyByForecast = !!(item.trackingPo && item.hasPo && !item.yardActual && latestReadyByForecast);
         var noPoReadyByForecast = !!(!item.hasPo && item.poGapStatus === 'no_po' && item.hasPoGap && latestReadyByForecast);
-        var availableByForecast = item.yardActual || deliveryByDate || trackingPoReadyByForecast || noPoReadyByForecast;
+        var hasQuantityTimeline = item.requestedQty > 0 && item.deliveryAllocations.length > 0;
+        var projectedYardQty = item.yardAllocatedQty || 0;
+        item.deliveryAllocations.forEach(function(allocation){
+          if (!allocation.yardActual && allocation.expectedDate && allocation.expectedDate <= selectedDate) {
+            projectedYardQty += allocation.qty || 0;
+          }
+        });
+        var receivedAtYardByForecast = item.yardActual
+          || projectedYardQty > 0
+          || (!hasQuantityTimeline && item.hasPo && (deliveryByDate || trackingPoReadyByForecast));
+        var fullyAtYardByForecast = item.yardActual
+          || (hasQuantityTimeline && projectedYardQty + 1e-9 >= item.requestedQty)
+          || (!hasQuantityTimeline && item.hasPo && (deliveryByDate || trackingPoReadyByForecast));
+        var availableByForecast = fullyAtYardByForecast || noPoReadyByForecast;
         item.overduePairs.forEach(function(pair){
           var poKey = pair.po + '|' + pair.expected_date;
           var po = metric.overduePoMap[poKey];
@@ -1891,14 +1921,16 @@
         });
         if (item.overduePairs.length) metric.overduePo += 1;
 
-        if (!item.hasPoGap && availableByForecast) {
+        if (fullyAtYardByForecast) {
           metric.forecastAvailable += 1;
-          metric.confirmedCovered += 1;
-          return;
+        }
+        if (receivedAtYardByForecast) {
+          metric.forecastReceived += 1;
         }
 
-        if (availableByForecast) {
-          metric.forecastAvailable += 1;
+        if (!item.hasPoGap && availableByForecast) {
+          metric.confirmedCovered += 1;
+          return;
         }
 
         if (item.overdue && availableByForecast && !item.hasPoGap) {
@@ -2028,7 +2060,8 @@
     campaigns.forEach(function(c, index){ campaignIndex[c3Norm(c.label)] = index; });
     Object.keys(c3ForecastState.metrics || {}).forEach(function(key){
       var metric = c3ForecastState.metrics[key];
-      if (!c3Same(metric.scope, payload.scope || scopeKey)) return;
+      var payloadScope = payload.scope || scopeKey;
+      if (payloadScope !== 'all' && !c3Same(metric.scope, payloadScope)) return;
       var index = campaignIndex[c3Norm(metric.campaign || '-')];
       if (index == null) return;
       campaigns[index].total += metric.total;
@@ -2076,7 +2109,7 @@
     var scope = context?.scope || payload?.scope || scopeKey;
     return Array.from(document.querySelectorAll('[data-c3-probe-grid="drawing-lines"] tbody tr[data-grid-row]'))
       .filter(function(row){
-        if (scope && row.dataset.scope && !c3Same(row.dataset.scope, scope)) return false;
+        if (scope && scope !== 'all' && row.dataset.scope && !c3Same(row.dataset.scope, scope)) return false;
         if (context?.campaign && row.dataset.campaign && !c3Same(row.dataset.campaign, context.campaign)) return false;
         if (context?.stage && !c3DrawingStageMatches(row, context.stage)) return false;
         return true;
