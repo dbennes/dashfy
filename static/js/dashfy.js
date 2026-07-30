@@ -277,7 +277,7 @@
   const themeBtn = document.getElementById('theme-toggle');
   if (themeBtn) {
     const html = document.documentElement;
-    const stored = localStorage.getItem('shellbi-theme');
+    const stored = localStorage.getItem('dashfy-theme');
     if (stored) html.setAttribute('data-bs-theme', stored);
     themeBtn.querySelector('i').className = html.getAttribute('data-bs-theme') === 'dark'
       ? 'bi bi-sun-fill'
@@ -285,7 +285,7 @@
     themeBtn.addEventListener('click', () => {
       const cur = html.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
       html.setAttribute('data-bs-theme', cur);
-      localStorage.setItem('shellbi-theme', cur);
+      localStorage.setItem('dashfy-theme', cur);
       themeBtn.querySelector('i').className = cur === 'dark' ? 'bi bi-sun-fill' : 'bi bi-moon-stars-fill';
     });
   }
@@ -850,8 +850,8 @@
 
     const firstTask = tasks.find(task => Number(task.level) <= 1) || tasks[0];
     if (firstTask?.start_date) window.gantt.showDate(new Date(`${firstTask.start_date}T00:00:00`));
-    if (!window.gantt.$shellbiP6TodayMarker && window.gantt.addMarker) {
-      window.gantt.$shellbiP6TodayMarker = window.gantt.addMarker({
+    if (!window.gantt.$dashfyP6TodayMarker && window.gantt.addMarker) {
+      window.gantt.$dashfyP6TodayMarker = window.gantt.addMarker({
         start_date: new Date(),
         css: 'dx-p6-today-marker',
         text: 'Today',

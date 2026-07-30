@@ -1873,9 +1873,9 @@ table.dataTable thead th {
   opacity: .72;
 }
 .js-plotly-plot.is-chart-ready {
-  animation: shellbi-chart-ready .22s ease-out both;
+  animation: dashfy-chart-ready .22s ease-out both;
 }
-@keyframes shellbi-chart-ready {
+@keyframes dashfy-chart-ready {
   from { opacity: .72; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }

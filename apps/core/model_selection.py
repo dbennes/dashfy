@@ -261,7 +261,7 @@ def selection_glb_path(node_id: int) -> Path:
         raise ValueError("Node sem primitivas selecionaveis")
 
     out_gltf = {
-        "asset": {"version": "2.0", "generator": "ShellBI selection extractor"},
+        "asset": {"version": "2.0", "generator": "DASHFY selection extractor"},
         "scene": 0,
         "scenes": [{"nodes": list(range(len(nodes_out)))}],
         "nodes": nodes_out,

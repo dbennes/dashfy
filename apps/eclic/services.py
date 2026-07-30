@@ -11,7 +11,7 @@ from apps.accounts.models import Client
 from .api_client import EclicAPIError, EclicClient
 from .models import Document, SyncLog
 
-logger = logging.getLogger("shellbi.eclic")
+logger = logging.getLogger("dashfy.eclic")
 
 
 def _map_payload_to_document(item: dict, client: Client) -> dict:

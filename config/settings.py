@@ -174,7 +174,7 @@ def _db_config(
 DATABASES = {
     "default": _db_config(
         "DB",
-        default_name="shellbi",
+        default_name="DASHFY",
         fallback_prefix=env("DB_CREDENTIALS_PREFIX", "").strip() or None,
     ),
     "business": _db_config(
@@ -277,7 +277,7 @@ REDIS_URL = env("REDIS_URL", "redis://localhost:6379/0")
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "shellbi-default",
+        "LOCATION": "dashfy-default",
     }
 }
 
@@ -306,7 +306,7 @@ EMAIL_PORT = int(env("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "no-reply@shellbi.local")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "no-reply@dashfy.local")
 
 # ------------------------------------------------------------------
 # Logging
@@ -330,7 +330,7 @@ LOGGING = {
         },
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": LOG_DIR / "shellbi.log",
+            "filename": LOG_DIR / "dashfy.log",
             "maxBytes": 5 * 1024 * 1024,
             "backupCount": 5,
             "formatter": "verbose",
@@ -338,7 +338,7 @@ LOGGING = {
     },
     "loggers": {
         "django": {"handlers": ["console", "file"], "level": "INFO"},
-        "shellbi": {"handlers": ["console", "file"], "level": "INFO"},
+        "dashfy": {"handlers": ["console", "file"], "level": "INFO"},
         "apps": {"handlers": ["console", "file"], "level": "INFO"},
     },
 }

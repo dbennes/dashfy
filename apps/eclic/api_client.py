@@ -23,7 +23,7 @@ import requests
 from django.conf import settings
 from django.utils import timezone
 
-logger = logging.getLogger("shellbi.eclic")
+logger = logging.getLogger("dashfy.eclic")
 TOKEN_TTL = timedelta(minutes=55)
 DATAFY_SETTINGS_CACHE_TTL_SECONDS = 60
 
@@ -72,7 +72,7 @@ class EclicClient:
         self._token_expires_at = None
         self.session = requests.Session()
         self.session.headers.update({"Accept": "application/json",
-                                     "User-Agent": "ShellBI/1.0"})
+                                     "User-Agent": "DASHFY/1.0"})
 
     def _api_url(self, endpoint: str) -> str:
         if not self.base_url:

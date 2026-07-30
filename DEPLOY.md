@@ -37,7 +37,7 @@ DJANGO_DEBUG=False
 DJANGO_ALLOWED_HOSTS=seu-dominio.com,www.seu-dominio.com,IP_DO_SERVIDOR
 DJANGO_SECRET_KEY=gere-uma-chave-longa-e-unica
 
-DB_NAME=shellbi
+DB_NAME=DASHFY
 DB_USER=postgres
 DB_PASSWORD=senha-segura
 DB_HOST=localhost
@@ -74,20 +74,20 @@ credenciais `DATAFY_DB_*`.
 Crie a base principal na primeira instalacao:
 
 ```bash
-createdb -U postgres shellbi
+createdb -U postgres DASHFY
 ```
 
 Para restaurar um backup existente, transfira o dump por canal privado e use
 `pg_restore`:
 
 ```bash
-pg_restore -U postgres -d shellbi --clean --if-exists backup.dump
+pg_restore -U postgres -d DASHFY --clean --if-exists backup.dump
 ```
 
 Backups devem ser gerados com `pg_dump`:
 
 ```bash
-pg_dump -U postgres -Fc shellbi > backup.dump
+pg_dump -U postgres -Fc DASHFY > backup.dump
 ```
 
 Se `media/` tiver uploads, copie o diretorio separadamente e ajuste as

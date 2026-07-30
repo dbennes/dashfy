@@ -31,7 +31,7 @@ engenharia, materiais, suprimentos, JobCards, campo e logistica.
 
 ```bash
 # 1. clonar e entrar no projeto
-cd shellbi
+cd dashfy
 
 # 2. criar virtualenv
 python -m venv .venv
@@ -46,7 +46,7 @@ copy .env.example .env       # Windows
 # cp .env.example .env       # Linux/macOS
 
 # 5. criar banco PostgreSQL (uma vez)
-# createdb -U postgres shellbi
+# createdb -U postgres DASHFY
 
 # 6. migrar
 python manage.py migrate
@@ -68,7 +68,7 @@ DJANGO_DEBUG=True
 DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1
 
 # PostgreSQL principal (BI: usuarios, permissoes, configs)
-DB_NAME=shellbi
+DB_NAME=DASHFY
 DB_USER=postgres
 DB_PASSWORD=...
 DB_HOST=localhost
@@ -148,7 +148,7 @@ Lembre-se de:
 ## Estrutura
 
 ```
-shellbi/
+dashfy/
   config/          settings/urls/wsgi
   apps/
     accounts/      User, Client, permissoes, login audit

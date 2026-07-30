@@ -37,11 +37,11 @@ class PostgreSQLRuntimeTests(SimpleTestCase):
     def test_main_database_name_never_falls_back_to_taskfy(self):
         config = _db_config(
             "DB",
-            default_name="shellbi",
+            default_name="DASHFY",
             fallback_prefix="TASKFY_DB",
         )
 
-        self.assertEqual(config["NAME"], "shellbi")
+        self.assertEqual(config["NAME"], "DASHFY")
 
     @patch("apps.core.real_sources._construction_datafy")
     def test_supply_reads_live_postgresql_before_persisted_snapshot(self, live_source):
