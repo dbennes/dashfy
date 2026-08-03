@@ -2150,21 +2150,13 @@
     return c3Number(row.getAttribute('data-missing-qty') || row.querySelector('[data-col="missing"]')?.getAttribute('data-sort-value') || 0);
   }
 
-  function c3TrackedDrawingRows(rows) {
-    var plannedRows = (rows || []).filter(function(row){
-      return String(c3GridCell(row, 'priority') || '').trim() !== '999';
-    });
-    return plannedRows.length ? plannedRows : (rows || []);
-  }
-
-  function c3MergeDrawingRows(rows, requestedScope) {
-    var normalizedScope = c3Norm(requestedScope || 'all');
+  function c3MergeDrawingRows(rows) {
     var groups = {};
     var order = [];
     (rows || []).forEach(function(row){
       var identity = String(row?.dataset?.documentId || '').trim()
         || c3Norm(c3GridCell(row, 'drawing'));
-      var key = identity + '|' + c3Norm(row?.dataset?.campaign || '-');
+      var key = identity;
       if (!groups[key]) {
         groups[key] = [];
         order.push(key);
@@ -2173,12 +2165,7 @@
     });
     return order.map(function(key){
       var sourceRows = groups[key];
-      var scopedRows = normalizedScope === 'all'
-        ? sourceRows
-        : sourceRows.filter(function(row){
-            return c3Same(row?.dataset?.scope || '', normalizedScope);
-          });
-      if (scopedRows.length === 1) return scopedRows[0];
+      if (sourceRows.length === 1) return sourceRows[0];
       var representative = sourceRows[0];
       var dataset = Object.assign({}, representative.dataset || {});
       var numericKeys = [
@@ -2190,7 +2177,7 @@
         'stageYardReceivedItems'
       ];
       numericKeys.forEach(function(field){
-        dataset[field] = scopedRows.reduce(function(total, row){
+        dataset[field] = sourceRows.reduce(function(total, row){
           return total + c3DatasetNumber(row, field);
         }, 0);
       });
@@ -2202,7 +2189,7 @@
         'stageYardPendingBucket'
       ];
       bucketKeys.forEach(function(field){
-        var total = scopedRows.reduce(function(sum, row){
+        var total = sourceRows.reduce(function(sum, row){
           var value = c3DatasetNumber(row, field);
           return sum + (value < 0 ? 0 : value);
         }, 0);
@@ -2211,7 +2198,7 @@
       var finalized = sourceRows.every(function(row){
         return c3Flag(row?.dataset?.drawingFinalized);
       });
-      dataset.scope = normalizedScope;
+      dataset.scope = 'all';
       dataset.drawingFinalized = finalized ? '1' : '0';
       dataset.hasPo = Number(dataset.withPo || 0) > 0 ? '1' : '0';
       if (finalized) {
@@ -2220,7 +2207,7 @@
       }
       return {
         dataset: dataset,
-        _c3SourceRows: scopedRows,
+        _c3SourceRows: sourceRows,
         querySelector: function(selector){ return representative.querySelector(selector); },
         getAttribute: function(name){ return representative.getAttribute(name); }
       };
@@ -2229,13 +2216,14 @@
 
   function c3DrawingLineRows(scopeKey, payload, context) {
     var scope = context?.scope || payload?.scope || scopeKey;
-    var allRows = c3TrackedDrawingRows(Array.from(document.querySelectorAll('[data-c3-probe-grid="drawing-lines"] tbody tr[data-grid-row]')));
-    return c3MergeDrawingRows(allRows, scope)
+    var rows = Array.from(document.querySelectorAll('[data-c3-probe-grid="drawing-lines"] tbody tr[data-grid-row]'))
       .filter(function(row){
+        if (scope && scope !== 'all' && row.dataset.scope && !c3Same(row.dataset.scope, scope)) return false;
         if (context?.campaign && row.dataset.campaign && !c3Same(row.dataset.campaign, context.campaign)) return false;
         if (context?.stage && !context?.preserveDrawingScope && !c3DrawingStageMatches(row, context.stage)) return false;
         return true;
       });
+    return scope === 'all' ? c3MergeDrawingRows(rows) : rows;
   }
 
   function c3BuildPendingPayload(scopeKey, payload, context) {

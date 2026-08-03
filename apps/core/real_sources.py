@@ -1366,14 +1366,6 @@ def _supply_is_finalized_item(item: dict[str, Any]) -> bool:
     return bool(item.get("is_finalized"))
 
 
-def _supply_is_planned_drawing(item: dict[str, Any]) -> bool:
-    """Priority 999 is the DATAFY sentinel for a drawing outside the plan."""
-    try:
-        return int(item.get("priority")) != 999
-    except (TypeError, ValueError):
-        return True
-
-
 def _supply_drawing_identity(item: dict[str, Any]) -> tuple[str, Any]:
     document_id = item.get("document_id")
     if document_id not in (None, ""):
@@ -1384,26 +1376,12 @@ def _supply_drawing_identity(item: dict[str, Any]) -> tuple[str, Any]:
     return ("drawing", drawing)
 
 
-def _supply_planned_drawing_items(
-    scoped_items: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    planned_items = [item for item in scoped_items if _supply_is_planned_drawing(item)]
-    # Keep an explicit priority-999 filter usable instead of returning an
-    # empty chart when the filtered result contains only unplanned drawings.
-    return planned_items or scoped_items
-
-
 def _supply_campaign_views(
     scoped_items: list[dict[str, Any]],
     po_rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     for item in scoped_items:
         item["scope"] = _supply_normalize_scope(item.get("scope"), item.get("table_name"))
-
-    drawing_items = _supply_planned_drawing_items(scoped_items)
-    drawing_universe: dict[tuple[str, Any], dict[str, Any]] = {}
-    for item in drawing_items:
-        drawing_universe.setdefault(_supply_drawing_identity(item), item)
 
     covered_ids = {row["material_item_id"] for row in po_rows}
     yard_qty_by_id = _supply_yard_allocation_qty_by_material(po_rows)
@@ -1435,9 +1413,17 @@ def _supply_campaign_views(
     views: list[dict[str, Any]] = []
 
     for scope_key, scope_label in scopes:
+        scope_items = [
+            item
+            for item in scoped_items
+            if scope_key == "all" or item.get("scope") == scope_key
+        ]
+        drawing_universe: dict[tuple[str, Any], dict[str, Any]] = {}
+        for item in scope_items:
+            drawing_universe.setdefault(_supply_drawing_identity(item), item)
         labels = sorted({
             _campaign_label(item.get("campaign"))
-            for item in drawing_items
+            for item in scope_items
         }, key=_campaign_sort_key)
         campaigns = [
             _supply_campaign_for_label(label, index)
@@ -1463,8 +1449,6 @@ def _supply_campaign_views(
         }
         drawing_pending: dict[tuple[str, Any], dict[str, Any]] = {}
         drawing_finalized: dict[tuple[str, Any], dict[str, Any]] = {}
-        # Every scope uses the same drawing universe. Scope switches change
-        # which material items feed the pending bucket, not the denominator.
         for drawing_key, item in drawing_universe.items():
             campaign = campaign_by_label[_campaign_label(item.get("campaign"))]
             if _supply_is_finalized_item(item):
@@ -1483,9 +1467,7 @@ def _supply_campaign_views(
                     "yard_received": 0,
                 }
 
-        for item in drawing_items:
-            if scope_key != "all" and item.get("scope") != scope_key:
-                continue
+        for item in scope_items:
             campaign = campaign_by_label.get(_campaign_label(item.get("campaign")))
             if campaign is None:
                 campaign = _supply_campaign_for_label(item.get("campaign"), len(campaign_by_label))

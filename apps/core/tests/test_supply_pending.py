@@ -136,7 +136,7 @@ class SupplyPendingContractTests(SimpleTestCase):
         self.assertEqual(views[1]["totals"]["drawings"], 1)
         self.assertEqual(views[2]["totals"]["drawings"], 1)
 
-    def test_scope_switches_keep_same_planned_drawing_universe(self):
+    def test_scope_views_include_shared_and_single_scope_drawings(self):
         rows = [
             _material(1, scope="fabrication", document_id=100, priority=1),
             _material(2, scope="erection", document_id=100, priority=1),
@@ -148,22 +148,10 @@ class SupplyPendingContractTests(SimpleTestCase):
 
         self.assertEqual(
             [view["totals"]["drawings"] for view in views],
-            [2, 2, 2],
+            [3, 2, 2],
         )
         self.assertEqual(_pending_row(views[1], 0)["value"], 2)
         self.assertEqual(_pending_row(views[2], 0)["value"], 2)
-
-    def test_priority_999_only_filter_remains_visible(self):
-        rows = [
-            _material(1, scope="fabrication", document_id=999, priority=999),
-        ]
-
-        views = _supply_campaign_views(deepcopy(rows), [])
-
-        self.assertEqual(
-            [view["totals"]["drawings"] for view in views],
-            [1, 1, 1],
-        )
 
     def test_at_yard_keeps_finalized_drawing_in_finalized_bucket(self):
         material = _material(1, yard_actual=True)
@@ -319,7 +307,7 @@ class SupplyPendingContractTests(SimpleTestCase):
 
         self.assertIn('data-preserve-drawing-scope="true"', overview_button)
         self.assertIn("!context?.preserveDrawingScope", drawing_rows_block)
-        self.assertIn("c3MergeDrawingRows(allRows, scope)", drawing_rows_block)
+        self.assertIn("scope === 'all' ? c3MergeDrawingRows(rows) : rows", drawing_rows_block)
         self.assertIn("!ctx.preserveDrawingScope", linked_context_block)
         self.assertIn("return total + row.total", pending_payload_block)
 
