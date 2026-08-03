@@ -687,7 +687,7 @@
                 <div class="rhs">
                   <div class="scope-switch c3-supply-stage-actions" aria-label="Supply scenario filter">
                     <button class="active" type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-scenario-label="PO Overview" data-scenario-detail="Total scope, with PO and without PO">PO Overview</button>
-                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-scenario-label="At Yard Overview" data-scenario-detail="Drawings with material received at yard; pending buckets show active items still awaiting full yard receipt">At Yard Overview</button>
+                    <button type="button" data-c3-linked-filter="supply-stage" data-c3-no-scroll="true" data-grid-target="drawing-lines" data-scope="{{ view.key }}" data-scope-label="{{ view.label }}" data-stage="yard" data-preserve-drawing-scope="true" data-scenario-label="At Yard Overview" data-scenario-detail="Same drawing scope; pending buckets show items still awaiting full yard receipt">At Yard Overview</button>
                   </div>
                   <span>{{ view.totals.drawings|intcomma }} DRAWINGS · RANGES 0 TO 8+</span>
                   <button class="c3-export-link" type="button" data-c3-export-pending="{{ view.key }}" title="Export drawing list for the current pending condition">
@@ -1573,7 +1573,7 @@
     if (!row || !ctx) return true;
     if (ctx.scope && ctx.scope !== 'all' && row.dataset.scope && !c3Same(row.dataset.scope, ctx.scope)) return false;
     if (ctx.campaign && row.dataset.campaign && !c3Same(row.dataset.campaign, ctx.campaign)) return false;
-    if (ctx.stage && !c3DrawingStageMatches(row, ctx.stage)) return false;
+    if (ctx.stage && !ctx.preserveDrawingScope && !c3DrawingStageMatches(row, ctx.stage)) return false;
     if (ctx.pendingBucket != null) {
       var expectedBucket = String(ctx.pendingBucket);
       if (expectedBucket === '-1') {
@@ -1991,6 +1991,51 @@
     if (!dateValue || !row) return null;
     if (c3Flag(row.dataset.drawingFinalized)) return { finalized: true, pendingBucket: -1 };
     if (!c3ForecastState.metrics) c3ForecastState.metrics = c3BuildForecastMetrics(dateValue);
+    if (Array.isArray(row._c3SourceRows)) {
+      var sourceMetrics = row._c3SourceRows
+        .map(function(sourceRow){
+          return c3ForecastState.metrics[c3ForecastKeyForRow(sourceRow)] || null;
+        })
+        .filter(Boolean);
+      if (!sourceMetrics.length) return null;
+      var merged = {
+        finalized: false,
+        total: 0,
+        withPo: 0,
+        noPo: 0,
+        noBalance: 0,
+        notAllocated: 0,
+        catalogIssue: 0,
+        noYard: 0,
+        forecastAvailable: 0,
+        forecastReceived: 0,
+        noPoAssumption: 0,
+        pending: 0,
+        blockingPending: 0,
+        latePo: 0,
+        noDeliveryDate: 0
+      };
+      sourceMetrics.forEach(function(metric){
+        Object.keys(merged).forEach(function(field){
+          if (field === 'finalized') return;
+          merged[field] += Number(metric[field] || 0);
+        });
+      });
+      merged.confirmedReady = merged.total > 0 && merged.pending <= 0;
+      merged.conditionalReady = merged.total > 0
+        && merged.noPoAssumption > 0
+        && merged.blockingPending <= 0;
+      merged.readyIfPoByDate = merged.conditionalReady;
+      merged.deliveryBlockers = merged.latePo + merged.noDeliveryDate;
+      merged.pendingBucket = c3PendingBucketFromCount(merged.blockingPending);
+      merged.coveragePct = merged.total
+        ? Math.round((1000 * (merged.total - merged.pending)) / merged.total) / 10
+        : 0;
+      merged.yardPct = merged.total
+        ? Math.round((1000 * merged.forecastAvailable) / merged.total) / 10
+        : 0;
+      return merged;
+    }
     return c3ForecastState.metrics[c3ForecastKeyForRow(row)] || null;
   }
 
@@ -2105,15 +2150,80 @@
     return c3Number(row.getAttribute('data-missing-qty') || row.querySelector('[data-col="missing"]')?.getAttribute('data-sort-value') || 0);
   }
 
+  function c3MergeDrawingRows(rows) {
+    var groups = {};
+    var order = [];
+    (rows || []).forEach(function(row){
+      var identity = String(row?.dataset?.documentId || '').trim()
+        || c3Norm(c3GridCell(row, 'drawing'));
+      var key = identity + '|' + c3Norm(row?.dataset?.campaign || '-');
+      if (!groups[key]) {
+        groups[key] = [];
+        order.push(key);
+      }
+      groups[key].push(row);
+    });
+    return order.map(function(key){
+      var sourceRows = groups[key];
+      if (sourceRows.length === 1) return sourceRows[0];
+      var representative = sourceRows[0];
+      var dataset = Object.assign({}, representative.dataset || {});
+      var numericKeys = [
+        'drawingPending', 'withPo', 'withoutPo', 'noBalance', 'notAllocated',
+        'catalogIssue', 'unallocated', 'poNotArrived', 'yardActual',
+        'stageTotalItems', 'stagePoItems', 'stageNoPoItems',
+        'stageNoBalanceItems', 'stageNotAllocatedItems',
+        'stageCatalogIssueItems', 'stageNoYardItems', 'stageYardItems',
+        'stageYardReceivedItems'
+      ];
+      numericKeys.forEach(function(field){
+        dataset[field] = sourceRows.reduce(function(total, row){
+          return total + c3DatasetNumber(row, field);
+        }, 0);
+      });
+      var bucketKeys = [
+        'pendingBucket', 'linePendingBucket', 'stageTotalPendingBucket',
+        'stagePoPendingBucket', 'stageNoPoPendingBucket',
+        'stageNoBalancePendingBucket', 'stageNotAllocatedPendingBucket',
+        'stageCatalogIssuePendingBucket', 'stageNoYardPendingBucket',
+        'stageYardPendingBucket'
+      ];
+      bucketKeys.forEach(function(field){
+        var total = sourceRows.reduce(function(sum, row){
+          var value = c3DatasetNumber(row, field);
+          return sum + (value < 0 ? 0 : value);
+        }, 0);
+        dataset[field] = String(c3PendingBucketFromCount(total));
+      });
+      var finalized = sourceRows.every(function(row){
+        return c3Flag(row?.dataset?.drawingFinalized);
+      });
+      dataset.scope = 'all';
+      dataset.drawingFinalized = finalized ? '1' : '0';
+      dataset.hasPo = Number(dataset.withPo || 0) > 0 ? '1' : '0';
+      if (finalized) {
+        dataset.pendingBucket = '-1';
+        dataset.linePendingBucket = '-1';
+      }
+      return {
+        dataset: dataset,
+        _c3SourceRows: sourceRows,
+        querySelector: function(selector){ return representative.querySelector(selector); },
+        getAttribute: function(name){ return representative.getAttribute(name); }
+      };
+    });
+  }
+
   function c3DrawingLineRows(scopeKey, payload, context) {
     var scope = context?.scope || payload?.scope || scopeKey;
-    return Array.from(document.querySelectorAll('[data-c3-probe-grid="drawing-lines"] tbody tr[data-grid-row]'))
+    var rows = Array.from(document.querySelectorAll('[data-c3-probe-grid="drawing-lines"] tbody tr[data-grid-row]'))
       .filter(function(row){
         if (scope && scope !== 'all' && row.dataset.scope && !c3Same(row.dataset.scope, scope)) return false;
         if (context?.campaign && row.dataset.campaign && !c3Same(row.dataset.campaign, context.campaign)) return false;
-        if (context?.stage && !c3DrawingStageMatches(row, context.stage)) return false;
+        if (context?.stage && !context?.preserveDrawingScope && !c3DrawingStageMatches(row, context.stage)) return false;
         return true;
       });
+    return scope === 'all' ? c3MergeDrawingRows(rows) : rows;
   }
 
   function c3BuildPendingPayload(scopeKey, payload, context) {
@@ -2180,7 +2290,7 @@
       scope: payload.scope || scopeKey,
       label: payload.label || scopeKey,
       totals: Object.assign({}, payload.totals || {}, {
-        drawings: filteredRows.reduce(function(total, row){ return total + (row.pending === -1 ? 0 : row.total); }, 0),
+        drawings: filteredRows.reduce(function(total, row){ return total + row.total; }, 0),
       }),
       campaigns: campaigns,
       pending_rows: filteredRows,
@@ -2359,6 +2469,7 @@
     if (trigger.dataset.scopeLabel) context.scopeLabel = trigger.dataset.scopeLabel;
     if (trigger.dataset.campaign) context.campaign = trigger.dataset.campaign;
     if (trigger.dataset.stage) context.stage = trigger.dataset.stage;
+    if (trigger.dataset.preserveDrawingScope === 'true') context.preserveDrawingScope = true;
     if (trigger.dataset.pendingBucket != null) context.pendingBucket = trigger.dataset.pendingBucket;
     if (trigger.dataset.scenarioLabel) context.scenarioLabel = trigger.dataset.scenarioLabel;
     if (trigger.dataset.scenarioDetail) context.scenarioDetail = trigger.dataset.scenarioDetail;

@@ -1458,9 +1458,12 @@ def _supply_campaign_views(
                 if po_rows
                 else _supply_item_has_yard_receipt(item)
             )
+            # In the ALL view, one drawing remains one drawing even when it
+            # has both fabrication and erection material tables. Scoped views
+            # still keep their own independent drawing totals.
             drawing_key = (
                 item.get("document_id"),
-                str(item.get("scope") or ""),
+                "" if scope_key == "all" else str(item.get("scope") or ""),
                 campaign["key"],
             )
             if _supply_is_finalized_item(item):

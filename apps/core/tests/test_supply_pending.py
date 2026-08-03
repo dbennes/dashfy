@@ -108,7 +108,7 @@ class SupplyPendingContractTests(SimpleTestCase):
         self.assertEqual(drawing["pending_bucket"], 0)
         self.assertEqual(_pending_row(view, 0)["at_yard"], 1)
 
-    def test_all_scope_is_default_and_counts_same_document_in_each_scope(self):
+    def test_all_scope_is_default_and_deduplicates_document_across_scopes(self):
         rows = [
             _material(1, yard_actual=True, scope="fabrication", document_id=100),
             _material(2, yard_actual=True, scope="erection", document_id=100),
@@ -117,10 +117,23 @@ class SupplyPendingContractTests(SimpleTestCase):
         views = _supply_campaign_views(deepcopy(rows), [])
 
         self.assertEqual([view["key"] for view in views], ["all", "fabrication", "erection"])
-        self.assertEqual(views[0]["totals"]["drawings"], 2)
+        self.assertEqual(views[0]["totals"]["drawings"], 1)
         self.assertEqual(views[1]["totals"]["drawings"], 1)
         self.assertEqual(views[2]["totals"]["drawings"], 1)
-        self.assertEqual(_pending_row(views[0], 0)["at_yard"], 2)
+        self.assertEqual(_pending_row(views[0], 0)["at_yard"], 1)
+
+    def test_all_scope_combines_pending_items_from_both_scopes(self):
+        rows = [
+            _material(1, scope="fabrication", document_id=100),
+            _material(2, missing_qty=1, scope="erection", document_id=100),
+        ]
+
+        views = _supply_campaign_views(deepcopy(rows), [])
+
+        self.assertEqual(views[0]["totals"]["drawings"], 1)
+        self.assertEqual(_pending_row(views[0], 1)["value"], 1)
+        self.assertEqual(views[1]["totals"]["drawings"], 1)
+        self.assertEqual(views[2]["totals"]["drawings"], 1)
 
     def test_at_yard_keeps_finalized_drawing_in_finalized_bucket(self):
         material = _material(1, yard_actual=True)
@@ -256,6 +269,29 @@ class SupplyPendingContractTests(SimpleTestCase):
         self.assertIn("return totalItems > 0 && yardReceivedItems > 0", block)
         self.assertIn("forecast.forecastReceived > 0", block)
         self.assertNotIn("yardItems >= totalItems", block)
+
+    def test_template_at_yard_overview_preserves_total_drawing_scope(self):
+        source = (
+            Path(settings.BASE_DIR) / "templates" / "core" / "home.html"
+        ).read_text(encoding="utf-8")
+        overview_button = source.split(
+            'data-scenario-label="At Yard Overview"', 1
+        )[0].rsplit("<button", 1)[1]
+        drawing_rows_block = source.split(
+            "function c3DrawingLineRows", 1
+        )[1].split("function c3BuildPendingPayload", 1)[0]
+        linked_context_block = source.split(
+            "function c3RowMatchesLinkedContext", 1
+        )[1].split("function renderC3PoPlacedChart", 1)[0]
+        pending_payload_block = source.split(
+            "function c3BuildPendingPayload", 1
+        )[1].split("function renderC3PoPlacedTable", 1)[0]
+
+        self.assertIn('data-preserve-drawing-scope="true"', overview_button)
+        self.assertIn("!context?.preserveDrawingScope", drawing_rows_block)
+        self.assertIn("c3MergeDrawingRows(rows)", drawing_rows_block)
+        self.assertIn("!ctx.preserveDrawingScope", linked_context_block)
+        self.assertIn("return total + row.total", pending_payload_block)
 
     def test_forecast_yard_pending_does_not_treat_no_po_assumption_as_received(self):
         source = (
