@@ -19,8 +19,10 @@ MONITOR_REQUIRED_HEADERS = {
     "Title",
     "Discipline",
     "Revision",
+    "Directory",
     "Document Status",
-    "Issue Status",
+    "Purpose Next Issue",
+    "11-Cpy_Approval_Code",
 }
 
 MONITOR_OFFICIAL_HEADERS = {
@@ -37,13 +39,10 @@ MONITOR_SAMPLE_ROOTS = (
 MONITOR_SAMPLE_EXCLUDED_FOLDERS = (
     "BNO / 02-DED / 02.000-PMS",
     "BNO / 02-DED / 02.001-DAE_TQR",
-    "BNO / 02-DED / 02.002-MOM",
     "BNO / 02-DED / 02.003-REPORTS",
     "BNO / 02-DED / 02.004-OTHER",
-    "BNO / 02-DED / 02.005-TRANSFER",
     "BNO / 02-DED / 02.007-MDR_CHANGE NOTICE",
-    "BNO / 02-DED / 02.29-3D MODEL",
-    "BNO / 02-DED / 02.300-DAE_PROCUREMENT",
+    "BNO / 02-DED / 02.300-DAE_PROCUREMENT / 02.301-DAE_TBE",
     "BNO / 02.5-FOE / FOE.00-TEMPLATES",
 )
 
@@ -53,6 +52,19 @@ MONITOR_CANCELLED_DOCUMENT_STATUSES = frozenset({
     "CANCELADO",
     "CANCELADA",
 })
+
+MONITOR_EXCLUDED_PURPOSE_NEXT_ISSUES = frozenset({
+    "FORECAST",
+    "FOE - RESUBMIT",
+    "IFI - ISSUED FOR INFORMATION",
+})
+
+MONITOR_AFC_PURPOSE = "AFC/AFU - RELEASE"
+MONITOR_IFF_PURPOSE = "IFF - ISSUED FOR FABRICATION"
+MONITOR_IFA_PURPOSE = "IFA - ISSUED FOR APPROVAL"
+MONITOR_IFR_PURPOSE = "IFR - ISSUED FOR REVIEW"
+MONITOR_IFF_APPROVAL_CODES = ("CODE 1", "CODE 2", "CODE 3")
+_MONITOR_IFF_APPROVAL_CODE_PATTERN = re.compile(r"\bCODE\s*[123]\b")
 
 MONITOR_DISCIPLINE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("PMT", ("AA - PROJECT MANAGEMENT",)),
@@ -130,8 +142,13 @@ def _is_path_at_or_below(path: tuple[str, ...], root: tuple[str, ...]) -> bool:
     return len(path) >= len(root) and path[:len(root)] == root
 
 
-def _monitor_sample_gate(directory: Any, document_status: Any) -> tuple[bool, str]:
-    """Apply the three configured filter layers that define the document sample."""
+def _monitor_sample_gate(
+    directory: Any,
+    document_status: Any,
+    purpose_next_issue: Any = "",
+    revision: Any = "",
+) -> tuple[bool, str]:
+    """Apply the configured global filter layers before status classification."""
     path = _directory_segments(directory)
     if not any(_is_path_at_or_below(path, root) for root in _MONITOR_SAMPLE_ROOT_SEGMENTS):
         return False, "Outside configured sample folders"
@@ -139,16 +156,33 @@ def _monitor_sample_gate(directory: Any, document_status: Any) -> tuple[bool, st
         return False, "Excluded sample folder"
     if _norm_text(document_status) in MONITOR_CANCELLED_DOCUMENT_STATUSES:
         return False, "Cancelled document status"
+    if _norm_text(purpose_next_issue) in MONITOR_EXCLUDED_PURPOSE_NEXT_ISSUES:
+        return False, "Excluded purpose next issue"
+    if "." in _clean_text(revision):
+        return False, "Revision contains field mark"
     return True, ""
 
 
-def _find_sheet(workbook: Any, required_headers: set[str]) -> Any | None:
+def _worksheet_header_row(ws: Any, required_headers: set[str]) -> int | None:
     normalized_required = {_norm_text(header) for header in required_headers}
+    for row_number, values in enumerate(
+        ws.iter_rows(min_row=1, max_row=min(ws.max_row, 5), values_only=True),
+        start=1,
+    ):
+        headers = {_norm_text(value).replace("\n", " ") for value in values if _clean_text(value)}
+        if normalized_required.issubset(headers):
+            return row_number
+    return None
+
+
+def _worksheet_has_headers(ws: Any, required_headers: set[str]) -> bool:
+    return _worksheet_header_row(ws, required_headers) is not None
+
+
+def _find_sheet(workbook: Any, required_headers: set[str]) -> Any | None:
     for ws in workbook.worksheets:
-        for values in ws.iter_rows(min_row=1, max_row=min(ws.max_row, 5), values_only=True):
-            headers = {_norm_text(value).replace("\n", " ") for value in values if _clean_text(value)}
-            if normalized_required.issubset(headers):
-                return ws
+        if _worksheet_has_headers(ws, required_headers):
+            return ws
     return None
 
 
@@ -160,16 +194,6 @@ def _revision_parts(value: Any) -> tuple[str, int]:
     if not match:
         return text[:1], 0
     return match.group(1)[:1], int(match.group(2) or 0)
-
-
-def _issue_code(value: str) -> int | None:
-    match = re.search(r"CODE\s*(\d+)", value)
-    return int(match.group(1)) if match else None
-
-
-def _is_not_applicable_document_status(value: str) -> bool:
-    text = _norm_text(value)
-    return text in {"NAO SE APLICA", "NAO APLICAVEL"} or "NAO APLIC" in text
 
 
 def normalize_monitor_discipline(raw_discipline: Any, title: Any = "") -> str:
@@ -207,17 +231,22 @@ def _status_payload(
     document_number: Any,
     revision: Any,
     title: Any,
+    purpose_next_issue: Any = "",
+    approval_code: Any = "",
 ) -> dict[str, Any]:
     original_doc_status = _clean_text(document_status).upper()
     normalized_doc_status = _norm_text(document_status)
-    issue = _norm_text(issue_status)
-    purpose = _norm_text(last_transmittal_purpose)
-    fabrication = _clean_text(fabrication_ref)
     is_transmittal = normalized_doc_status == "TRANSMITTAL"
     effective_doc_status = "MABU UNDER REVIEW" if is_transmittal else original_doc_status
-    code = _issue_code(issue)
-    is_afc_afu = "AFC" in issue or "AFU" in issue or purpose.startswith("AFC/AFU")
-    is_in_sample, sample_excluded_reason = _monitor_sample_gate(directory, document_status)
+    next_issue = _norm_text(purpose_next_issue)
+    approval = _norm_text(approval_code)
+    normalized_document_number = _norm_text(document_number)
+    is_in_sample, sample_excluded_reason = _monitor_sample_gate(
+        directory,
+        document_status,
+        purpose_next_issue,
+        revision,
+    )
 
     def bucket(label: str, group: str, afc_code: str = "") -> dict[str, Any]:
         return {
@@ -249,31 +278,27 @@ def _status_payload(
 
     if not is_in_sample:
         return excluded(sample_excluded_reason)
-    if "REJECTED" in issue:
-        return bucket("REJECTED", "REJECTED")
-    if issue.startswith("IFA") or purpose.startswith("IFA") or "ISSUED FOR APPROVAL" in issue or "ISSUED FOR APPROVAL" in purpose:
+
+    # The engineering team's approved population treats AFC/AFU and blank
+    # purposes as approved. IFF is approved only after a Code 1/2/3 return.
+    if next_issue == MONITOR_AFC_PURPOSE or not next_issue:
+        return bucket("AFC 1", "AFC", "1")
+    if next_issue == MONITOR_IFF_PURPOSE:
+        if _MONITOR_IFF_APPROVAL_CODE_PATTERN.search(approval):
+            return bucket("AFC 1", "AFC", "1")
+        return excluded("IFF without approved return code")
+
+    if next_issue == MONITOR_IFA_PURPOSE:
+        if "RA-7769" in normalized_document_number:
+            return excluded("IFA RA-7769 excluded")
         return bucket("IFA", "IFA")
-    if normalized_doc_status in {"TRANSMITTAL", "ISSUED"} and is_afc_afu and code in {3, 4} and fabrication:
-        return bucket("AFC CODE 3A", "AFC", "3A")
-    if is_afc_afu and code in {1, 2}:
-        return bucket("AFC 1", "AFC", "1")
-    if is_afc_afu and code in {3, 4}:
-        return bucket("AFC 3", "AFC", "3")
-    if "APPROVED FOR USE" in issue:
-        return bucket("AFC 1", "AFC", "1")
-    if issue == "FOE":
-        return bucket("AFC 3", "AFC", "3")
-    if issue.startswith("IFR") or purpose.startswith("IFR") or "ISSUED FOR REVIEW" in issue or "ISSUED FOR REVIEW" in purpose:
+
+    if next_issue == MONITOR_IFR_PURPOSE:
+        if "3323" in normalized_document_number:
+            return excluded("IFR 3323 excluded")
         return bucket("IFR", "IFR")
-    if "ISSUED FOR INFORMATION" in issue or purpose.startswith("IFI"):
-        return bucket("IFI", "IFI")
-    if issue.startswith("NOT ISSUED"):
-        return bucket("NI", "NOT ISSUED")
-    if _is_not_applicable_document_status(normalized_doc_status):
-        return bucket("N/A", "N/A")
-    if is_transmittal or normalized_doc_status.startswith("ENGINEERING") or normalized_doc_status == "ISSUED":
-        return bucket("UNDER REVIEW", "AFC", "UNDER REVIEW")
-    return bucket("UNCLASSIFIED", "UNCLASSIFIED")
+
+    return excluded("Purpose next issue outside monitored statuses")
 
 
 def _row_value(raw: dict[str, Any], header: str) -> Any:
@@ -348,14 +373,15 @@ def _status_parts_from_bucket(status_bucket: str) -> tuple[str, str, str]:
 
 
 def _parse_monitor_rows(ws: Any) -> list[dict[str, Any]]:
-    iterator = ws.iter_rows(values_only=True)
+    header_row = _worksheet_header_row(ws, MONITOR_REQUIRED_HEADERS) or 1
+    iterator = ws.iter_rows(min_row=header_row, values_only=True)
     raw_headers = next(iterator)
     headers = [_clean_text(value).replace("\n", " ") for value in raw_headers]
     normalized_headers = [_norm_text(header) for header in headers]
     rows: list[dict[str, Any]] = []
 
     try:
-        for row_number, values in enumerate(iterator, start=2):
+        for row_number, values in enumerate(iterator, start=header_row + 1):
             raw = dict(zip(headers, values))
             raw.update(dict(zip(normalized_headers, values)))
             document_number = _clean_text(_row_value(raw, "Document Number"))
@@ -367,15 +393,24 @@ def _parse_monitor_rows(ws: Any) -> list[dict[str, Any]]:
             revision_family, revision_number = _revision_parts(revision)
             raw_discipline = _clean_text(_row_value(raw, "Discipline")).upper()
             monitor_discipline = _monitor_discipline(raw_discipline, title)
+            purpose_next_issue = _clean_text(_row_value(raw, "Purpose Next Issue")).upper()
+            approval_code = _clean_text(_row_value(raw, "11-Cpy_Approval_Code")).upper()
+            fabrication_ref = _clean_text(_first_row_value(
+                raw,
+                "14-Tr_Aol-Fabrication",
+                "01-Tr_Aol-Fabrication",
+            ))
             status = _status_payload(
                 _row_value(raw, "Document Status"),
                 _row_value(raw, "Issue Status"),
                 _row_value(raw, "Last transmittal purpose"),
-                _row_value(raw, "14-Tr_Aol-Fabrication"),
+                fabrication_ref,
                 _row_value(raw, "Directory"),
                 document_number,
                 revision,
                 _row_value(raw, "Title"),
+                purpose_next_issue,
+                approval_code,
             )
             is_monitored = bool(status["is_in_sample"])
             rows.append({
@@ -391,7 +426,9 @@ def _parse_monitor_rows(ws: Any) -> list[dict[str, Any]]:
                 "revision_number": revision_number,
                 "issue_status": _clean_text(_row_value(raw, "Issue Status")).upper(),
                 "last_transmittal_purpose": _clean_text(_row_value(raw, "Last transmittal purpose")).upper(),
-                "fabrication_ref": _clean_text(_row_value(raw, "14-Tr_Aol-Fabrication")),
+                "purpose_next_issue": purpose_next_issue,
+                "approval_code": approval_code,
+                "fabrication_ref": fabrication_ref,
                 **status,
             })
     except ValueError:
@@ -401,13 +438,14 @@ def _parse_monitor_rows(ws: Any) -> list[dict[str, Any]]:
 
 
 def _parse_official_rows(ws: Any) -> list[dict[str, Any]]:
-    iterator = ws.iter_rows(values_only=True)
+    header_row = _worksheet_header_row(ws, MONITOR_OFFICIAL_HEADERS) or 1
+    iterator = ws.iter_rows(min_row=header_row, values_only=True)
     raw_headers = next(iterator)
     headers = [_clean_text(value).replace("\n", " ") for value in raw_headers]
     normalized_headers = [_norm_text(header) for header in headers]
     rows: list[dict[str, Any]] = []
 
-    for row_number, values in enumerate(iterator, start=2):
+    for row_number, values in enumerate(iterator, start=header_row + 1):
         raw = dict(zip(headers, values))
         raw.update(dict(zip(normalized_headers, values)))
         document_number = _clean_text(_first_row_value(raw, "Documento", "Document Number"))
@@ -428,6 +466,8 @@ def _parse_official_rows(ws: Any) -> list[dict[str, Any]]:
         is_countable = _yes(_first_row_value(raw, "Contabilizar", "Count", "Considerar"))
         doc_status, doc_status_group, afc_code = _status_parts_from_bucket(status_bucket)
         document_status_original = _clean_text(_first_row_value(raw, "Status documento", "Document Status")).upper()
+        purpose_next_issue = _clean_text(_first_row_value(raw, "Purpose Next Issue", "Proxima emissao", "Próxima emissão")).upper()
+        approval_code = _clean_text(_first_row_value(raw, "11-Cpy_Approval_Code", "Approval Code")).upper()
         is_transmittal = _norm_text(document_status_original) == "TRANSMITTAL"
         document_status_effective = "MABU UNDER REVIEW" if is_transmittal else document_status_original
         excluded_reason = _clean_text(_first_row_value(raw, "Motivo desconsiderado", "Motivo", "Excluded Reason"))
@@ -447,6 +487,8 @@ def _parse_official_rows(ws: Any) -> list[dict[str, Any]]:
             "revision_number": revision_number,
             "issue_status": _clean_text(_first_row_value(raw, "Issue Status", "Status emissao", "Status emissão")).upper(),
             "last_transmittal_purpose": _clean_text(_first_row_value(raw, "Last transmittal purpose", "Proposito transmittal", "Propósito transmittal")).upper(),
+            "purpose_next_issue": purpose_next_issue,
+            "approval_code": approval_code,
             "fabrication_ref": _clean_text(_first_row_value(raw, "14-Tr_Aol-Fabrication", "Fabrication")),
             "status_bucket": status_bucket if is_countable else "",
             "doc_status": doc_status if is_countable else "",
@@ -478,7 +520,12 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
     detail_ws = None
     import_mode = "official_aol" if official_ws is not None else "raw_engineering"
     if official_ws is None:
-        detail_ws = workbook["Sheet1"] if "Sheet1" in workbook.sheetnames else _find_sheet(workbook, MONITOR_REQUIRED_HEADERS)
+        preferred_ws = workbook["Sheet1"] if "Sheet1" in workbook.sheetnames else None
+        detail_ws = (
+            preferred_ws
+            if preferred_ws is not None and _worksheet_has_headers(preferred_ws, MONITOR_REQUIRED_HEADERS)
+            else _find_sheet(workbook, MONITOR_REQUIRED_HEADERS)
+        )
     if detail_ws is None:
         if official_ws is None:
             raise ValueError("The document detail sheet was not found in the monitor workbook.")
@@ -506,6 +553,23 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
         "included_roots": list(MONITOR_SAMPLE_ROOTS),
         "excluded_folders": list(MONITOR_SAMPLE_EXCLUDED_FOLDERS),
         "cancelled_document_statuses": sorted(MONITOR_CANCELLED_DOCUMENT_STATUSES),
+        "excluded_purpose_next_issues": sorted(MONITOR_EXCLUDED_PURPOSE_NEXT_ISSUES),
+        "exclude_revisions_containing": ".",
+        "classification": {
+            "afc_afu": {
+                "purpose_values": [MONITOR_AFC_PURPOSE, ""],
+                "conditional_purpose": MONITOR_IFF_PURPOSE,
+                "approval_codes": list(MONITOR_IFF_APPROVAL_CODES),
+            },
+            "ifa": {
+                "purpose": MONITOR_IFA_PURPOSE,
+                "exclude_document_number_contains": "RA-7769",
+            },
+            "ifr": {
+                "purpose": MONITOR_IFR_PURPOSE,
+                "exclude_document_number_contains": "3323",
+            },
+        },
     }
     sample_funnel = {
         "source_documents": len(rows),
@@ -515,11 +579,28 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
         outside_roots = int(excluded_counts.get("Outside configured sample folders", 0))
         excluded_folders = int(excluded_counts.get("Excluded sample folder", 0))
         cancelled_status = int(excluded_counts.get("Cancelled document status", 0))
+        excluded_purpose = int(excluded_counts.get("Excluded purpose next issue", 0))
+        excluded_revision = int(excluded_counts.get("Revision contains field mark", 0))
+        classification_exclusions = sum(
+            int(excluded_counts.get(reason, 0))
+            for reason in (
+                "IFF without approved return code",
+                "IFA RA-7769 excluded",
+                "IFR 3323 excluded",
+                "Purpose next issue outside monitored statuses",
+            )
+        )
         sample_funnel.update({
             "inside_allowed_roots": len(rows) - outside_roots,
             "excluded_folders": excluded_folders,
             "after_folder_exclusions": len(rows) - outside_roots - excluded_folders,
             "excluded_cancelled_status": cancelled_status,
+            "after_cancelled_status": len(rows) - outside_roots - excluded_folders - cancelled_status,
+            "excluded_purpose_next_issue": excluded_purpose,
+            "after_purpose_next_issue": len(rows) - outside_roots - excluded_folders - cancelled_status - excluded_purpose,
+            "excluded_revision_field_marks": excluded_revision,
+            "after_revision_filter": len(rows) - outside_roots - excluded_folders - cancelled_status - excluded_purpose - excluded_revision,
+            "excluded_by_classification": classification_exclusions,
         })
 
     payload = {

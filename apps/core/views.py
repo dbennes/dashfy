@@ -759,6 +759,12 @@ def _monitor_excluded_reason_label(value, *, is_monitored: bool = True) -> str:
         "Outside configured sample folders": "Fora das pastas configuradas para a amostra",
         "Excluded sample folder": "Pasta removida da amostra por regra",
         "Cancelled document status": "Status documental cancelado",
+        "Excluded purpose next issue": "Purpose Next Issue removido por regra",
+        "Revision contains field mark": "Revisao contem ponto usado como marca de campo",
+        "IFF without approved return code": "IFF sem retorno CODE 1, CODE 2 ou CODE 3",
+        "IFA RA-7769 excluded": "IFA RA-7769 desconsiderado por regra",
+        "IFR 3323 excluded": "IFR 3323 desconsiderado por regra",
+        "Purpose next issue outside monitored statuses": "Purpose Next Issue fora das categorias monitoradas",
         "Excluded document number": "Numero do documento excluido por regra",
         "Vendor directory": "Diretorio Vendor",
         "Not applicable/cancelled": "Nao aplicavel/cancelado",
@@ -824,6 +830,8 @@ def export_engineering_monitor_view(request):
         ("Status documento", 22),
         ("Issue Status", 30),
         ("Last transmittal purpose", 26),
+        ("Purpose Next Issue", 30),
+        ("11-Cpy_Approval_Code", 26),
         ("14-Tr_Aol-Fabrication", 24),
         ("Diretorio", 46),
         ("Observacao admin", 34),
@@ -863,12 +871,14 @@ def export_engineering_monitor_view(request):
             doc.get("document_status_original") or doc.get("document_status_effective") or "",
             doc.get("issue_status") or "",
             doc.get("last_transmittal_purpose") or "",
+            doc.get("purpose_next_issue") or "",
+            doc.get("approval_code") or "",
             doc.get("fabrication_ref") or "",
             doc.get("directory") or "",
             "",
         ]
         for col, value in enumerate(values):
-            fmt = yes_fmt if col == 5 and contabilizar == "SIM" else no_fmt if col == 5 else note_fmt if col == 13 else text_fmt
+            fmt = yes_fmt if col == 5 and contabilizar == "SIM" else no_fmt if col == 5 else note_fmt if col == len(columns) - 1 else text_fmt
             base_sheet.write(row_idx, col, value, fmt)
 
     last_row = max(len(docs), 1)
