@@ -756,6 +756,9 @@ def _monitor_excluded_reason_label(value, *, is_monitored: bool = True) -> str:
     if not is_monitored and not text:
         return "Disciplina fora do monitoramento"
     labels = {
+        "Outside configured sample folders": "Fora das pastas configuradas para a amostra",
+        "Excluded sample folder": "Pasta removida da amostra por regra",
+        "Cancelled document status": "Status documental cancelado",
         "Excluded document number": "Numero do documento excluido por regra",
         "Vendor directory": "Diretorio Vendor",
         "Not applicable/cancelled": "Nao aplicavel/cancelado",
@@ -829,7 +832,19 @@ def export_engineering_monitor_view(request):
         base_sheet.write(0, col, label, header_fmt)
         base_sheet.set_column(col, col, width)
 
-    status_options = ["NI", "IFR", "IFA", "IFI", "AFC 1", "AFC 3", "AFC 3A", "MABU UNDER REVIEW"]
+    status_options = [
+        "NI",
+        "IFR",
+        "IFA",
+        "IFI",
+        "AFC 1",
+        "AFC 3",
+        "AFC 3A",
+        "MABU UNDER REVIEW",
+        "N/A",
+        "REJECTED",
+        "UNCLASSIFIED",
+    ]
     for row_idx, doc in enumerate(docs, start=1):
         is_monitored = bool(doc.get("is_monitored"))
         is_countable = bool(is_monitored and doc.get("is_countable"))

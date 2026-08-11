@@ -29,6 +29,31 @@ MONITOR_OFFICIAL_HEADERS = {
     "Status normalizado",
 }
 
+MONITOR_SAMPLE_ROOTS = (
+    "BNO / 02-DED",
+    "BNO / 02.5-FOE",
+)
+
+MONITOR_SAMPLE_EXCLUDED_FOLDERS = (
+    "BNO / 02-DED / 02.000-PMS",
+    "BNO / 02-DED / 02.001-DAE_TQR",
+    "BNO / 02-DED / 02.002-MOM",
+    "BNO / 02-DED / 02.003-REPORTS",
+    "BNO / 02-DED / 02.004-OTHER",
+    "BNO / 02-DED / 02.005-TRANSFER",
+    "BNO / 02-DED / 02.007-MDR_CHANGE NOTICE",
+    "BNO / 02-DED / 02.29-3D MODEL",
+    "BNO / 02-DED / 02.300-DAE_PROCUREMENT",
+    "BNO / 02.5-FOE / FOE.00-TEMPLATES",
+)
+
+MONITOR_CANCELLED_DOCUMENT_STATUSES = frozenset({
+    "CANCELED",
+    "CANCELLED",
+    "CANCELADO",
+    "CANCELADA",
+})
+
 MONITOR_DISCIPLINE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("PMT", ("AA - PROJECT MANAGEMENT",)),
     ("CONSTRUCTION", ("BA - CONSTRUCTION",)),
@@ -57,6 +82,9 @@ MONITOR_STATUS_ORDER = (
     "AFC 3",
     "AFC CODE 3A",
     "UNDER REVIEW",
+    "N/A",
+    "REJECTED",
+    "UNCLASSIFIED",
 )
 
 _DISCIPLINE_LOOKUP = {
@@ -80,6 +108,38 @@ def _norm_text(value: Any) -> str:
     text = unicodedata.normalize("NFD", _clean_text(value))
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
     return re.sub(r"\s+", " ", text.upper()).strip()
+
+
+def _directory_segments(value: Any) -> tuple[str, ...]:
+    text = unicodedata.normalize("NFKC", _clean_text(value)).replace("\\", "/")
+    return tuple(
+        normalized
+        for part in text.split("/")
+        if (normalized := _norm_text(part))
+    )
+
+
+_MONITOR_SAMPLE_ROOT_SEGMENTS = tuple(_directory_segments(path) for path in MONITOR_SAMPLE_ROOTS)
+_MONITOR_SAMPLE_EXCLUDED_SEGMENTS = tuple(
+    _directory_segments(path)
+    for path in MONITOR_SAMPLE_EXCLUDED_FOLDERS
+)
+
+
+def _is_path_at_or_below(path: tuple[str, ...], root: tuple[str, ...]) -> bool:
+    return len(path) >= len(root) and path[:len(root)] == root
+
+
+def _monitor_sample_gate(directory: Any, document_status: Any) -> tuple[bool, str]:
+    """Apply the three configured filter layers that define the document sample."""
+    path = _directory_segments(directory)
+    if not any(_is_path_at_or_below(path, root) for root in _MONITOR_SAMPLE_ROOT_SEGMENTS):
+        return False, "Outside configured sample folders"
+    if any(_is_path_at_or_below(path, folder) for folder in _MONITOR_SAMPLE_EXCLUDED_SEGMENTS):
+        return False, "Excluded sample folder"
+    if _norm_text(document_status) in MONITOR_CANCELLED_DOCUMENT_STATUSES:
+        return False, "Cancelled document status"
+    return True, ""
 
 
 def _find_sheet(workbook: Any, required_headers: set[str]) -> Any | None:
@@ -110,16 +170,6 @@ def _issue_code(value: str) -> int | None:
 def _is_not_applicable_document_status(value: str) -> bool:
     text = _norm_text(value)
     return text in {"NAO SE APLICA", "NAO APLICAVEL"} or "NAO APLIC" in text
-
-
-def _is_excluded_document_number(value: Any) -> bool:
-    text = _norm_text(value)
-    return "8502" in text or "PVN" in text or "LT" in text
-
-
-def _is_excluded_title(value: Any) -> bool:
-    text = _norm_text(value)
-    return "MONTHLY RISK" in text or "3D MODEL REVIEW FILE" in text
 
 
 def normalize_monitor_discipline(raw_discipline: Any, title: Any = "") -> str:
@@ -163,11 +213,11 @@ def _status_payload(
     issue = _norm_text(issue_status)
     purpose = _norm_text(last_transmittal_purpose)
     fabrication = _clean_text(fabrication_ref)
-    normalized_directory = _norm_text(directory)
     is_transmittal = normalized_doc_status == "TRANSMITTAL"
     effective_doc_status = "MABU UNDER REVIEW" if is_transmittal else original_doc_status
     code = _issue_code(issue)
     is_afc_afu = "AFC" in issue or "AFU" in issue or purpose.startswith("AFC/AFU")
+    is_in_sample, sample_excluded_reason = _monitor_sample_gate(directory, document_status)
 
     def bucket(label: str, group: str, afc_code: str = "") -> dict[str, Any]:
         return {
@@ -178,6 +228,7 @@ def _status_payload(
             "document_status_effective": effective_doc_status,
             "document_status_original": original_doc_status,
             "is_transmittal": is_transmittal,
+            "is_in_sample": True,
             "is_countable": True,
             "excluded_reason": "",
         }
@@ -191,26 +242,19 @@ def _status_payload(
             "document_status_effective": effective_doc_status,
             "document_status_original": original_doc_status,
             "is_transmittal": is_transmittal,
+            "is_in_sample": False,
             "is_countable": False,
             "excluded_reason": reason,
         }
 
-    if "VENDOR" in normalized_directory:
-        return excluded("Vendor directory")
-    if _is_excluded_document_number(document_number):
-        return excluded("Excluded document number")
-    if _norm_text(revision) == "X":
-        return excluded("Cancelled revision X")
-    if _is_excluded_title(title):
-        return excluded("Excluded title")
-    if normalized_doc_status == "CANCELADO":
-        return excluded("Not applicable/cancelled")
+    if not is_in_sample:
+        return excluded(sample_excluded_reason)
+    if "REJECTED" in issue:
+        return bucket("REJECTED", "REJECTED")
     if issue.startswith("IFA") or purpose.startswith("IFA") or "ISSUED FOR APPROVAL" in issue or "ISSUED FOR APPROVAL" in purpose:
         return bucket("IFA", "IFA")
     if normalized_doc_status in {"TRANSMITTAL", "ISSUED"} and is_afc_afu and code in {3, 4} and fabrication:
         return bucket("AFC CODE 3A", "AFC", "3A")
-    if "REJECTED" in issue:
-        return excluded("Rejected")
     if is_afc_afu and code in {1, 2}:
         return bucket("AFC 1", "AFC", "1")
     if is_afc_afu and code in {3, 4}:
@@ -226,10 +270,10 @@ def _status_payload(
     if issue.startswith("NOT ISSUED"):
         return bucket("NI", "NOT ISSUED")
     if _is_not_applicable_document_status(normalized_doc_status):
-        return excluded("Not applicable/cancelled")
+        return bucket("N/A", "N/A")
     if is_transmittal or normalized_doc_status.startswith("ENGINEERING") or normalized_doc_status == "ISSUED":
         return bucket("UNDER REVIEW", "AFC", "UNDER REVIEW")
-    return excluded("Unmapped")
+    return bucket("UNCLASSIFIED", "UNCLASSIFIED")
 
 
 def _row_value(raw: dict[str, Any], header: str) -> Any:
@@ -271,6 +315,12 @@ def _normal_status_bucket(value: Any) -> str:
         return "AFC CODE 3A"
     if "MABU" in text or "UNDER REVIEW" in text:
         return "UNDER REVIEW"
+    if text in {"N/A", "NA", "NOT APPLICABLE", "NAO SE APLICA", "NAO APLICAVEL"}:
+        return "N/A"
+    if text.startswith("REJECT"):
+        return "REJECTED"
+    if text in {"UNCLASSIFIED", "NAO CLASSIFICADO"}:
+        return "UNCLASSIFIED"
     return ""
 
 
@@ -288,6 +338,12 @@ def _status_parts_from_bucket(status_bucket: str) -> tuple[str, str, str]:
         return "AFC CODE 3A", "AFC", "3A"
     if status == "UNDER REVIEW":
         return "MABU UNDER REVIEW", "AFC", "UNDER REVIEW"
+    if status == "N/A":
+        return "N/A", "N/A", ""
+    if status == "REJECTED":
+        return "REJECTED", "REJECTED", ""
+    if status == "UNCLASSIFIED":
+        return "UNCLASSIFIED", "UNCLASSIFIED", ""
     return "", "", ""
 
 
@@ -321,7 +377,7 @@ def _parse_monitor_rows(ws: Any) -> list[dict[str, Any]]:
                 revision,
                 _row_value(raw, "Title"),
             )
-            is_monitored = bool(monitor_discipline)
+            is_monitored = bool(status["is_in_sample"])
             rows.append({
                 "row_number": row_number,
                 "document_number": document_number,
@@ -369,7 +425,7 @@ def _parse_official_rows(ws: Any) -> list[dict[str, Any]]:
             or raw_discipline
         )
         status_bucket = _normal_status_bucket(_first_row_value(raw, "Status normalizado", "Status AOL", "Status", "Final Status"))
-        is_countable = _yes(_first_row_value(raw, "Contabilizar", "Count", "Considerar")) and bool(status_bucket)
+        is_countable = _yes(_first_row_value(raw, "Contabilizar", "Count", "Considerar"))
         doc_status, doc_status_group, afc_code = _status_parts_from_bucket(status_bucket)
         document_status_original = _clean_text(_first_row_value(raw, "Status documento", "Document Status")).upper()
         is_transmittal = _norm_text(document_status_original) == "TRANSMITTAL"
@@ -385,7 +441,7 @@ def _parse_official_rows(ws: Any) -> list[dict[str, Any]]:
             "directory": _clean_text(_first_row_value(raw, "Diretorio", "Diretório", "Directory")),
             "discipline": discipline or source_discipline or "-",
             "source_discipline": source_discipline or discipline or "-",
-            "is_monitored": True,
+            "is_monitored": is_countable,
             "revision": revision,
             "revision_family": revision_family,
             "revision_number": revision_number,
@@ -399,6 +455,7 @@ def _parse_official_rows(ws: Any) -> list[dict[str, Any]]:
             "document_status_effective": document_status_effective,
             "document_status_original": document_status_original,
             "is_transmittal": is_transmittal,
+            "is_in_sample": is_countable,
             "is_countable": is_countable,
             "excluded_reason": "" if is_countable else excluded_reason,
         })
@@ -431,8 +488,8 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
         raise ValueError("No valid documents were found in the monitor workbook.")
 
     monitored_rows = [row for row in rows if row["is_monitored"]]
-    countable_rows = [row for row in monitored_rows if row["is_countable"]]
-    excluded_rows = [row for row in monitored_rows if not row["is_countable"]]
+    countable_rows = [row for row in rows if row["is_countable"]]
+    excluded_rows = [row for row in rows if not row["is_countable"]]
     status_counts = Counter(row["status_bucket"] for row in countable_rows)
     excluded_counts = Counter(row["excluded_reason"] for row in excluded_rows)
     discipline_counts = Counter(row["discipline"] for row in countable_rows)
@@ -445,11 +502,32 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
 
     discipline_order = monitor_discipline_order(discipline_counts)
 
+    sample_rules = {
+        "included_roots": list(MONITOR_SAMPLE_ROOTS),
+        "excluded_folders": list(MONITOR_SAMPLE_EXCLUDED_FOLDERS),
+        "cancelled_document_statuses": sorted(MONITOR_CANCELLED_DOCUMENT_STATUSES),
+    }
+    sample_funnel = {
+        "source_documents": len(rows),
+        "sample_documents": len(countable_rows),
+    }
+    if import_mode == "raw_engineering":
+        outside_roots = int(excluded_counts.get("Outside configured sample folders", 0))
+        excluded_folders = int(excluded_counts.get("Excluded sample folder", 0))
+        cancelled_status = int(excluded_counts.get("Cancelled document status", 0))
+        sample_funnel.update({
+            "inside_allowed_roots": len(rows) - outside_roots,
+            "excluded_folders": excluded_folders,
+            "after_folder_exclusions": len(rows) - outside_roots - excluded_folders,
+            "excluded_cancelled_status": cancelled_status,
+        })
+
     payload = {
         "documents": rows,
         "status_order": list(MONITOR_STATUS_ORDER),
         "discipline_order": discipline_order,
         "import_mode": import_mode,
+        "sample_rules": sample_rules,
     }
 
     with transaction.atomic():
@@ -475,6 +553,8 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
                 "excluded_counts": dict(excluded_counts),
                 "source_discipline_counts": dict(source_discipline_counts),
                 "discipline_counts": dict(discipline_counts),
+                "sample_rules": sample_rules,
+                "sample_funnel": sample_funnel,
             },
         )
 
