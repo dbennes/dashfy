@@ -22,6 +22,7 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.accounts.permissions import has_module_permission
+from apps.core import fabrication_source, tracking_source
 from apps.core.datafy_supply import refresh_supply_snapshot, supply_filters_hash
 from apps.core.engineering_import import import_engineering_status_workbook
 from apps.core.engineering_monitor_import import import_engineering_monitor_workbook, normalize_monitor_discipline
@@ -340,6 +341,16 @@ def _supply_3d_material_payload(row):
     }
 
 
+def _supply_scope_view(manager, scope_key: str):
+    """Retorna a visao de campanha de um escopo (fabricacao/erecao) do Supply."""
+    views = (manager.get("material") or {}).get("supply_campaign_views") or []
+    for key in (scope_key, "all"):
+        for view in views:
+            if view.get("key") == key:
+                return view
+    return None
+
+
 @login_required
 def home_view(request):
     """Cockpit gerencial consumindo somente bases reais integradas."""
@@ -399,11 +410,22 @@ def home_view(request):
     dashboard_filters = _dashboard_filters_from_request(request)
     manager = real_sources.management_dashboard(dashboard_filters)
     charts_payload = manager.get("charts", {})
+    # S03 · Fabrication progress — tudo lido direto do PostgreSQL do
+    # DATAFY/SPDM (pacotes P6, progresso datado e cobertura de PO por item,
+    # com o mesmo motor de status da S02).
+    fabrication = fabrication_source.fabrication_progress_safe()
+    # S04 · Tracking — envios de container do Trackfy, lidos somente-leitura
+    # do PostgreSQL do Taskfy.
+    tracking = tracking_source.tracking_dashboard_safe()
 
     context = {
         "modules": modules,
         "announcements": announcements,
         "manager": manager,
+        "fabrication": fabrication,
+        "tracking": tracking,
+        "DATAFY_BASE_URL": settings.DATAFY_BASE_URL,
+        "TASKFY_BASE_URL": settings.TASKFY_BASE_URL,
         "show_login_boot": bool(request.session.pop("show_login_boot", False)),
         "sources": {
             "datafy": manager.get("datafy", {}),
@@ -546,6 +568,24 @@ def material_rows_page_view(request):
         "has_prev": page > 1,
         "has_next": end < total,
     })
+
+
+@login_required
+def fabrication_detail_view(request, pk: int):
+    """S03 · subnivel do desenho, consultado no banco DATAFY na hora do clique."""
+    return JsonResponse(fabrication_source.fabrication_package_detail_safe(pk))
+
+
+@login_required
+def fabrication_po_pending_view(request, pk: int):
+    """S03 · modal Material & PO coverage (mesmo JSON do SPDM)."""
+    return JsonResponse(fabrication_source.fabrication_po_pending_safe(pk))
+
+
+@login_required
+def fabrication_expedite_view(request):
+    """S03 · modal POs to expedite (mesmo JSON do SPDM)."""
+    return JsonResponse(fabrication_source.fabrication_expedite_safe())
 
 
 @login_required

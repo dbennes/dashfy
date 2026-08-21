@@ -18,5 +18,8 @@ urlpatterns = [
     path("datafy-supply/import/", views.import_datafy_supply_view, name="import_datafy_supply"),
     path("datafy-supply/material-rows/", views.material_rows_page_view, name="material_rows_page"),
     path("datafy-supply/material-items-3d/", views.material_items_3d_view, name="material_items_3d"),
+    path("fabrication/<int:pk>/detail/", views.fabrication_detail_view, name="fabrication_detail"),
+    path("fabrication/<int:pk>/po-pending/", views.fabrication_po_pending_view, name="fabrication_po_pending"),
+    path("fabrication/expedite/", views.fabrication_expedite_view, name="fabrication_expedite"),
     path("model-node/<int:node_id>.glb", views.model_node_glb, name="model_node_glb"),
 ]

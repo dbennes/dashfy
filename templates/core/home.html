@@ -1,10 +1,15 @@
 {% extends "base.html" %}
-{% load humanize static %}
+{% load humanize static l10n %}
 {% block title %}Cockpit · {{ APP_NAME }}{% endblock %}
 {% block crumb_current %}COCKPIT{% endblock %}
 {% block project_code %}BN-EPC1{% endblock %}
 {% block project_name %}Bonga North Project{% endblock %}
 {% block project_horiz %}{{ manager.p6.kpis.start_label|default:"31/05/24" }} → {{ manager.p6.kpis.finish_label|default:"30/06/27" }}{% endblock %}
+
+{% block extra_css %}
+{# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260730-s03-full" rel="stylesheet">
+{% endblock %}
 
 {% block tickers %}
 <div class="tb-ticker" title="P6 physical progress against the current planned baseline">
@@ -128,7 +133,15 @@
     <span class="chip green" title="Coverage with linked purchase order">{{ manager.material.material_flow.covered_pct|default:0|floatformat:1 }}%</span>
   </a>
   <a class="sn-tab" data-target="s03" href="#s03">
-    <span class="num">S03</span><span>3D Model</span>
+    <span class="num">S03</span><span>Fabrication</span>
+    <span class="chip amber" title="Average fabrication progress from the latest authorized source">{{ fabrication.kpis.avg|default:0|floatformat:2 }}%</span>
+  </a>
+  <a class="sn-tab" data-target="s04" href="#s04">
+    <span class="num">S04</span><span>Tracking</span>
+    <span class="chip amber" title="Open shipments (draft + sent) in Trackfy">{{ tracking.kpis.shipments_open|default:0 }}</span>
+  </a>
+  <a class="sn-tab" data-target="s05" href="#s05">
+    <span class="num">S05</span><span>3D Model</span>
     <span class="chip">GLB local</span>
   </a>
   <span class="sn-spacer"></span>
@@ -947,11 +960,585 @@
   </div>
 </section>
 
-{# ===== S03 — 3D MODEL ===== #}
-<section id="s03" class="section" style="border-bottom: none;">
+{# ===== S03 — FABRICATION PROGRESS ===== #}
+{# Porte da tela /fabrication/ do SPDM: mesmo header, KPIs, os tres graficos  #}
+{# e a tabela com a arvore WBS do Primavera. Dados lidos das tabelas          #}
+{# fabrication_* no PostgreSQL do DATAFY/SPDM (apps/core/fabrication_source). #}
+<section id="s03" class="section">
+  {% with fab=fabrication %}
+  <div class="fab-shell">
+
+    {# ---------- Header ---------- #}
+    <div class="page-header fab-page-header">
+      <div class="page-title-block">
+        <span class="page-eyebrow">S03 · Engineering · Fabrication</span>
+        <h1 class="page-title"><em>Fabrication</em> progress</h1>
+        {% if fab.last_import %}
+          <p class="page-sub fab-head-meta">P6: <span class="lnk">{{ fab.last_import.original_filename|truncatechars:42 }}</span>
+            · {{ fab.last_import.imported_at|date:"d/m/Y H:i" }}
+            · <span class="lnk">{{ fab.last_import.packages_linked }}/{{ fab.last_import.packages_total }}</span> linked to Documents</p>
+        {% endif %}
+      </div>
+      <div class="head-actions">
+        <button class="ob-btn ob-btn-gold" type="button" id="fabExpediteBtn" title="POs holding fabrication material — sorted by drawing priority">
+          <i class="bi bi-truck"></i> POs to expedite
+        </button>
+        <a class="ob-btn ob-btn-blue" href="{{ DATAFY_BASE_URL }}/fabrication/" target="_blank" rel="noopener"
+           title="Abrir a tela de fabricacao no SPDM para importar P6, lancar progresso e exportar">
+          <i class="bi bi-box-arrow-up-right"></i> Abrir no SPDM
+        </a>
+        <a class="ob-btn ob-btn-green" href="{{ DATAFY_BASE_URL }}/fabrication/export/" target="_blank" rel="noopener"
+           title="Drawings + Travel Pack + sheet progress + dated progress log">
+          <i class="bi bi-file-earmark-spreadsheet"></i> Export Excel
+        </a>
+        <a class="ob-btn ob-btn-green" href="{{ DATAFY_BASE_URL }}/fabrication/impacted-lines-export/" target="_blank" rel="noopener"
+           title="Piping lines x pending POs by arrival month">
+          <i class="bi bi-diagram-3"></i> Impacted lines
+        </a>
+      </div>
+    </div>
+
+    {% if not fab.available %}
+      <div class="fab-notice">
+        Fabrication indisponivel: {{ fab.error|default:"nao foi possivel ler as tabelas de fabricacao no PostgreSQL do SPDM." }}
+      </div>
+    {% endif %}
+
+    <script id="fabStagesMeta" type="application/json">{{ fab.stages_json|safe }}</script>
+    <script id="fabChartsData" type="application/json">{{ fab.charts_json|safe }}</script>
+
+    {# ---------- KPI strip ---------- #}
+    <div class="fab-kpis" id="fabKpis">
+      <button class="fab-kpi filterable" type="button" data-kpi="all">
+        <span>
+          <span class="fab-kpi-label"><i class="bi bi-collection"></i> Drawings</span>
+          <span class="fab-kpi-tail">in current plan</span>
+        </span>
+        <span class="fab-kpi-value" id="kpiTotal">{{ fab.kpis.total|default:0 }}</span>
+      </button>
+      <button class="fab-kpi filterable" type="button" data-kpi="ready">
+        <span>
+          <span class="fab-kpi-label"><i class="bi bi-check-circle"></i> Ready to fabricate</span>
+          <span class="fab-kpi-tail">covered · not started</span>
+        </span>
+        <span class="fab-kpi-value good" id="kpiReady">{{ fab.kpis.ready|default:0 }}</span>
+      </button>
+      <button class="fab-kpi filterable" type="button" data-kpi="pending">
+        <span>
+          <span class="fab-kpi-label"><i class="bi bi-cart-x"></i> Pending PO</span>
+          <span class="fab-kpi-tail">items without PO coverage</span>
+        </span>
+        <span class="fab-kpi-value bad" id="kpiPending">{{ fab.kpis.pending|default:0 }}</span>
+      </button>
+      <div class="fab-kpi">
+        <span>
+          <span class="fab-kpi-label"><i class="bi bi-activity"></i> Avg progress</span>
+          <span class="fab-kpi-tail">weighted, all stages</span>
+        </span>
+        <span class="fab-kpi-value" id="kpiAvg">{{ fab.kpis.avg|default:0|floatformat:2 }}%</span>
+      </div>
+    </div>
+
+    {# ---------- Charts ---------- #}
+    <div class="fab-charts">
+      <div class="fab-chart-card">
+        <h3><i class="bi bi-graph-up"></i> Fabrication S-curve — progress %</h3>
+        <div class="sub">planned (imported P6 activity points and dates) vs actual (dated progress entries)</div>
+        <div class="cv"><canvas id="fabCurve"></canvas></div>
+      </div>
+      <div class="fab-chart-card">
+        <h3><i class="bi bi-bar-chart"></i> Tonnage by campaign</h3>
+        <div class="sub">planned vs fabricated (weighted overall %)</div>
+        <div class="cv"><canvas id="fabCampChart"></canvas></div>
+      </div>
+      <div class="fab-chart-card">
+        <h3><i class="bi bi-bar-chart-steps"></i> Progress by stage</h3>
+        <div class="sub" id="fabStageSub">average progress · current selection</div>
+        <div class="cv"><canvas id="fabStageChart"></canvas></div>
+      </div>
+    </div>
+
+    {# ---------- Toolbar ---------- #}
+    <div class="fab-toolbar">
+      <span class="fab-search">
+        <i class="bi bi-search"></i>
+        <input id="fabSearch" type="search" placeholder="Search drawing, title, ID…" autocomplete="off">
+      </span>
+      <button class="fab-chip active" type="button" data-disc="all">All</button>
+      <button class="fab-chip" type="button" data-disc="structural">Structural</button>
+      <button class="fab-chip" type="button" data-disc="piping">Piping</button>
+      <div class="fab-legend">
+        <span><span class="num" style="color:var(--fb-success);">100%</span> done</span>
+        <span><span class="num" style="color:var(--fb-fg);">45%</span> in progress</span>
+        <span><span class="num" style="color:var(--fb-fg-faint); font-weight:400;">0%</span> not started</span>
+        <span style="color:var(--fb-fg-faint);">dates: plan / actual</span>
+        <span class="fab-count" id="fabCount">{{ fab.kpis.total|default:0 }} drawings</span>
+      </div>
+    </div>
+
+    {# ---------- Table ---------- #}
+    <div class="fab-wrap"
+         data-fab-detail-url="{% url 'core:fabrication_detail' 0 %}"
+         data-fab-po-url="{% url 'core:fabrication_po_pending' 0 %}"
+         data-fab-exp-url="{% url 'core:fabrication_expedite' %}">
+      <table class="fab-table">
+        <colgroup>
+          {# P6 ID um pouco mais largo para caber a indentacao dos desenhos #}
+          <col style="width:9.5%"><col style="width:3%"><col style="width:12.2%"><col style="width:5.8%">
+          <col style="width:6.2%"><col style="width:6.2%"><col style="width:4.3%"><col style="width:4.6%">
+          {% for s in fab.stages %}<col style="width:4.1%">{% endfor %}
+          <col style="width:4.5%"><col style="width:9%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th title="Primavera P6 Activity ID from column A">P6 ID</th>
+            <th class="c" title="Drawing priority (0 = highest) — from Documents">Prio</th>
+            <th>Drawing</th>
+            <th class="c" title="Travel Pack identifier/number for this drawing">Travel Pack</th>
+            <th>Start</th>
+            <th>Finish</th>
+            <th class="c" title="Fabrication MTO items without PO coverage">PO</th>
+            <th class="c stage" title="Items physically delivered at yard (Delivery At Yard actual)">At yard</th>
+            {% for key, short, full, weight in fab.stages %}
+            <th class="c stage" title="Current {{ full }} progress from the latest authorized source">{{ short }}<span class="w">Progress %</span></th>
+            {% endfor %}
+            <th class="c stage">Overall</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="fabBody">
+          {% for entry in fab.tree %}
+          {% if entry.kind == 'wbs' %}
+          <tr class="fab-tree-node {% if entry.level == 1 %}fab-wbs-root{% else %}fab-wbs-node{% endif %}"
+              data-node-key="{{ entry.path_key }}"
+              data-parent-key="{{ entry.parent_key }}"
+              aria-expanded="false">
+            <td colspan="{{ fab.stages|length|add:'10' }}">
+              <span class="fab-wbs-line" style="--wbs-depth:{{ entry.depth }}">
+                <i class="bi bi-chevron-down caret"></i>
+                <span class="fab-wbs-level">L{{ entry.level }}</span>
+                <span class="fab-wbs-name">{{ entry.name }}</span>
+                <span class="fab-wbs-count"></span>
+              </span>
+            </td>
+          </tr>
+          {% else %}
+          {% with r=entry.row %}
+          <tr class="fab-row st-{{ r.status_key }}{% if r.pend_count %} has-pend{% endif %}"
+              style="--fab-row-ind: {% widthratio r.wbs_level|default:1|add:'-1' 1 12 %}px"
+              data-pk="{{ r.pk }}"
+              data-doc-id="{{ r.doc_id|default:'' }}"
+              data-dwg="{{ r.dwg }}"
+              data-title="{{ r.title }}"
+              data-sheets="{{ r.sheets_ready|default_if_none:'0' }}"
+              data-search="{{ r.search }}"
+              data-discipline="{{ r.discipline }}"
+              data-wbs-path="{{ r.wbs_key }}"
+              data-parent-key="{{ r.wbs_parent_key }}"
+              data-status="{{ r.status_key }}"
+              data-pend="{{ r.pend_count|default_if_none:'-1' }}"
+              data-mto="{{ r.mto_total|default_if_none:'-1' }}"
+              data-yard="{{ r.yard_ready|default_if_none:'-1' }}"
+              data-overall="{{ r.overall|unlocalize }}"
+              data-linked="{{ r.linked|yesno:'1,0' }}"
+              data-stages="{{ r.stages_json }}">
+            <td class="fab-id" title="{{ r.name }}{% if r.p6_ref %} · P6 Activity ID {{ r.p6_ref }}{% endif %} · Internal ID {{ r.code }}">
+              <button class="fab-caret" type="button" data-expand="{{ r.pk }}" title="Show materials and PO coverage"><i class="bi bi-chevron-right"></i></button>{{ r.p6_ref|default:'—' }}
+            </td>
+            <td class="fab-prio">
+              {% if r.priority is not None %}
+                <span class="fab-prio-badge {% if r.priority == 0 %}p0{% elif r.priority == 1 %}p1{% endif %}">{{ r.priority }}</span>
+              {% else %}<span class="fab-prio-none">—</span>{% endif %}
+            </td>
+            <td>
+              <div class="fab-dwg-line">
+                <span class="fab-dwg" title="{{ r.dwg }}">{{ r.dwg|truncatechars:34 }}</span>
+                {% if r.rev %}<span class="fab-rev">rev {{ r.rev }}</span>{% endif %}
+                {% if not r.linked %}<span class="fab-rev" style="color:var(--fb-warning);" title="No document with this drawing number in DATAFY — PO coverage unknown."><i class="bi bi-link-45deg"></i> not linked</span>{% endif %}
+              </div>
+              <div class="fab-title" title="WBS level {{ r.wbs_level }} · {{ r.title }}"><span class="fab-row-level">L{{ r.wbs_level }}</span>{{ r.title|truncatechars:140 }} · {{ r.discipline_label }}</div>
+            </td>
+            <td class="fab-travel-pack">
+              <span class="fab-travel-pack-value" title="{{ r.travel_pack_no }}">{{ r.travel_pack_no|default:'—' }}</span>
+            </td>
+            <td class="fab-date" title="Plan (top) / Actual (bottom)">
+              <div class="fab-plan-line">
+                <span class="plan">{{ r.start_plan }}</span>
+                <span class="fab-start-risk"{% if not r.start_risk %} hidden{% endif %} title="{{ r.start_risk_title }}" aria-label="{{ r.start_risk_title }}"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i></span>
+              </div>
+              <div class="act{% if r.start_act == '—' %} none{% endif %}">{{ r.start_act }}</div>
+            </td>
+            <td class="fab-date" title="Plan (top) / Actual (bottom)">
+              <div class="plan">{{ r.finish_plan }}</div>
+              <div class="act{% if r.finish_act == '—' %} none{% endif %}">{{ r.finish_act }}</div>
+            </td>
+            <td class="fab-po" data-cell="po">
+              {% if not r.linked %}
+                <span class="fab-po-na" title="Not linked to a Document — coverage unknown.">—</span>
+              {% elif r.mto_total == 0 %}
+                <span class="fab-po-nomto" title="Linked document has no fabrication MTO items.">no MTO</span>
+              {% elif r.pend_count %}
+                <button class="fab-pend-chip" type="button" data-open-po="{{ r.pk }}" title="{{ r.pend_title }}">
+                  <i class="bi bi-cart-x" style="font-size:10px;"></i><span>{{ r.pend_count }}</span>
+                </button>
+              {% else %}
+                <button class="fab-po-ok" type="button" data-open-po="{{ r.pk }}" title="{{ r.pend_title }}"><i class="bi bi-check-lg"></i><span class="n">{{ r.cov_covered }}/{{ r.mto_total }}</span></button>
+              {% endif %}
+            </td>
+            <td class="fab-yard-cell" data-cell="yard">
+              {% if not r.linked or r.mto_total == 0 %}
+                <span class="fab-yard-num">—</span>
+              {% else %}
+                <span class="fab-yard-num{% if r.yard_ready >= r.mto_total %} done{% elif r.yard_ready > 0 %} started{% endif %}" title="{{ r.yard_ready }}/{{ r.mto_total }} items at yard">{{ r.yard_ready }}/{{ r.mto_total }}</span>
+              {% endif %}
+            </td>
+            {% for stage in r.stage_cells %}
+            <td class="fab-stage" data-stage-idx="{{ forloop.counter0 }}">
+              {% if stage.applicable %}
+              <span class="fab-pct{% if stage.pct >= 100 %} done{% elif stage.pct > 0 %} started{% endif %}">{{ stage.pct|floatformat:2 }}%</span>
+              {% else %}
+              <span class="fab-pct na" title="This stage is not applicable to this drawing in the latest P6 import.">N/A</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+            <td class="fab-overall">
+              <span class="fab-overall-num{% if r.overall >= 100 %} done{% elif r.overall > 0 %} started{% endif %}" data-cell="overall">{{ r.overall|floatformat:2 }}%</span>
+            </td>
+            <td class="fab-status-cell">
+              <span class="fab-status st-{{ r.status_key }}" data-cell="status"><span class="dot"></span>{{ r.status_label }}</span>
+            </td>
+          </tr>
+          {% endwith %}
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if not fab.rows_total %}
+      <div class="fab-empty">
+        <i class="bi bi-hammer"></i>
+        No fabrication packages yet. Import the P6 schedule in the SPDM (Excel export with the
+        “Fabrication Activities” WBS) to populate this screen.
+      </div>
+      {% endif %}
+      <div class="fab-empty" id="fabNoResults" hidden>
+        <i class="bi bi-search"></i>
+        No drawings match the current filters.
+      </div>
+    </div>
+
+    {# ---------- PO pending modal (porte fiel do SPDM) ---------- #}
+    <div class="fab-ovl" id="fabPoModal" hidden>
+      <div class="fab-ovl-bg" data-close="fabPoModal"></div>
+      <div class="fab-card">
+        <div class="fab-card-head">
+          <span class="fab-card-icon" id="fabPoIcon"><i class="bi bi-cart-x"></i></span>
+          <div style="min-width:0; margin-right:8px;">
+            <div class="fab-card-kicker">Material &amp; PO coverage</div>
+            <div class="fab-card-title"><strong id="fabPoDwg">—</strong><span id="fabPoTitle"></span></div>
+          </div>
+          <div class="fab-po-strip" id="fabPoStrip" hidden>
+            <span class="cell"><span class="k">Covered</span><span class="v" id="fabPoCov">—</span></span>
+            <span class="cell"><span class="k">Missing PO</span><span class="v" id="fabPoMiss">—</span></span>
+            <span class="cell"><span class="k">At yard</span><span class="v" id="fabPoYard">—</span></span>
+            <span class="cell"><span class="k">Fab. start</span><span class="v" id="fabPoStart">—</span></span>
+            <span class="cell"><span class="k">Arrival</span><span class="v" id="fabPoArr">—</span></span>
+          </div>
+          <button class="fab-x" type="button" data-close="fabPoModal" title="Close" style="margin-left:4px;"><i class="bi bi-x-lg" style="font-size:12px;"></i></button>
+        </div>
+        <div class="fab-po-table-wrap">
+          <table class="fab-po-table">
+            <thead>
+              <tr>
+                <th>Linked PO</th><th>Material</th><th class="r">Qty</th>
+                <th>Expected at yard</th><th>Reason</th>
+              </tr>
+            </thead>
+            <tbody id="fabPoBody">
+              <tr><td colspan="5" style="text-align:center; color:var(--fb-fg-subtle);">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="fab-card-note">
+          <i class="bi bi-info-circle" style="font-size:9px;"></i>
+          Same coverage engine as the Documents list · expected-at-yard dates come from the allocated POs · Esc closes.
+        </div>
+      </div>
+    </div>
+
+    {# ---------- POs to expedite modal (porte fiel do SPDM) ---------- #}
+    <div class="fab-ovl" id="fabExpModal" hidden>
+      <div class="fab-ovl-bg" data-close="fabExpModal"></div>
+      <div class="fab-card" style="width:860px;">
+        <div class="fab-card-head">
+          <span class="fab-card-icon" style="background:var(--fb-warning-bg); border-color:var(--fb-warning-border); color:var(--fb-warning);"><i class="bi bi-truck"></i></span>
+          <div style="min-width:0;">
+            <div class="fab-card-kicker">Procurement follow-up</div>
+            <div class="fab-card-title"><strong>POs to expedite</strong><span>holding fabrication material · sorted by highest drawing priority</span></div>
+          </div>
+          <button class="fab-x" type="button" data-close="fabExpModal" title="Close" style="margin-left:auto;"><i class="bi bi-x-lg" style="font-size:12px;"></i></button>
+        </div>
+        <div class="fab-po-table-wrap">
+          <table class="fab-po-table fab-exp-table">
+            <thead>
+              <tr>
+                <th>PO</th><th>Expected</th><th>Proc. plan</th>
+                <th>Drawings blocked</th><th class="r">Items</th>
+              </tr>
+            </thead>
+            <tbody id="fabExpBody">
+              <tr><td colspan="5" style="text-align:center; color:var(--fb-fg-subtle);">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="fab-card-note">
+          <i class="bi bi-info-circle" style="font-size:9px;"></i>
+          POs with fabrication-scope allocations not yet delivered at yard. P0/P1 = highest-priority drawings waiting on the PO.
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endwith %}
+</section>
+
+{# ===== S04 — TRACKING (Trackfy / Taskfy) ===== #}
+{# Dashboard de envios de container lido SOMENTE-LEITURA do PostgreSQL do  #}
+{# Taskfy (apps/core/tracking_source.py), no design do cockpit.           #}
+<section id="s04" class="section">
+  {% with trk=tracking k=tracking.kpis %}
   <div class="section-head">
     <div>
-      <span class="tag">S03 · 3D Model</span>
+      <span class="tag">S04 · Tracking</span>
+      <h2>Container shipments · Trackfy</h2>
+    </div>
+    <div class="meta p6-source-meta c3-meta-inline">
+      <div class="c3-meta-line">
+        <b>{{ k.total_containers|default:0|intcomma }}</b> containers · <b>{{ k.total_shipments|default:0|intcomma }}</b> shipments
+        {% if trk.available %} · Taskfy · PostgreSQL live{% else %} · Taskfy · PostgreSQL unavailable{% endif %}
+      </div>
+      <div class="c3-source-actions" aria-label="Tracking source actions">
+        <a class="c3-export-link c3-monitor-action" href="{{ TASKFY_BASE_URL }}/trackfy/" target="_blank" rel="noopener" title="Abrir o Trackfy no Taskfy">
+          <i class="bi bi-box-arrow-up-right"></i><span>Abrir no Taskfy</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  {% if not trk.available %}
+    <div class="c3-msg" style="border-left-color: var(--signal-red);">
+      Trackfy unavailable: {{ trk.error|default:"nao foi possivel ler o PostgreSQL do Taskfy." }}
+    </div>
+  {% else %}
+
+  <script id="trkChartsData" type="application/json">{{ trk.charts_json|safe }}</script>
+
+  <div class="kpi-strip">
+    <div class="kpi">
+      <div class="lbl"><span class="marker"></span><span>Containers</span></div>
+      <div class="val">{{ k.total_containers|default:0|intcomma }}</div>
+      <div class="sub">{{ k.containers_in_transit|default:0 }} in transit · {{ k.containers_available|default:0 }} available</div>
+    </div>
+    <div class="kpi kpi-amber">
+      <div class="lbl"><span class="marker"></span><span>In transit</span></div>
+      <div class="val">{{ k.utilization_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
+      <div class="sub">{{ k.containers_in_transit|default:0 }} of {{ k.total_containers|default:0 }} containers</div>
+    </div>
+    <div class="kpi kpi-cyan">
+      <div class="lbl"><span class="marker"></span><span>Open shipments</span></div>
+      <div class="val">{{ k.shipments_open|default:0|intcomma }}</div>
+      <div class="sub">avg open age {{ k.avg_open_age_days|default:0 }} d</div>
+    </div>
+    <div class="kpi kpi-green">
+      <div class="lbl"><span class="marker"></span><span>Received</span></div>
+      <div class="val">{{ k.shipments_received|default:0|intcomma }}</div>
+      <div class="sub">{{ k.shipments_received_7d|default:0 }} in the last 7 days</div>
+    </div>
+    <div class="kpi kpi-amber">
+      <div class="lbl"><span class="marker"></span><span>Avg lead time</span></div>
+      <div class="val">{{ k.avg_lead_days|default:0 }}<span class="unit">d</span></div>
+      <div class="sub">sent → received</div>
+    </div>
+    <div class="kpi {% if k.issues_total %}kpi-red{% else %}kpi-green{% endif %}">
+      <div class="lbl"><span class="marker"></span><span>Quality index</span></div>
+      <div class="val">{{ k.quality_index|default:0|floatformat:1 }}<span class="unit">%</span></div>
+      <div class="sub">{{ k.issues_total|default:0 }} issue(s) · missing + damaged items</div>
+    </div>
+  </div>
+
+  <div class="row-3">
+    <div class="card">
+      <div class="card-head">
+        <div class="lhs"><span class="tag">FLOW</span><h3>Shipments per month</h3></div>
+        <div class="rhs">SENT × RECEIVED</div>
+      </div>
+      <div class="card-body"><div class="trk-chart"><canvas id="trkFlowChart"></canvas></div></div>
+      <div class="legend">
+        <span><i style="background: var(--signal-amber)"></i>Sent</span>
+        <span><i style="background: var(--signal-green)"></i>Received</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="lhs"><span class="tag">QUALITY</span><h3>Item receive status</h3></div>
+        <div class="rhs"><b>{{ k.items_total|default:0|intcomma }}</b> ITEMS</div>
+      </div>
+      <div class="card-body"><div class="trk-chart"><canvas id="trkItemsChart"></canvas></div></div>
+      <div class="legend">
+        <span><i style="background: var(--signal-green)"></i>OK {{ k.items_ok|default:0 }}</span>
+        <span><i style="background: var(--fg-3)"></i>Pending {{ k.items_pending|default:0 }}</span>
+        <span><i style="background: var(--signal-red)"></i>Missing {{ k.items_missing|default:0 }}</span>
+        <span><i style="background: var(--signal-amber)"></i>Damaged {{ k.items_damaged|default:0 }}</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="lhs"><span class="tag">FLEET</span><h3>Containers by status</h3></div>
+        <div class="rhs"><b>{{ k.total_containers|default:0 }}</b> CONTAINERS</div>
+      </div>
+      <div class="card-body"><div class="trk-chart"><canvas id="trkFleetChart"></canvas></div></div>
+    </div>
+  </div>
+
+  <div class="row-2">
+    <div class="card">
+      <div class="card-head">
+        <div class="lhs"><span class="tag">ACTION</span><h3>Open shipments — waiting to be received</h3></div>
+        <div class="rhs"><b>{{ trk.open_shipments|length }}</b> OPEN · OLDEST FIRST</div>
+      </div>
+      <div class="card-body flush">
+        <table class="tbl trk-table">
+          <thead>
+            <tr>
+              <th>Report</th>
+              <th>Container</th>
+              <th>Owner</th>
+              <th>Route</th>
+              <th>Sent</th>
+              <th class="num">Items</th>
+              <th class="num">Days open</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in trk.open_shipments %}
+              <tr>
+                <td><a class="c3-probe-link" href="{{ TASKFY_BASE_URL }}/trackfy/shipments/{{ s.id }}/" target="_blank" rel="noopener">{{ s.report }}</a></td>
+                <td class="mono">{{ s.container }}</td>
+                <td>{{ s.owner }}</td>
+                <td><span class="dim">{{ s.origin }}</span> → {{ s.destination }}</td>
+                <td class="mono">{{ s.sent }}</td>
+                <td class="num">{{ s.items }}</td>
+                <td class="num">
+                  {% if s.days_open >= 15 %}<span class="chip red">{{ s.days_open }} d</span>
+                  {% elif s.days_open >= 7 %}<span class="chip amber">{{ s.days_open }} d</span>
+                  {% else %}<span class="chip green">{{ s.days_open }} d</span>{% endif %}
+                </td>
+                <td>
+                  {% if s.status == "sent" %}<span class="chip amber">Sent</span>
+                  {% else %}<span class="chip">{{ s.status_label }}</span>{% endif %}
+                </td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="8" style="text-align:center; color:var(--fg-3); padding: var(--s-4);">Nothing waiting — every shipment has been received. ✔</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div class="card-head" style="border-top: 1px solid var(--line-1);">
+          <div class="lhs"><span class="tag">DONE</span><h3>Recently received</h3></div>
+          <div class="rhs">LAST {{ trk.recent_received|length }} · LEAD = SENT → RECEIVED</div>
+        </div>
+        <table class="tbl trk-table">
+          <thead>
+            <tr>
+              <th>Report</th>
+              <th>Container</th>
+              <th>Route</th>
+              <th>Received</th>
+              <th class="num">Items</th>
+              <th class="num">Issues</th>
+              <th class="num">Lead</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in trk.recent_received %}
+              <tr>
+                <td><a class="c3-probe-link" href="{{ TASKFY_BASE_URL }}/trackfy/shipments/{{ s.id }}/" target="_blank" rel="noopener">{{ s.report }}</a></td>
+                <td class="mono">{{ s.container }}</td>
+                <td><span class="dim">{{ s.origin }}</span> → {{ s.destination }}</td>
+                <td class="mono">{{ s.received }}</td>
+                <td class="num">{{ s.items }}</td>
+                <td class="num">{% if s.issues %}<span class="chip red">{{ s.issues }}</span>{% else %}<span class="dim">0</span>{% endif %}</td>
+                <td class="num mono">{% if s.lead_days is not None %}{{ s.lead_days }} d{% else %}—{% endif %}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="7" style="text-align:center; color:var(--fg-3); padding: var(--s-4);">No received shipments yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="lhs"><span class="tag">RISK</span><h3>Aging and receive issues</h3></div>
+        <div class="rhs">WHAT NEEDS ATTENTION</div>
+      </div>
+      <div class="card-body">
+        <div class="trk-side">
+          <div>
+            <div class="trk-block-title">Open shipments aging</div>
+            <div class="trk-bars">
+              <div class="trk-bar-row">
+                <span class="lbl">&lt; 7 d</span>
+                <span class="track"><i style="--tone: var(--signal-green); --w: {% widthratio k.aging_lt7|default:0 k.shipments_open|default:1 100 %}%"></i></span>
+                <span class="val">{{ k.aging_lt7|default:0 }}</span>
+              </div>
+              <div class="trk-bar-row">
+                <span class="lbl">7–14 d</span>
+                <span class="track"><i style="--tone: var(--signal-amber); --w: {% widthratio k.aging_7_14|default:0 k.shipments_open|default:1 100 %}%"></i></span>
+                <span class="val">{{ k.aging_7_14|default:0 }}</span>
+              </div>
+              <div class="trk-bar-row">
+                <span class="lbl">≥ 15 d</span>
+                <span class="track"><i style="--tone: var(--signal-red); --w: {% widthratio k.aging_gte15|default:0 k.shipments_open|default:1 100 %}%"></i></span>
+                <span class="val">{{ k.aging_gte15|default:0 }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="trk-block-title">Receive issues — missing / damaged</div>
+            <div class="trk-list">
+              {% for i in trk.recent_issues %}
+                <div class="trk-issue">
+                  <div class="l1">
+                    <a class="c3-probe-link" href="{{ TASKFY_BASE_URL }}/trackfy/shipments/{{ i.shipment_id }}/" target="_blank" rel="noopener">{{ i.report }}</a>
+                    <span class="dim">{{ i.container }}</span>
+                    {% if i.kind == "missing" %}<span class="chip red">Missing</span>{% else %}<span class="chip amber">Damaged</span>{% endif %}
+                  </div>
+                  <div class="l2" title="{{ i.description }}">{{ i.description|truncatechars:70 }}</div>
+                </div>
+              {% empty %}
+                <div class="trk-list-row"><span class="dim">No missing or damaged items.</span></div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% endif %}
+  {% endwith %}
+</section>
+
+{# ===== S05 — 3D MODEL ===== #}
+<section id="s05" class="section" style="border-bottom: none;">
+  <div class="section-head">
+    <div>
+      <span class="tag">S05 · 3D Model</span>
       <h2>Project visual review</h2>
     </div>
     <div class="meta p6-source-meta c3-meta-inline">
@@ -1016,6 +1603,8 @@
 
 {% block vendor_js %}
 {{ block.super }}
+{# S03 · mesma versao de Chart.js que a tela /fabrication/ do SPDM usa #}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
 <script type="importmap">
 {
   "imports": {
@@ -2665,6 +3254,687 @@
     document.querySelectorAll('[data-c3-poplaced-chart]').forEach(function(el){ ro.observe(el); });
   }
 
+  // ===== S03 · Fabrication progress — porte de /fabrication/ do SPDM =====
+  // Mesmos tres graficos (curva S, tonelagem por campanha, progresso por
+  // estagio), mesmos filtros (busca / disciplina / KPI) e a mesma arvore WBS.
+  function fabInit() {
+    var stagesMeta = document.getElementById("fabStagesMeta");
+    var chartsData = document.getElementById("fabChartsData");
+    var body = document.getElementById("fabBody");
+    if (!stagesMeta || !chartsData || !body) return;
+
+    var STAGES, CHARTS;
+    try {
+      STAGES = JSON.parse(stagesMeta.textContent || "[]");
+      CHARTS = JSON.parse(chartsData.textContent || "{}");
+    } catch (err) {
+      return;
+    }
+    if (!CHARTS.curve) CHARTS.curve = { labels: [], planned: [], actual: [] };
+    if (!CHARTS.campaign) CHARTS.campaign = { labels: [], planned: [], done: [] };
+
+    var wrap = document.querySelector("#s03 .fab-wrap");
+    var DETAIL_URL = wrap ? (wrap.dataset.fabDetailUrl || "") : "";
+    var COLSPAN = STAGES.length + 10;
+    function escapeHtml(text) {
+      var div = document.createElement("div");
+      div.textContent = text == null ? "" : String(text);
+      return div.innerHTML;
+    }
+
+    var state = { kpi: "all", disc: "all", q: "" };
+    var allRows = Array.prototype.slice.call(body.querySelectorAll("tr.fab-row"));
+    var treeNodeRows = Array.prototype.slice.call(body.querySelectorAll("tr.fab-tree-node"));
+    var treeNodeByKey = {};
+    var expandedNodes = {};
+    treeNodeRows.forEach(function (tr) { treeNodeByKey[tr.dataset.nodeKey] = tr; });
+    // Estado inicial: tudo recolhido — somente os nos L1 visiveis; cada
+    // clique abre um nivel (e busca/filtros revelam tudo que casar).
+
+    var stageChart = null;
+
+    function baseMatch(tr) {
+      return state.disc === "all" || tr.dataset.discipline === state.disc;
+    }
+    function rowMatch(tr) {
+      if (!baseMatch(tr)) return false;
+      if (state.kpi === "ready" && tr.dataset.status !== "ready") return false;
+      if (state.kpi === "pending" && !(parseInt(tr.dataset.pend, 10) > 0)) return false;
+      if (state.q && tr.dataset.search.indexOf(state.q) === -1) return false;
+      return true;
+    }
+    function ancestorsExpanded(parentKey) {
+      var key = parentKey;
+      while (key) {
+        if (!expandedNodes[key]) return false;
+        var parent = treeNodeByKey[key];
+        key = parent ? (parent.dataset.parentKey || "") : "";
+      }
+      return true;
+    }
+    function rowBelongsToNode(row, nodeKey) {
+      var path = row.dataset.wbsPath || "";
+      return path === nodeKey || path.indexOf(nodeKey + " › ") === 0;
+    }
+    function subOf(tr) {
+      var next = tr.nextElementSibling;
+      return (next && next.classList.contains("fab-sub") && next.dataset.parent === tr.dataset.pk) ? next : null;
+    }
+
+    // ── Subnivel do desenho — porte fiel do renderDetail do SPDM ──
+    // (sem as colunas de spool, que dependem de edicao no proprio SPDM).
+    function shortDate(value) { // "2026-07-11", "3/28/2026", "2026-07-11 · PO-X" → dd/mm/yy
+      if (!value) return "";
+      var text = String(value).split(" · ")[0].trim();
+      var m = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return m[3] + "/" + m[2] + "/" + m[1].slice(2);
+      m = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (m) return ("0" + m[2]).slice(-2) + "/" + ("0" + m[1]).slice(-2) + "/" + m[3].slice(2);
+      return text;
+    }
+    function formatFabricationQty(value) {
+      var parsed = Number(String(value == null || value === "" ? "0" : value).replace(",", "."));
+      if (!Number.isFinite(parsed)) return String(value == null ? "" : value);
+      var sign = parsed < 0 ? -1 : 1;
+      var rounded = sign * Math.round((Math.abs(parsed) + Number.EPSILON) * 100) / 100;
+      if (Math.abs(rounded) < 0.005) rounded = 0;
+      return String(rounded.toFixed(2)).replace(/\.?0+$/, "") || "0";
+    }
+    // ── Spools (read-only) — mesmas funcoes do SPDM, sem edicao ──
+    function spoolColumnsFor(table) {
+      var raw = Array.isArray(table.spool_columns) ? table.spool_columns : [];
+      if (!raw.length) raw = [{ index: 1, source_code: "" }];
+      return raw.map(function (column, position) {
+        var index = parseInt(column.index, 10);
+        if (!index || index < 1) index = position + 1;
+        return { index: index, sourceCode: column.source_code || column.code || "" };
+      }).sort(function (a, b) { return a.index - b.index; }).map(function (column, position) {
+        column.label = "Spool " + (position + 1);
+        return column;
+      });
+    }
+    function spoolValueFor(item, column, position) {
+      var values = item.spool_values;
+      var value;
+      if (Array.isArray(values)) {
+        value = values[position];
+      } else if (values && typeof values === "object") {
+        value = values[String(column.index)];
+        if (value === undefined) value = values[column.index];
+      }
+      if (column.index === 1 && item.spool_residual !== undefined && item.spool_residual !== null) {
+        value = item.spool_residual;
+      }
+      if ((value === undefined || value === null || value === "") && column.index === 1) {
+        value = item.qty_raw !== undefined && item.qty_raw !== null ? item.qty_raw : item.qty;
+      }
+      return value === undefined || value === null ? "" : String(value);
+    }
+    function renderSpoolCell(table, item, column, position) {
+      var value = spoolValueFor(item, column, position);
+      var rowError = position === 0 && item.spool_error
+        ? '<span class="fab-spool-row-error" title="' + escapeHtml(item.spool_error) + '">!</span>'
+        : "";
+      return '<td class="fab-spool-qty">' + rowError +
+        '<span class="fab-spool-value" data-spool-value="' + column.index + '" title="' +
+        (position === 0 ? "Automatically calculated remaining quantity" : "Saved spool quantity") + '">' +
+        escapeHtml(formatFabricationQty(value || "0")) + "</span></td>";
+    }
+    function renderDetail(data) {
+      if (data.available === false) {
+        return '<div class="fab-sub-loading">DATAFY unavailable: ' + escapeHtml(data.error || "could not read the database.") + "</div>";
+      }
+      if (!data.linked) {
+        return '<div class="fab-sub-loading">Drawing not linked to a Document — no material list available.</div>';
+      }
+      if (!data.tables.length) {
+        return '<div class="fab-sub-loading">No material tables extracted for this drawing.</div>';
+      }
+      return data.tables.map(function (t) {
+        var spoolColumns = spoolColumnsFor(t);
+        var spoolHeaders = spoolColumns.map(function (column) {
+          var title = column.sourceCode
+            ? column.label + " · Extracted code: " + column.sourceCode
+            : column.label + " · No source code detected";
+          return '<th class="fab-spool-th" title="' + escapeHtml(title) + '"><span class="fab-spool-th-label">' + escapeHtml(column.label) + "</span></th>";
+        }).join("");
+        var spoolCols = spoolColumns.map(function () { return '<col style="width:68px">'; }).join("");
+        var minWidth = Math.max(900, 804 + (spoolColumns.length * 68));
+        var items = t.items.map(function (it) {
+          var status = '<span class="fab-sub-motivo ' + escapeHtml(it.status) + '">' + escapeHtml(it.status_label) + "</span>";
+          var po = it.po
+            ? '<span class="po" title="' + escapeHtml(it.po) + '">' + escapeHtml(it.po) + "</span>"
+            : '<span class="po none">—</span>';
+          var yard;
+          if (it.yard === "ready") yard = '<span class="yd ready" title="Delivered at yard' + (it.yard_date ? " — " + escapeHtml(it.yard_date) : "") + '"><i class="bi bi-geo-alt-fill"></i> ' + (it.yard_date ? shortDate(it.yard_date) : "at yard") + "</span>";
+          else if (it.yard === "partial") yard = '<span class="yd partial" title="Partially delivered at yard"><i class="bi bi-geo-alt"></i> partial</span>';
+          else if (it.yard === "waiting") yard = '<span class="yd waiting" title="Purchased — awaiting delivery at yard' + (it.expected ? " · expected " + escapeHtml(it.expected) : "") + '"><i class="bi bi-truck"></i> ' + (it.expected ? shortDate(it.expected) : "waiting") + "</span>";
+          else yard = '<span class="yd none">—</span>';
+          var plan = it.plan
+            ? '<span class="pl" title="' + escapeHtml(it.plan_tooltip || it.plan) + '">' + shortDate(it.plan) + (/( |^)A( |$)|A$/.test(it.plan) ? " A" : "") + "</span>"
+            : (it.expected ? '<span class="pl" title="PO expected date ' + escapeHtml(it.expected) + '">' + shortDate(it.expected) + "</span>" : '<span class="pl none">—</span>');
+          var qty = it.qty !== undefined && it.qty !== null && it.qty !== ""
+            ? escapeHtml(it.qty) + (it.unit ? " " + escapeHtml(it.unit) : "")
+            : "—";
+          var spoolCells = spoolColumns.map(function (column, position) {
+            return renderSpoolCell(t, it, column, position);
+          }).join("");
+          return '<tr data-spool-item="' + it.item_id + '">' +
+            '<td class="no">' + escapeHtml(it.item || "") + "</td>" +
+            '<td class="mat" title="' + escapeHtml(it.material) + '">' + escapeHtml(it.material) + "</td>" +
+            spoolCells +
+            '<td class="qt">' + qty + "</td>" +
+            "<td>" + status + "</td><td>" + po + "</td><td>" + yard + "</td><td>" + plan + "</td>" +
+            "</tr>";
+        }).join("");
+        var pcls = t.pct >= 100 ? "done" : t.pct > 0 ? "started" : "";
+        var ycls = t.yard_pct >= 100 ? "done" : t.yard_pct > 0 ? "started" : "";
+        return '<div class="fab-sub-table">' +
+          '<div class="fab-sub-table-h">' +
+          '<b title="' + escapeHtml(t.name) + '">' + escapeHtml(t.name) + "</b>" +
+          '<span class="pg">page ' + escapeHtml(t.page) + "</span>" +
+          '<span class="scope' + (t.in_fabrication ? " fab" : "") + '">' + escapeHtml(t.scope_label || t.scope || "table") + "</span>" +
+          (t.yard_released ? '<span class="rel" title="All items of this sheet are at yard — fabrication can start."><i class="bi bi-unlock"></i> released</span>' : "") +
+          '<span class="stats">' +
+          '<span title="Items covered by PO">PO <span class="pc fab-pct ' + pcls + '">' + t.covered + "/" + t.total + " · " + t.pct + "%</span></span>" +
+          '<span title="Items delivered at yard">yard <span class="pc fab-yard-num ' + ycls + '">' + t.yard + "/" + t.total + " · " + t.yard_pct + "%</span></span>" +
+          "</span></div>" +
+          '<div class="fab-sub-data-wrap"><table class="fab-sub-data" style="min-width:' + minWidth + 'px">' +
+          '<colgroup><col style="width:30px"><col>' + spoolCols + '<col style="width:68px"><col style="width:88px"><col style="width:92px"><col style="width:106px"><col style="width:100px"></colgroup>' +
+          "<thead><tr><th>#</th><th>Material</th>" + spoolHeaders + "<th style=\"text-align:right;\">Qty</th><th>Status</th><th>PO</th><th>At yard</th><th>Proc. plan</th></tr></thead>" +
+          "<tbody>" + items + "</tbody></table></div></div>";
+      }).join("");
+    }
+
+    // ── Modais (porte fiel do SPDM) ───────────────────────────
+    function openModal(id) { var m = document.getElementById(id); if (m) m.hidden = false; }
+    function closeModal(id) { var m = document.getElementById(id); if (m) m.hidden = true; }
+    document.querySelectorAll("#s03 [data-close]").forEach(function (el) {
+      el.addEventListener("click", function () { closeModal(el.dataset.close); });
+    });
+    document.addEventListener("keydown", function (ev) {
+      if (ev.key !== "Escape") return;
+      document.querySelectorAll("#s03 .fab-ovl:not([hidden])").forEach(function (m) { m.hidden = true; });
+    });
+
+    var PO_URL = wrap ? (wrap.dataset.fabPoUrl || "") : "";
+    var EXP_URL = wrap ? (wrap.dataset.fabExpUrl || "") : "";
+    var MOTIVO_ICON = {
+      sem_po: "bi-cart-x", po_insuficiente: "bi-cart-dash", po_consumida: "bi-cart-dash",
+      a_alocar: "bi-arrow-repeat", aguarda_entrega: "bi-truck", revisao: "bi-question-circle"
+    };
+    body.addEventListener("click", function (ev) {
+      var btn = ev.target.closest("[data-open-po]");
+      if (!btn || !PO_URL) return;
+      var tr = btn.closest("tr");
+      document.getElementById("fabPoDwg").textContent = tr.dataset.dwg;
+      document.getElementById("fabPoTitle").textContent = tr.dataset.title;
+      document.getElementById("fabPoStrip").hidden = true;
+      var tbody = document.getElementById("fabPoBody");
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--fb-fg-subtle);">Loading…</td></tr>';
+      openModal("fabPoModal");
+      fetch(PO_URL.replace(/0(\/po-pending\/?)$/, btn.dataset.openPo + "$1"), { credentials: "same-origin" })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          var start = document.getElementById("fabPoStart");
+          start.textContent = data.plan_start ? shortDate(data.plan_start) : "—";
+          start.className = "v";
+          var n = data.nums;
+          if (n) {
+            var cov = document.getElementById("fabPoCov");
+            cov.textContent = n.covered + "/" + n.total;
+            cov.className = "v" + (n.total && n.covered >= n.total ? " good" : "");
+            var miss = document.getElementById("fabPoMiss");
+            miss.textContent = n.uncovered;
+            miss.className = "v" + (n.uncovered > 0 ? " bad" : " good");
+            var yd = document.getElementById("fabPoYard");
+            yd.textContent = n.yard + "/" + n.total;
+            yd.className = "v" + (n.total && n.yard >= n.total ? " good" : n.yard > 0 ? " warn" : "");
+            var arr = document.getElementById("fabPoArr");
+            arr.textContent = n.arrival ? shortDate(n.arrival) : "—";
+            arr.className = "v" + (data.start_risk ? " warn" : "");
+            arr.title = data.start_risk_title || "";
+            document.getElementById("fabPoStrip").hidden = false;
+          }
+          if (!data.rows || !data.rows.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--fb-fg-subtle);">All fabrication items covered and delivered.</td></tr>';
+            return;
+          }
+          tbody.innerHTML = data.rows.map(function (r) {
+            var poEntries = Array.isArray(r.pos) ? r.pos : [];
+            var po = poEntries.length
+              ? '<span class="fab-po-list">' + poEntries.map(function (entry) {
+                  var risk = entry.risk
+                    ? '<span class="fab-po-risk" title="' + escapeHtml(entry.risk_title || "Material arrival risk") + '" aria-label="' + escapeHtml(entry.risk_title || "Material arrival risk") + '"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i></span>'
+                    : "";
+                  return '<span class="fab-po-entry"><span class="fab-po-num">' + escapeHtml(entry.number) + "</span>" + risk + "</span>";
+                }).join("") + "</span>"
+              : r.po
+                ? '<span class="fab-po-num">' + escapeHtml(r.po) + "</span>"
+                : '<span class="fab-po-none">—</span>';
+            var yard = r.expected
+              ? '<span class="fab-yard"><i class="bi bi-calendar-event" style="font-size:11px;"></i>' + escapeHtml(r.expected) + "</span>"
+              : '<span class="fab-yard none">—</span>';
+            var icon = MOTIVO_ICON[r.motivo] || "bi-circle";
+            var qty = r.qty !== undefined && r.qty !== null && r.qty !== ""
+              ? escapeHtml(formatFabricationQty(r.qty)) + (r.unit ? " " + escapeHtml(r.unit) : "")
+              : "—";
+            return "<tr>" +
+              '<td class="po-cell">' + po + "</td>" +
+              '<td class="mat">' + escapeHtml(r.material) + "</td>" +
+              '<td class="qty">' + qty + "</td>" +
+              "<td>" + yard + "</td>" +
+              '<td><span class="fab-motivo ' + escapeHtml(r.motivo) + '"><i class="bi ' + icon + '" style="font-size:10px;"></i>' + escapeHtml(r.motivo_label) + "</span></td>" +
+              "</tr>";
+          }).join("");
+        })
+        .catch(function () {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--fb-danger);">Failed to load coverage.</td></tr>';
+        });
+    });
+
+    var expBtn = document.getElementById("fabExpediteBtn");
+    if (expBtn && EXP_URL) expBtn.addEventListener("click", function () {
+      var tbody = document.getElementById("fabExpBody");
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--fb-fg-subtle);">Loading…</td></tr>';
+      openModal("fabExpModal");
+      fetch(EXP_URL, { credentials: "same-origin" })
+        .then(function (resp) { return resp.json(); })
+        .then(function (data) {
+          if (!data.rows || !data.rows.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--fb-fg-subtle);">Nothing to expedite — all allocated POs are delivered at yard.</td></tr>';
+            return;
+          }
+          tbody.innerHTML = data.rows.map(function (r) {
+            var prio = r.min_priority !== null && r.min_priority !== undefined
+              ? '<span class="fab-exp-prio" title="Highest drawing priority waiting on this PO">P' + r.min_priority + "</span> "
+              : "";
+            var drawings = prio + escapeHtml(r.drawings_top.join(", ")) +
+              (r.drawings_count > 3 ? ' <span style="color:var(--fb-fg-faint);">+' + (r.drawings_count - 3) + "</span>" : "");
+            var plan = r.plan_date
+              ? '<span class="fab-yard" title="' + escapeHtml(r.plan_stage) + '">' + shortDate(r.plan_date) + "</span>"
+              : '<span class="fab-yard none">—</span>';
+            var expected = r.expected
+              ? '<span class="fab-yard"><i class="bi bi-calendar-event" style="font-size:10px;"></i>' + shortDate(r.expected) + "</span>"
+              : '<span class="fab-yard none">—</span>';
+            return "<tr>" +
+              '<td><span class="fab-po-num">' + escapeHtml(r.po) + "</span></td>" +
+              "<td>" + expected + "</td>" +
+              "<td>" + plan + "</td>" +
+              '<td class="dws">' + drawings + "</td>" +
+              '<td class="qty">' + r.items + "</td>" +
+              "</tr>";
+          }).join("");
+        })
+        .catch(function () {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--fb-danger);">Failed to load.</td></tr>';
+        });
+    });
+
+    body.addEventListener("click", function (evt) {
+      var caret = evt.target.closest(".fab-caret");
+      if (!caret) return;
+      evt.stopPropagation();
+      var tr = caret.closest("tr.fab-row");
+      if (!tr || !DETAIL_URL) return;
+      // Mesmo comportamento do SPDM: fechar remove a sub-linha; reabrir refaz a consulta.
+      var existing = subOf(tr);
+      if (existing) {
+        existing.remove();
+        caret.classList.remove("open");
+        return;
+      }
+      caret.classList.add("open");
+      var sub = document.createElement("tr");
+      sub.className = "fab-sub";
+      sub.dataset.parent = tr.dataset.pk;
+      sub.innerHTML = '<td colspan="' + COLSPAN + '"><div class="fab-sub-box"><div class="fab-sub-loading">' +
+        '<i class="bi bi-arrow-repeat"></i> Loading materials…</div></div></td>';
+      tr.after(sub);
+
+      var url = DETAIL_URL.replace(/0(\/detail\/?)$/, tr.dataset.pk + "$1");
+      fetch(url, { credentials: "same-origin" })
+        .then(function (resp) {
+          if (!resp.ok) throw new Error("HTTP " + resp.status);
+          return resp.json();
+        })
+        .then(function (data) {
+          sub._fabDetailData = data;
+          sub.querySelector(".fab-sub-box").innerHTML = renderDetail(data);
+        })
+        .catch(function () {
+          sub.querySelector(".fab-sub-box").innerHTML = '<div class="fab-sub-loading" style="color:var(--fb-danger);">Failed to load materials.</div>';
+        });
+    });
+
+    function refreshStageChart() {
+      if (!stageChart) return;
+      var rows = allRows.filter(rowMatch);
+      var sums = STAGES.map(function () { return 0; });
+      var counts = STAGES.map(function () { return 0; });
+      rows.forEach(function (tr) {
+        var values = {};
+        try { values = JSON.parse(tr.dataset.stages || "{}"); } catch (_err) { values = {}; }
+        STAGES.forEach(function (stage, index) {
+          var raw = values[stage[0]];
+          if (raw === null || raw === undefined || raw === "") return;
+          var value = parseFloat(raw);
+          if (isNaN(value)) return;
+          sums[index] += value;
+          counts[index] += 1;
+        });
+      });
+      var averages = sums.map(function (sum, index) {
+        return counts[index] ? Math.round(sum / counts[index]) : null;
+      });
+      stageChart.data.datasets[0].data = averages;
+      stageChart.data.datasets[1].data = averages.map(function (value) {
+        return value === null ? null : 100 - value;
+      });
+      stageChart.update("none");
+      var sub = document.getElementById("fabStageSub");
+      if (sub) {
+        sub.textContent = "average progress · " + rows.length +
+          (rows.length === 1 ? " drawing" : " drawings") + " selected";
+      }
+    }
+
+    function applyFilters() {
+      var base = allRows.filter(baseMatch);
+      var total = base.length, ready = 0, pending = 0, sum = 0;
+      base.forEach(function (tr) {
+        if (tr.dataset.status === "ready") ready++;
+        if (parseInt(tr.dataset.pend, 10) > 0) pending++;
+        sum += parseFloat(tr.dataset.overall) || 0;
+      });
+      var elTotal = document.getElementById("kpiTotal");
+      var elReady = document.getElementById("kpiReady");
+      var elPending = document.getElementById("kpiPending");
+      var elAvg = document.getElementById("kpiAvg");
+      if (elTotal) elTotal.textContent = total;
+      if (elReady) elReady.textContent = ready;
+      if (elPending) elPending.textContent = pending;
+      if (elAvg) elAvg.textContent = (total ? (sum / total).toFixed(2) : "0.00") + "%";
+
+      var visible = 0;
+      var matchedRows = [];
+      var revealFiltered = state.q || state.kpi !== "all" || state.disc !== "all";
+      allRows.forEach(function (tr) {
+        var match = rowMatch(tr);
+        var show = match && (revealFiltered || ancestorsExpanded(tr.dataset.parentKey));
+        tr.hidden = !show;
+        var sub = subOf(tr);
+        if (sub) sub.hidden = !show;
+        if (match) { visible++; matchedRows.push(tr); }
+      });
+      treeNodeRows.forEach(function (tr) {
+        var key = tr.dataset.nodeKey;
+        var count = matchedRows.filter(function (row) { return rowBelongsToNode(row, key); }).length;
+        var parentOpen = revealFiltered || ancestorsExpanded(tr.dataset.parentKey || "");
+        tr.hidden = !count || !parentOpen;
+        tr.classList.toggle("collapsed", !revealFiltered && !expandedNodes[key]);
+        tr.setAttribute("aria-expanded", revealFiltered || !!expandedNodes[key] ? "true" : "false");
+        var badge = tr.querySelector(".fab-wbs-count");
+        if (badge) badge.textContent = count + " drawing(s)";
+      });
+      var countEl = document.getElementById("fabCount");
+      if (countEl) {
+        countEl.textContent = visible === total ? total + " drawings" : visible + " of " + total + " drawings";
+      }
+      var empty = document.getElementById("fabNoResults");
+      if (empty) empty.hidden = visible > 0 || allRows.length === 0;
+      document.querySelectorAll("#fabKpis .fab-kpi.filterable").forEach(function (el) {
+        el.classList.toggle("active", el.dataset.kpi === state.kpi && state.kpi !== "all");
+      });
+      refreshStageChart();
+    }
+
+    function initCharts() {
+      if (typeof Chart === "undefined") return;
+      // Paleta escura — mesmos graficos do SPDM, cores levantadas para o preto.
+      var GRID = "rgba(255,255,255,0.07)";
+      Chart.defaults.font.family = "Inter, 'IBM Plex Sans', sans-serif";
+      Chart.defaults.font.size = 9;
+      Chart.defaults.color = "#a8aeb8";
+
+      var curve = document.getElementById("fabCurve");
+      if (curve && CHARTS.curve.labels.length) {
+        new Chart(curve, {
+          type: "line",
+          data: {
+            labels: CHARTS.curve.labels,
+            datasets: [
+              {
+                label: "Planned (%)", data: CHARTS.curve.planned, borderColor: "#8b93a0",
+                borderDash: [5, 3], borderWidth: 1.5, pointRadius: 0, tension: 0.25, fill: false
+              },
+              {
+                label: "Actual (%)", data: CHARTS.curve.actual, borderColor: "#60a5fa",
+                backgroundColor: "rgba(96,165,250,.10)", borderWidth: 2, pointRadius: 2,
+                tension: 0.25, fill: true, spanGaps: false
+              }
+            ]
+          },
+          options: {
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+              legend: { position: "top", align: "end", labels: { boxWidth: 16, boxHeight: 2 } },
+              tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ": " + ctx.parsed.y + "%"; } } }
+            },
+            scales: {
+              y: { beginAtZero: true, min: 0, max: 100, grid: { color: GRID }, ticks: { callback: function (v) { return v + "%"; } } },
+              x: { grid: { display: false } }
+            }
+          }
+        });
+      } else if (curve) {
+        curve.parentElement.innerHTML = '<div class="fab-chart-empty">No P6 schedule points yet.</div>';
+      }
+
+      var camp = document.getElementById("fabCampChart");
+      if (camp && CHARTS.campaign.labels.length) {
+        new Chart(camp, {
+          type: "bar",
+          data: {
+            labels: CHARTS.campaign.labels,
+            datasets: [
+              { label: "Planned (t)", data: CHARTS.campaign.planned, backgroundColor: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.30)", borderWidth: 1 },
+              { label: "Fabricated (t)", data: CHARTS.campaign.done, backgroundColor: "rgba(34,197,94,.8)" }
+            ]
+          },
+          options: {
+            maintainAspectRatio: false,
+            plugins: { legend: { position: "top", align: "end", labels: { boxWidth: 10, boxHeight: 8 } } },
+            scales: { y: { beginAtZero: true, grid: { color: GRID } }, x: { grid: { display: false } } }
+          }
+        });
+      } else if (camp) {
+        camp.parentElement.innerHTML = '<div class="fab-chart-empty">No tonnage to show yet.</div>';
+      }
+
+      var st = document.getElementById("fabStageChart");
+      if (st) {
+        stageChart = new Chart(st, {
+          type: "bar",
+          data: {
+            labels: STAGES.map(function (s) { return s[2]; }),
+            datasets: [
+              { label: "Progress", data: [], backgroundColor: "rgba(96,165,250,.85)", borderRadius: 3, borderSkipped: false },
+              { label: "Remaining", data: [], backgroundColor: "rgba(255,255,255,0.10)", borderRadius: 3, borderSkipped: false }
+            ]
+          },
+          options: {
+            maintainAspectRatio: false,
+            indexAxis: "y",
+            plugins: {
+              legend: { position: "top", align: "end", labels: { boxWidth: 9, boxHeight: 7 } },
+              tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ": " + ctx.raw + "%"; } } }
+            },
+            scales: {
+              x: { beginAtZero: true, max: 100, stacked: true, grid: { color: GRID }, ticks: { callback: function (v) { return v + "%"; } } },
+              y: { stacked: true, grid: { display: false }, ticks: { autoSkip: false, font: { size: 8.5 } } }
+            }
+          }
+        });
+        refreshStageChart();
+      }
+    }
+
+    document.querySelectorAll("#fabKpis .fab-kpi.filterable").forEach(function (el) {
+      el.addEventListener("click", function () {
+        state.kpi = (state.kpi === el.dataset.kpi) ? "all" : el.dataset.kpi;
+        applyFilters();
+      });
+    });
+    document.querySelectorAll("#s03 .fab-chip[data-disc]").forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        state.disc = chip.dataset.disc;
+        document.querySelectorAll("#s03 .fab-chip[data-disc]").forEach(function (c) {
+          c.classList.toggle("active", c === chip);
+        });
+        applyFilters();
+      });
+    });
+    var search = document.getElementById("fabSearch");
+    if (search) {
+      search.addEventListener("input", function () {
+        state.q = search.value.trim().toLowerCase();
+        applyFilters();
+      });
+    }
+    // Cada no revela somente os filhos do proximo nivel.
+    treeNodeRows.forEach(function (tr) {
+      tr.addEventListener("click", function () {
+        var key = tr.dataset.nodeKey;
+        expandedNodes[key] = !expandedNodes[key];
+        applyFilters();
+      });
+    });
+
+    applyFilters();
+    // Os canvas ficam dentro de .section (content-visibility: auto): so tem
+    // layout quando visiveis, entao a criacao dos graficos e adiada.
+    c3WhenVisible(document.querySelector("#s03 .fab-charts"), initCharts);
+  }
+
+  // ===== S04 · Tracking (Trackfy / Taskfy) — graficos no visual do cockpit =====
+  function trkInit() {
+    var node = document.getElementById("trkChartsData");
+    if (!node || typeof Chart === "undefined") return;
+    var data;
+    try { data = JSON.parse(node.textContent || "{}"); } catch (err) { return; }
+    if (!data.monthly) return;
+
+    var GRID = "rgba(255,255,255,0.07)";
+    var PALETTE = ["#84cc16", "#6b7280", "#ef4444", "#fbbf24", "#38bdf8", "#a78bfa", "#5eead4", "#94a3b8"];
+
+    function renderFlow() {
+      var el = document.getElementById("trkFlowChart");
+      if (!el || el.dataset.trkRendered === "1") return;
+      el.dataset.trkRendered = "1";
+      if (!data.monthly.labels.length) {
+        el.parentElement.innerHTML = '<div class="fab-chart-empty" style="color:#6b7280;display:grid;place-items:center;height:100%;font-size:10px;">No shipments yet.</div>';
+        return;
+      }
+      new Chart(el, {
+        type: "bar",
+        data: {
+          labels: data.monthly.labels,
+          datasets: [
+            { label: "Sent", data: data.monthly.sent, backgroundColor: "rgba(251,191,36,.85)", borderRadius: 3, maxBarThickness: 26 },
+            { label: "Received", data: data.monthly.received, backgroundColor: "rgba(132,204,22,.85)", borderRadius: 3, maxBarThickness: 26 }
+          ]
+        },
+        options: {
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: GRID }, ticks: { precision: 0 } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    function renderItems() {
+      var el = document.getElementById("trkItemsChart");
+      if (!el || el.dataset.trkRendered === "1") return;
+      el.dataset.trkRendered = "1";
+      var values = data.items.values || [];
+      if (!values.length || values.reduce(function (a, b) { return a + b; }, 0) === 0) {
+        el.parentElement.innerHTML = '<div style="color:#6b7280;display:grid;place-items:center;height:100%;font-size:10px;">No shipment items yet.</div>';
+        return;
+      }
+      new Chart(el, {
+        type: "doughnut",
+        data: {
+          labels: data.items.labels,
+          datasets: [{
+            data: values,
+            backgroundColor: ["#84cc16", "#6b7280", "#ef4444", "#fbbf24"],
+            borderColor: "#0f1115",
+            borderWidth: 2,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          maintainAspectRatio: false,
+          cutout: "62%",
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    function renderFleet() {
+      var el = document.getElementById("trkFleetChart");
+      if (!el || el.dataset.trkRendered === "1") return;
+      el.dataset.trkRendered = "1";
+      var labels = data.containers.labels || [];
+      if (!labels.length) {
+        el.parentElement.innerHTML = '<div style="color:#6b7280;display:grid;place-items:center;height:100%;font-size:10px;">No containers registered.</div>';
+        return;
+      }
+      // cor pelo significado do status, nao pela posicao
+      function fleetColor(label, i) {
+        var t = String(label).toLowerCase();
+        if (t.indexOf("unavailable") >= 0) return "#6b7280";
+        if (t.indexOf("transit") >= 0) return "#fbbf24";
+        if (t.indexOf("available") >= 0 || t.indexOf("on board") >= 0) return "#84cc16";
+        return PALETTE[i % PALETTE.length];
+      }
+      new Chart(el, {
+        type: "bar",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Containers",
+            data: data.containers.values,
+            backgroundColor: labels.map(function (l, i) { return fleetColor(l, i); }),
+            borderRadius: 3,
+            maxBarThickness: 22
+          }]
+        },
+        options: {
+          maintainAspectRatio: false,
+          indexAxis: "y",
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { beginAtZero: true, grid: { color: GRID }, ticks: { precision: 0 } },
+            y: { grid: { display: false }, ticks: { autoSkip: false, font: { size: 9 } } }
+          }
+        }
+      });
+    }
+
+    Chart.defaults.font.family = "'IBM Plex Sans', Inter, sans-serif";
+    Chart.defaults.font.size = 9;
+    Chart.defaults.color = "#a8aeb8";
+    c3WhenVisible(document.getElementById("trkFlowChart"), renderFlow);
+    c3WhenVisible(document.getElementById("trkItemsChart"), renderItems);
+    c3WhenVisible(document.getElementById("trkFleetChart"), renderFleet);
+  }
+
   function c3SetGridCell(row, col, value, suffix) {
     var cell = row ? row.querySelector('[data-col="' + col + '"]') : null;
     if (!cell) return;
@@ -3434,6 +4704,8 @@
       renderC3MonthLoad(document.querySelector('[data-c3-monthload]'), C3_MONTHLOAD_PAYLOAD);
     });
     renderAllPoPlaced();
+    fabInit();
+    trkInit();
     initC3PendingExports();
     setupPoPlacedResize();
     initC3ForecastControls();
@@ -3449,9 +4721,15 @@
     var navMeta = document.querySelector('#c3-section-nav .sn-meta');
     var navMetaDefault = navMeta ? navMeta.innerHTML : '';
     var navMeta3d = '<span>Model · <b>Bonga North Project</b></span><span>·</span><span><b>Local GLB</b> · 3D hierarchy</span>';
+    var navMetaFab = '<span>Source · <b>P6 schedule</b></span><span>·</span><span><b>SPDM</b> · fabrication packages</span>';
+    var navMetaTrk = '<span>Source · <b>Trackfy</b></span><span>·</span><span><b>Taskfy</b> · container shipments</span>';
     function activate(id){
       tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.target === id); });
-      if (navMeta) navMeta.innerHTML = id === 's03' ? navMeta3d : navMetaDefault;
+      if (!navMeta) return;
+      if (id === 's05') navMeta.innerHTML = navMeta3d;
+      else if (id === 's04') navMeta.innerHTML = navMetaTrk;
+      else if (id === 's03') navMeta.innerHTML = navMetaFab;
+      else navMeta.innerHTML = navMetaDefault;
     }
     tabs.forEach(function(t){
       t.addEventListener('click', function(e){
@@ -3463,7 +4741,7 @@
         activate(t.dataset.target);
       });
     });
-    var secs = ['s00','s01','s02','s03'];
+    var secs = ['s00','s01','s02','s03','s04','s05'];
     window.addEventListener('scroll', function(){
       var pos = window.scrollY + 200;
       var cur = secs[0];

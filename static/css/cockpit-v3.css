@@ -49,6 +49,7 @@
   --campaign-tam: #a78bfa;
   --campaign-none: #6b7280;
 
+
   --plan: rgba(255, 255, 255, 0.18);
   --actual: var(--signal-amber);
 
@@ -119,6 +120,7 @@
   --campaign-4th: #b45309;
   --campaign-tam: #6d28d9;
   --campaign-none: #6b7280;
+
 
   color-scheme: light;
 }
@@ -3143,7 +3145,7 @@ button.c3-export-link {
 .cockpit-v3 .dx-supply-scope-view.is-active { display: block; }
 
 /* 3D consult viewer wrapper inside .card-body */
-.cockpit-v3 #s03 {
+.cockpit-v3 #s05 {
   --bg-0: #0a0b0d;
   --bg-1: #0f1115;
   --bg-2: #14171c;
@@ -3171,7 +3173,7 @@ button.c3-export-link {
 .cockpit-v3 .c3-model-card {
   overflow: hidden;
 }
-.cockpit-v3 #s03 .c3-model-card {
+.cockpit-v3 #s05 .c3-model-card {
   background: var(--bg-1);
   border-color: var(--line-1);
 }
@@ -3179,7 +3181,7 @@ button.c3-export-link {
   padding: var(--s-3);
   overflow: hidden;
 }
-.cockpit-v3 #s03 .c3-model-card .card-body {
+.cockpit-v3 #s05 .c3-model-card .card-body {
   background: var(--bg-0);
 }
 .cockpit-v3 .dx-project-consult {
@@ -3214,7 +3216,7 @@ button.c3-export-link {
   min-height: 0;
   overflow: hidden;
 }
-.cockpit-v3 #s03 .dx-project-tree-panel {
+.cockpit-v3 #s05 .dx-project-tree-panel {
   background: linear-gradient(180deg, rgba(15, 17, 21, 0.98), rgba(10, 11, 13, 0.98));
   border-color: rgba(56, 189, 248, 0.10);
 }
@@ -3264,7 +3266,7 @@ button.c3-export-link {
 }
 .cockpit-v3 .dx-project-tabs button.is-active { background: var(--signal-amber); color: #0a0b0d; border-color: var(--signal-amber); font-weight: 600; }
 .cockpit-v3 .dx-project-tree-status { font-family: var(--font-mono); font-size: 10px; color: var(--fg-3); padding: 4px 0; }
-.cockpit-v3 #s03 .dx-project-tree-status {
+.cockpit-v3 #s05 .dx-project-tree-status {
   background: rgba(56, 189, 248, 0.045);
   border: 1px solid rgba(56, 189, 248, 0.11);
   border-radius: var(--r-1);
@@ -3473,7 +3475,7 @@ button.c3-export-link {
   min-height: 0;
   overflow: hidden;
 }
-.cockpit-v3 #s03 .dx-project-viewer-panel {
+.cockpit-v3 #s05 .dx-project-viewer-panel {
   background: var(--bg-1);
   border-color: var(--line-1);
 }
@@ -5070,47 +5072,47 @@ button.c3-export-link {
     min-width: 620px;
   }
 
-  .cockpit-v3 #s03 .c3-model-card .card-body {
+  .cockpit-v3 #s05 .c3-model-card .card-body {
     padding: 6px;
   }
 
-  .cockpit-v3 #s03 .dx-project-consult-shell {
+  .cockpit-v3 #s05 .dx-project-consult-shell {
     gap: 8px;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-panel {
+  .cockpit-v3 #s05 .dx-project-tree-panel {
     height: min(340px, 58vh);
     max-height: min(340px, 58vh);
     padding: 7px;
     gap: 6px;
   }
 
-  .cockpit-v3 #s03 .dx-project-search {
+  .cockpit-v3 #s05 .dx-project-search {
     min-height: 30px;
     padding: 5px 7px;
     gap: 5px;
   }
 
-  .cockpit-v3 #s03 .dx-project-search input {
+  .cockpit-v3 #s05 .dx-project-search input {
     font-size: 11px;
   }
 
-  .cockpit-v3 #s03 .dx-project-lod-strip {
+  .cockpit-v3 #s05 .dx-project-lod-strip {
     gap: 3px;
   }
 
-  .cockpit-v3 #s03 .dx-project-lod-strip span {
+  .cockpit-v3 #s05 .dx-project-lod-strip span {
     min-height: 34px;
     padding: 5px 4px;
     justify-content: center;
   }
 
-  .cockpit-v3 #s03 .dx-project-lod-strip strong {
+  .cockpit-v3 #s05 .dx-project-lod-strip strong {
     font-size: 10px;
     line-height: 1.05;
   }
 
-  .cockpit-v3 #s03 .dx-project-lod-strip small {
+  .cockpit-v3 #s05 .dx-project-lod-strip small {
     margin-top: 2px;
     font-size: 7.5px;
     line-height: 1.1;
@@ -5118,8 +5120,8 @@ button.c3-export-link {
     white-space: nowrap;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-status,
-  .cockpit-v3 #s03 .dx-project-tree-summary {
+  .cockpit-v3 #s05 .dx-project-tree-status,
+  .cockpit-v3 #s05 .dx-project-tree-summary {
     padding: 6px 7px;
     font-size: 9px;
     line-height: 1.32;
@@ -5129,21 +5131,21 @@ button.c3-export-link {
     -webkit-line-clamp: 2;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-summary {
+  .cockpit-v3 #s05 .dx-project-tree-summary {
     margin-bottom: 5px;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-summary.is-datafy-focus {
+  .cockpit-v3 #s05 .dx-project-tree-summary.is-datafy-focus {
     display: flex;
     -webkit-line-clamp: unset;
     overflow: visible;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-list {
+  .cockpit-v3 #s05 .dx-project-tree-list {
     padding: 0 1px 5px;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-item {
+  .cockpit-v3 #s05 .dx-project-tree-item {
     grid-template-columns: 16px minmax(0, 1fr) auto;
     min-height: 32px;
     gap: 5px;
@@ -5151,26 +5153,26 @@ button.c3-export-link {
     padding: 5px 6px 5px calc(6px + (var(--level, 0) * 8px));
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-item::before {
+  .cockpit-v3 #s05 .dx-project-tree-item::before {
     top: 7px;
     bottom: 7px;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-caret {
+  .cockpit-v3 #s05 .dx-project-tree-caret {
     width: 16px;
     height: 16px;
     font-size: 9px;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-text strong {
+  .cockpit-v3 #s05 .dx-project-tree-text strong {
     font-size: 10.5px;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-text small {
+  .cockpit-v3 #s05 .dx-project-tree-text small {
     font-size: 8.5px;
   }
 
-  .cockpit-v3 #s03 .dx-project-tree-item em {
+  .cockpit-v3 #s05 .dx-project-tree-item em {
     max-width: 58px;
     padding: 2px 5px;
     font-size: 8px;
@@ -5191,3 +5193,111 @@ button.c3-export-link {
     }
   }
 }
+
+/* ============================================================
+   S04 · TRACKING (Trackfy / Taskfy) — componentes leves no
+   vocabulario do cockpit (cards, kpi-strip, legend, tbl)
+   ============================================================ */
+.cockpit-v3 .trk-chart { position: relative; height: 280px; }
+.cockpit-v3 .trk-chart.is-short { height: 220px; }
+
+.cockpit-v3 .trk-side { display: flex; flex-direction: column; gap: var(--s-4); }
+
+.cockpit-v3 .trk-block-title {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-3);
+  margin-bottom: var(--s-2);
+}
+
+.cockpit-v3 .trk-bars { display: flex; flex-direction: column; gap: var(--s-2); }
+.cockpit-v3 .trk-bar-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: var(--s-2);
+}
+.cockpit-v3 .trk-bar-row .lbl {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+.cockpit-v3 .trk-bar-row .track {
+  height: 10px;
+  border-radius: var(--r-1);
+  background: var(--bg-3);
+  border: 1px solid var(--line-1);
+  overflow: hidden;
+}
+.cockpit-v3 .trk-bar-row .track i {
+  display: block;
+  height: 100%;
+  width: var(--w, 0%);
+  background: var(--tone, var(--signal-amber));
+}
+.cockpit-v3 .trk-bar-row .val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--fg-1);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cockpit-v3 .trk-list { display: flex; flex-direction: column; }
+.cockpit-v3 .trk-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line-1);
+  font-size: 11px;
+  color: var(--fg-2);
+}
+.cockpit-v3 .trk-list-row:last-child { border-bottom: none; }
+.cockpit-v3 .trk-list-row b {
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cockpit-v3 .trk-list-row .n {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--fg-0);
+  font-variant-numeric: tabular-nums;
+}
+
+.cockpit-v3 .trk-issue {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--line-1);
+}
+.cockpit-v3 .trk-issue:last-child { border-bottom: none; }
+.cockpit-v3 .trk-issue .l1 {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--fg-1);
+}
+.cockpit-v3 .trk-issue .l2 {
+  font-size: 10.5px;
+  color: var(--fg-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cockpit-v3 .trk-table td .chip { text-transform: uppercase; }
