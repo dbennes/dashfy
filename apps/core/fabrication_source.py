@@ -287,6 +287,45 @@ def _next_month(value: date_cls) -> date_cls:
     return date_cls(year, month, 1)
 
 
+def _continuous_month_keys(keys) -> list[str]:
+    """Return every calendar month between the first and last data point."""
+    ordered = sorted(set(keys))
+    if not ordered:
+        return []
+    cursor = date_cls.fromisoformat(f"{ordered[0]}-01")
+    finish = date_cls.fromisoformat(f"{ordered[-1]}-01")
+    months: list[str] = []
+    while cursor <= finish:
+        months.append(_month_key(cursor))
+        cursor = _next_month(cursor)
+    return months
+
+
+def _reported_progress_by_month(report_rows: list[dict]) -> dict[str, Decimal]:
+    """Return the latest valid absolute reported percentage for each month."""
+    latest: dict[str, tuple[date_cls, int, int, Decimal]] = {}
+    for position, row in enumerate(report_rows):
+        report_date = _as_date(row.get("report_date"))
+        if not report_date:
+            continue
+        try:
+            reported = Decimal(str(row.get("reported_overall_pct")))
+        except (InvalidOperation, TypeError, ValueError):
+            continue
+        if not reported.is_finite() or reported < 0 or reported > 100:
+            continue
+        try:
+            report_id = int(row.get("id") or 0)
+        except (TypeError, ValueError):
+            report_id = 0
+        key = _month_key(report_date)
+        candidate = (report_date, report_id, position, reported)
+        previous = latest.get(key)
+        if previous is None or candidate[:3] >= previous[:3]:
+            latest[key] = candidate
+    return {key: value[3] for key, value in latest.items()}
+
+
 def _add_time_phased_tons(
     target: dict[str, Decimal], start: date_cls, finish: date_cls, tons: Decimal
 ) -> None:
@@ -362,11 +401,23 @@ select p.id, p.code, p.name, p.campaign, p.discipline, p.drawing_number, p.dwg_k
 
 _PROGRESS_SQL = """
 select e.progress_date, sum(e.tons_delta) as total
-  from fabrication_fabricationprogressentry e
+ from fabrication_fabricationprogressentry e
   join fabrication_fabricationpackage p on p.id = e.package_id
  where p.is_active = true
+   and p.discipline = 'piping'
  group by e.progress_date
  order by e.progress_date
+"""
+
+_WEEKLY_PROGRESS_REPORT_RELATION_SQL = """
+select to_regclass('public.fabrication_fabricationweeklyprogressreport') as relation_name
+"""
+
+_WEEKLY_PROGRESS_REPORT_SQL = """
+select id, report_date, reported_overall_pct
+  from public.fabrication_fabricationweeklyprogressreport
+ where reported_overall_pct is not null
+ order by report_date, id
 """
 
 _IMPORT_SQL = """
@@ -375,6 +426,15 @@ select original_filename, imported_at, packages_total, packages_linked, activiti
  order by imported_at desc
  limit 1
 """
+
+
+def _weekly_progress_report_rows(cursor, rows_reader) -> list[dict]:
+    """Read report rows only after PostgreSQL confirms the new table exists."""
+    relation_rows = rows_reader(cursor, _WEEKLY_PROGRESS_REPORT_RELATION_SQL)
+    if not relation_rows or not relation_rows[0].get("relation_name"):
+        return []
+    return rows_reader(cursor, _WEEKLY_PROGRESS_REPORT_SQL)
+
 
 # O cursor de compatibilidade troca "?" por "%s" e escapa "%", entao o
 # placeholder aqui precisa ser "?" (nao "%s").
@@ -958,7 +1018,11 @@ def _wbs_tree_entries(rows: list[dict]) -> list[dict]:
     return entries
 
 
-def _charts_payload(rows: list[dict], actual_by_month: dict[str, Decimal]) -> dict:
+def _charts_payload(
+    rows: list[dict],
+    actual_by_month: dict[str, Decimal],
+    reported_by_month: dict[str, Decimal] | None = None,
+) -> dict:
     planned_by_month: dict[str, Decimal] = {}
     campaign_planned: dict[str, Decimal] = {}
     campaign_done: dict[str, Decimal] = {}
@@ -972,27 +1036,44 @@ def _charts_payload(rows: list[dict], actual_by_month: dict[str, Decimal]) -> di
         campaign_done[camp] = campaign_done.get(camp, Decimal("0")) + (
             weight * Decimal(row["overall"]) / Decimal("100")
         )
+        # The actual series is ISOlines update!W10, so the comparable P6
+        # planned series must stay on the same piping ISO-line discipline.
+        if row.get("discipline") != "piping":
+            continue
         for key, value in row["_planned_points"].items():
             planned_by_month[key] = planned_by_month.get(key, Decimal("0")) + value
 
-    months = sorted(set(planned_by_month) | set(actual_by_month))
+    reported_by_month = reported_by_month or {}
+    use_reported = bool(reported_by_month)
+    actual_months = reported_by_month if use_reported else actual_by_month
+    months = _continuous_month_keys(set(planned_by_month) | set(actual_months))
     curve_basis = sum(planned_by_month.values(), Decimal("0"))
     current_month = _month_key(date_cls.today())
     planned_cum: list[float] = []
     actual_cum: list[float | None] = []
     run_planned = run_actual = Decimal("0")
+    last_reported: Decimal | None = None
     for key in months:
         run_planned += planned_by_month.get(key, Decimal("0"))
-        run_actual += actual_by_month.get(key, Decimal("0"))
         planned_cum.append(
             round(float(run_planned * Decimal("100") / curve_basis), 1) if curve_basis else 0
         )
-        # A linha do real para no mes corrente — nao desenha futuro.
-        actual_cum.append(
-            round(float(run_actual * Decimal("100") / curve_basis), 1)
-            if (curve_basis and key <= current_month)
-            else None
-        )
+        if use_reported:
+            if key in reported_by_month:
+                last_reported = reported_by_month[key]
+            actual_cum.append(
+                round(float(last_reported), 2)
+                if key <= current_month and last_reported is not None
+                else None
+            )
+        else:
+            run_actual += actual_by_month.get(key, Decimal("0"))
+            # A linha do real para no mes corrente — nao desenha futuro.
+            actual_cum.append(
+                round(float(run_actual * Decimal("100") / curve_basis), 1)
+                if (curve_basis and key <= current_month)
+                else None
+            )
 
     return {
         "curve": {
@@ -1000,6 +1081,8 @@ def _charts_payload(rows: list[dict], actual_by_month: dict[str, Decimal]) -> di
             "planned": planned_cum,
             "actual": actual_cum,
             "unit": "percent",
+            "actual_source": "weekly_workbook" if use_reported else "tons_delta",
+            "scope": "piping_iso_lines",
         },
         "campaign": {
             "labels": list(campaign_planned.keys()),
@@ -1021,6 +1104,7 @@ def fabrication_progress() -> dict:
         cur = conn.cursor()
         packages = _rows(cur, _PACKAGE_SQL)
         progress_rows = _rows(cur, _PROGRESS_SQL)
+        report_rows = _weekly_progress_report_rows(cur, _rows)
         import_rows = _rows(cur, _IMPORT_SQL)
         doc_ids = [int(p["document_id"]) for p in packages if p.get("document_id")]
         weight_rows = _rows(cur, _DOC_WEIGHT_SQL, (doc_ids,)) if doc_ids else []
@@ -1138,6 +1222,7 @@ def fabrication_progress() -> dict:
             continue
         key = _month_key(progress_date)
         actual_by_month[key] = actual_by_month.get(key, Decimal("0")) + _decimal(row.get("total"))
+    reported_by_month = _reported_progress_by_month(report_rows)
 
     total = len(rows)
     ready = sum(1 for row in rows if row["status_key"] == "ready")
@@ -1145,7 +1230,7 @@ def fabrication_progress() -> dict:
     linked_count = sum(1 for row in rows if row["linked"])
     avg = round(sum(row["overall"] for row in rows) / total, 2) if total else 0
 
-    charts = _charts_payload(rows, actual_by_month)
+    charts = _charts_payload(rows, actual_by_month, reported_by_month)
     last_import = import_rows[0] if import_rows else None
 
     for row in rows:
@@ -1177,7 +1262,10 @@ def fabrication_progress_safe() -> dict:
         return fabrication_progress()
     except Exception as exc:  # pragma: no cover - depende do Postgres externo
         empty_charts = {
-            "curve": {"labels": [], "planned": [], "actual": [], "unit": "percent"},
+            "curve": {
+                "labels": [], "planned": [], "actual": [], "unit": "percent",
+                "actual_source": "tons_delta",
+            },
             "campaign": {"labels": [], "planned": [], "done": []},
         }
         return {
