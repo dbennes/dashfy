@@ -1045,7 +1045,7 @@
     <div class="fab-charts">
       <div class="fab-chart-card">
         <h3><i class="bi bi-graph-up"></i> Piping ISO fabrication S-curve — progress %</h3>
-        <div class="sub">planned P6 Start/Finish vs actual ({% if fab.charts.curve.actual_source == "weekly_workbook" %}total % Progress from ISOlines update column W{% else %}dated piping progress entries{% endif %})</div>
+        <div class="sub">weekly, ending Friday · planned P6 Start/Finish vs actual ({% if fab.charts.curve.actual_source == "weekly_workbook" %}total % Progress from ISOlines update column W{% else %}dated piping progress entries{% endif %})</div>
         <div class="cv"><canvas id="fabCurve"></canvas></div>
       </div>
       <div class="fab-chart-card">
@@ -3724,14 +3724,35 @@
             interaction: { mode: "index", intersect: false },
             plugins: {
               legend: { position: "top", align: "end", labels: { boxWidth: 16, boxHeight: 2 } },
-              tooltip: { callbacks: { label: function (ctx) {
-                if (ctx.raw === null || typeof ctx.raw === "undefined") return ctx.dataset.label + ": —";
-                return ctx.dataset.label + ": " + Number(ctx.parsed.y).toFixed(2) + "%";
-              } } }
+              tooltip: { callbacks: {
+                title: function (items) {
+                  if (!items.length) return "";
+                  var label = CHARTS.curve.labels[items[0].dataIndex] || "";
+                  return CHARTS.curve.granularity === "week" ? "Week ending " + label : label;
+                },
+                label: function (ctx) {
+                  if (ctx.raw === null || typeof ctx.raw === "undefined") return ctx.dataset.label + ": —";
+                  return ctx.dataset.label + ": " + Number(ctx.parsed.y).toFixed(2) + "%";
+                },
+                afterLabel: function (ctx) {
+                  if (ctx.datasetIndex !== 1) return "";
+                  var reportDate = (CHARTS.curve.report_dates || [])[ctx.dataIndex];
+                  if (!reportDate) return "";
+                  var parts = reportDate.split("-");
+                  return "Last report: " + parts[2] + "/" + parts[1] + "/" + parts[0];
+                }
+              } }
             },
             scales: {
               y: { beginAtZero: true, min: 0, max: 100, grid: { color: GRID }, ticks: { callback: function (v) { return v + "%"; } } },
-              x: { grid: { display: false }, ticks: { autoSkip: false, maxRotation: 0, minRotation: 0 } }
+              x: { grid: { display: false }, ticks: {
+                autoSkip: false,
+                maxRotation: 0,
+                minRotation: 0,
+                callback: function (_value, index) {
+                  return (CHARTS.curve.axis_labels || [])[index] || "";
+                }
+              } }
             }
           }
         });

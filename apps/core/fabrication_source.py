@@ -272,41 +272,59 @@ def _material_arrival_risk(plan_start: date_cls | None, arrival_value: Any) -> t
 
 
 # ------------------------------------------------------- curva planejada -----
-def _month_key(value: date_cls) -> str:
-    return value.strftime("%Y-%m")
+def _week_ending(value: date_cls) -> date_cls:
+    """Bucket a date into the Saturday-Friday week, keyed by its Friday."""
+    return value + timedelta(days=(4 - value.weekday()) % 7)
 
 
-def _month_label(key: str) -> str:
-    year, month = key.split("-")
-    return f"{_MONTH_NAMES[int(month) - 1]}/{year[2:]}"
+def _week_key(value: date_cls) -> str:
+    return _week_ending(value).isoformat()
 
 
-def _next_month(value: date_cls) -> date_cls:
-    year = value.year + (1 if value.month == 12 else 0)
-    month = 1 if value.month == 12 else value.month + 1
-    return date_cls(year, month, 1)
+def _week_label(key: str) -> str:
+    return date_cls.fromisoformat(key).strftime("%d/%m/%y")
 
 
-def _continuous_month_keys(keys) -> list[str]:
-    """Return every calendar month between the first and last data point."""
+def _weekly_axis_labels(keys: list[str]) -> list[str]:
+    """Show each calendar month once while keeping every weekly data point."""
+    labels: list[str] = []
+    previous_month = ""
+    for key in keys:
+        value = date_cls.fromisoformat(key)
+        month_key = value.strftime("%Y-%m")
+        labels.append(
+            f"{_MONTH_NAMES[value.month - 1]}/{str(value.year)[2:]}"
+            if month_key != previous_month
+            else ""
+        )
+        previous_month = month_key
+    return labels
+
+
+def _continuous_week_keys(keys) -> list[str]:
+    """Return every Friday between the first and last weekly data point."""
     ordered = sorted(set(keys))
     if not ordered:
         return []
-    cursor = date_cls.fromisoformat(f"{ordered[0]}-01")
-    finish = date_cls.fromisoformat(f"{ordered[-1]}-01")
-    months: list[str] = []
+    cursor = _week_ending(date_cls.fromisoformat(ordered[0]))
+    finish = _week_ending(date_cls.fromisoformat(ordered[-1]))
+    weeks: list[str] = []
     while cursor <= finish:
-        months.append(_month_key(cursor))
-        cursor = _next_month(cursor)
-    return months
+        weeks.append(cursor.isoformat())
+        cursor += timedelta(days=7)
+    return weeks
 
 
-def _reported_progress_by_month(report_rows: list[dict]) -> dict[str, Decimal]:
-    """Return the latest valid absolute reported percentage for each month."""
+def _reported_progress_details_by_week(
+    report_rows: list[dict], *, today: date_cls | None = None
+) -> dict[str, tuple[Decimal, date_cls]]:
+    """Return the latest valid absolute report value/date for each week."""
     latest: dict[str, tuple[date_cls, int, int, Decimal]] = {}
     for position, row in enumerate(report_rows):
         report_date = _as_date(row.get("report_date"))
         if not report_date:
+            continue
+        if today is not None and report_date > today:
             continue
         try:
             reported = Decimal(str(row.get("reported_overall_pct")))
@@ -318,30 +336,38 @@ def _reported_progress_by_month(report_rows: list[dict]) -> dict[str, Decimal]:
             report_id = int(row.get("id") or 0)
         except (TypeError, ValueError):
             report_id = 0
-        key = _month_key(report_date)
+        key = _week_key(report_date)
         candidate = (report_date, report_id, position, reported)
         previous = latest.get(key)
         if previous is None or candidate[:3] >= previous[:3]:
             latest[key] = candidate
-    return {key: value[3] for key, value in latest.items()}
+    return {key: (value[3], value[0]) for key, value in latest.items()}
+
+
+def _reported_progress_by_week(report_rows: list[dict]) -> dict[str, Decimal]:
+    """Compatibility helper returning only the absolute percentage by week."""
+    return {
+        key: value
+        for key, (value, _report_date) in _reported_progress_details_by_week(report_rows).items()
+    }
 
 
 def _add_time_phased_tons(
     target: dict[str, Decimal], start: date_cls, finish: date_cls, tons: Decimal
 ) -> None:
-    """Rateia a tonelagem linearmente pelos meses cobertos pelas datas do P6."""
+    """Rateia a tonelagem por dias inclusivos nas semanas sabado-sexta."""
     if finish < start:
         finish = start
     total_days = Decimal((finish - start).days + 1)
-    cursor = date_cls(start.year, start.month, 1)
-    while cursor <= finish:
-        following = _next_month(cursor)
-        slice_start = max(start, cursor)
-        slice_finish = min(finish, following - timedelta(days=1))
+    week_finish = _week_ending(start)
+    while week_finish - timedelta(days=6) <= finish:
+        week_start = week_finish - timedelta(days=6)
+        slice_start = max(start, week_start)
+        slice_finish = min(finish, week_finish)
         days = Decimal((slice_finish - slice_start).days + 1)
-        key = _month_key(cursor)
+        key = week_finish.isoformat()
         target[key] = target.get(key, Decimal("0")) + tons * days / total_days
-        cursor = following
+        week_finish += timedelta(days=7)
 
 
 def _planned_points(stages: dict, plan_start, plan_finish, weight: Decimal) -> dict[str, Decimal]:
@@ -373,7 +399,7 @@ def _planned_points(stages: dict, plan_start, plan_finish, weight: Decimal) -> d
     if not present_weight:
         fallback = _as_date(plan_finish) or _as_date(plan_start)
         if fallback:
-            out[_month_key(fallback)] = weight
+            out[_week_key(fallback)] = weight
         return out
 
     for weight_stage, acts in scheduled:
@@ -1020,10 +1046,11 @@ def _wbs_tree_entries(rows: list[dict]) -> list[dict]:
 
 def _charts_payload(
     rows: list[dict],
-    actual_by_month: dict[str, Decimal],
-    reported_by_month: dict[str, Decimal] | None = None,
+    actual_by_week: dict[str, Decimal],
+    reported_by_week: dict[str, Decimal] | None = None,
+    report_date_by_week: dict[str, date_cls] | None = None,
 ) -> dict:
-    planned_by_month: dict[str, Decimal] = {}
+    planned_by_week: dict[str, Decimal] = {}
     campaign_planned: dict[str, Decimal] = {}
     campaign_done: dict[str, Decimal] = {}
 
@@ -1041,47 +1068,70 @@ def _charts_payload(
         if row.get("discipline") != "piping":
             continue
         for key, value in row["_planned_points"].items():
-            planned_by_month[key] = planned_by_month.get(key, Decimal("0")) + value
+            planned_by_week[key] = planned_by_week.get(key, Decimal("0")) + value
 
-    reported_by_month = reported_by_month or {}
-    use_reported = bool(reported_by_month)
-    actual_months = reported_by_month if use_reported else actual_by_month
-    months = _continuous_month_keys(set(planned_by_month) | set(actual_months))
-    curve_basis = sum(planned_by_month.values(), Decimal("0"))
-    current_month = _month_key(date_cls.today())
+    current_week = _week_key(date_cls.today())
+    reported_by_week = {
+        key: value
+        for key, value in (reported_by_week or {}).items()
+        if _week_ending(date_cls.fromisoformat(key)) <= date_cls.fromisoformat(current_week)
+    }
+    report_date_by_week = report_date_by_week or {}
+    use_reported = bool(reported_by_week)
+    actual_weeks = reported_by_week if use_reported else actual_by_week
+    week_keys = set(planned_by_week) | set(actual_weeks)
+    if actual_weeks:
+        week_keys.add(current_week)
+    weeks = _continuous_week_keys(week_keys)
+    curve_basis = sum(planned_by_week.values(), Decimal("0"))
     planned_cum: list[float] = []
     actual_cum: list[float | None] = []
     run_planned = run_actual = Decimal("0")
     last_reported: Decimal | None = None
-    for key in months:
-        run_planned += planned_by_month.get(key, Decimal("0"))
+    last_report_date: date_cls | None = None
+    report_dates: list[str | None] = []
+    for key in weeks:
+        run_planned += planned_by_week.get(key, Decimal("0"))
         planned_cum.append(
             round(float(run_planned * Decimal("100") / curve_basis), 1) if curve_basis else 0
         )
         if use_reported:
-            if key in reported_by_month:
-                last_reported = reported_by_month[key]
-            actual_cum.append(
-                round(float(last_reported), 2)
-                if key <= current_month and last_reported is not None
-                else None
-            )
+            if key in reported_by_week:
+                last_reported = reported_by_week[key]
+                last_report_date = report_date_by_week.get(key) or date_cls.fromisoformat(key)
+            if key > current_week:
+                actual_cum.append(None)
+                report_dates.append(None)
+            elif last_reported is None:
+                # Start the actual line at zero instead of leaving the first
+                # imported weekly value as an isolated point.
+                actual_cum.append(0.0)
+                report_dates.append(None)
+            else:
+                actual_cum.append(round(float(last_reported), 2))
+                report_dates.append(last_report_date.isoformat() if last_report_date else None)
         else:
-            run_actual += actual_by_month.get(key, Decimal("0"))
-            # A linha do real para no mes corrente — nao desenha futuro.
+            run_actual += actual_by_week.get(key, Decimal("0"))
+            # A linha do real para na semana corrente — nao desenha futuro.
             actual_cum.append(
                 round(float(run_actual * Decimal("100") / curve_basis), 1)
-                if (curve_basis and key <= current_month)
+                if (curve_basis and key <= current_week)
                 else None
             )
+            report_dates.append(None)
 
     return {
         "curve": {
-            "labels": [_month_label(key) for key in months],
+            "labels": [_week_label(key) for key in weeks],
+            "axis_labels": _weekly_axis_labels(weeks),
+            "periods": weeks,
             "planned": planned_cum,
             "actual": actual_cum,
+            "report_dates": report_dates,
             "unit": "percent",
-            "actual_source": "weekly_workbook" if use_reported else "tons_delta",
+            "granularity": "week",
+            "week_ending": "friday",
+            "actual_source": "weekly_workbook" if use_reported else "dated_progress_entries",
             "scope": "piping_iso_lines",
         },
         "campaign": {
@@ -1215,14 +1265,16 @@ def fabrication_progress() -> dict:
             ),
         })
 
-    actual_by_month: dict[str, Decimal] = {}
+    actual_by_week: dict[str, Decimal] = {}
     for row in progress_rows:
         progress_date = _as_date(row.get("progress_date"))
         if not progress_date:
             continue
-        key = _month_key(progress_date)
-        actual_by_month[key] = actual_by_month.get(key, Decimal("0")) + _decimal(row.get("total"))
-    reported_by_month = _reported_progress_by_month(report_rows)
+        key = _week_key(progress_date)
+        actual_by_week[key] = actual_by_week.get(key, Decimal("0")) + _decimal(row.get("total"))
+    reported_details = _reported_progress_details_by_week(report_rows, today=date_cls.today())
+    reported_by_week = {key: value for key, (value, _report_date) in reported_details.items()}
+    report_date_by_week = {key: report_date for key, (_value, report_date) in reported_details.items()}
 
     total = len(rows)
     ready = sum(1 for row in rows if row["status_key"] == "ready")
@@ -1230,7 +1282,7 @@ def fabrication_progress() -> dict:
     linked_count = sum(1 for row in rows if row["linked"])
     avg = round(sum(row["overall"] for row in rows) / total, 2) if total else 0
 
-    charts = _charts_payload(rows, actual_by_month, reported_by_month)
+    charts = _charts_payload(rows, actual_by_week, reported_by_week, report_date_by_week)
     last_import = import_rows[0] if import_rows else None
 
     for row in rows:
@@ -1263,8 +1315,9 @@ def fabrication_progress_safe() -> dict:
     except Exception as exc:  # pragma: no cover - depende do Postgres externo
         empty_charts = {
             "curve": {
-                "labels": [], "planned": [], "actual": [], "unit": "percent",
-                "actual_source": "tons_delta",
+                "labels": [], "axis_labels": [], "periods": [], "planned": [], "actual": [],
+                "report_dates": [], "unit": "percent", "granularity": "week",
+                "week_ending": "friday", "actual_source": "dated_progress_entries",
             },
             "campaign": {"labels": [], "planned": [], "done": []},
         }
