@@ -136,10 +136,12 @@
     <span class="num">S03</span><span>Fabrication</span>
     <span class="chip amber" title="Average fabrication progress from the latest authorized source">{{ fabrication.kpis.avg|default:0|floatformat:2 }}%</span>
   </a>
+  {% if show_tracking %}
   <a class="sn-tab" data-target="s04" href="#s04">
     <span class="num">S04</span><span>Tracking</span>
     <span class="chip amber" title="Open shipments (draft + sent) in Trackfy">{{ tracking.kpis.shipments_open|default:0 }}</span>
   </a>
+  {% endif %}
   <a class="sn-tab" data-target="s05" href="#s05">
     <span class="num">S05</span><span>3D Model</span>
     <span class="chip">GLB local</span>
@@ -1300,6 +1302,7 @@
   {% endwith %}
 </section>
 
+{% if show_tracking %}
 {# ===== S04 — TRACKING (Trackfy / Taskfy) ===== #}
 {# Dashboard de envios de container lido SOMENTE-LEITURA do PostgreSQL do  #}
 {# Taskfy (apps/core/tracking_source.py), no design do cockpit.           #}
@@ -1533,6 +1536,7 @@
   {% endif %}
   {% endwith %}
 </section>
+{% endif %}
 
 {# ===== S05 — 3D MODEL ===== #}
 <section id="s05" class="section" style="border-bottom: none;">
@@ -3818,6 +3822,7 @@
     c3WhenVisible(document.querySelector("#s03 .fab-charts"), initCharts);
   }
 
+  {% if show_tracking %}
   // ===== S04 · Tracking (Trackfy / Taskfy) — graficos no visual do cockpit =====
   function trkInit() {
     var node = document.getElementById("trkChartsData");
@@ -3934,6 +3939,7 @@
     c3WhenVisible(document.getElementById("trkItemsChart"), renderItems);
     c3WhenVisible(document.getElementById("trkFleetChart"), renderFleet);
   }
+  {% endif %}
 
   function c3SetGridCell(row, col, value, suffix) {
     var cell = row ? row.querySelector('[data-col="' + col + '"]') : null;
@@ -4705,7 +4711,9 @@
     });
     renderAllPoPlaced();
     fabInit();
+    {% if show_tracking %}
     trkInit();
+    {% endif %}
     initC3PendingExports();
     setupPoPlacedResize();
     initC3ForecastControls();
@@ -4722,12 +4730,16 @@
     var navMetaDefault = navMeta ? navMeta.innerHTML : '';
     var navMeta3d = '<span>Model · <b>Bonga North Project</b></span><span>·</span><span><b>Local GLB</b> · 3D hierarchy</span>';
     var navMetaFab = '<span>Source · <b>P6 schedule</b></span><span>·</span><span><b>SPDM</b> · fabrication packages</span>';
+    {% if show_tracking %}
     var navMetaTrk = '<span>Source · <b>Trackfy</b></span><span>·</span><span><b>Taskfy</b> · container shipments</span>';
+    {% endif %}
     function activate(id){
       tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.target === id); });
       if (!navMeta) return;
       if (id === 's05') navMeta.innerHTML = navMeta3d;
+      {% if show_tracking %}
       else if (id === 's04') navMeta.innerHTML = navMetaTrk;
+      {% endif %}
       else if (id === 's03') navMeta.innerHTML = navMetaFab;
       else navMeta.innerHTML = navMetaDefault;
     }
@@ -4741,7 +4753,7 @@
         activate(t.dataset.target);
       });
     });
-    var secs = ['s00','s01','s02','s03','s04','s05'];
+    var secs = ['s00','s01','s02','s03'{% if show_tracking %},'s04'{% endif %},'s05'];
     window.addEventListener('scroll', function(){
       var pos = window.scrollY + 200;
       var cur = secs[0];

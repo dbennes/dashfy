@@ -414,9 +414,10 @@ def home_view(request):
     # DATAFY/SPDM (pacotes P6, progresso datado e cobertura de PO por item,
     # com o mesmo motor de status da S02).
     fabrication = fabrication_source.fabrication_progress_safe()
-    # S04 · Tracking — envios de container do Trackfy, lidos somente-leitura
-    # do PostgreSQL do Taskfy.
-    tracking = tracking_source.tracking_dashboard_safe()
+    # S04 · Tracking fica atras de uma flag ate a secao estar pronta para
+    # publicacao. Desligada, a home tambem evita consultar o Taskfy.
+    show_tracking = settings.DASHFY_SHOW_TRACKING
+    tracking = tracking_source.tracking_dashboard_safe() if show_tracking else None
 
     context = {
         "modules": modules,
@@ -424,6 +425,7 @@ def home_view(request):
         "manager": manager,
         "fabrication": fabrication,
         "tracking": tracking,
+        "show_tracking": show_tracking,
         "DATAFY_BASE_URL": settings.DATAFY_BASE_URL,
         "TASKFY_BASE_URL": settings.TASKFY_BASE_URL,
         "show_login_boot": bool(request.session.pop("show_login_boot", False)),

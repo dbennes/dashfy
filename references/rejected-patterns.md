@@ -7,3 +7,9 @@
 - Future sections should have distinct layout language that matches the domain while preserving executive density, real KPIs, compact visual hierarchy, and operational tables below.
 - Also rejected for Engenharia: one heavy combined panel where all charts feel glued together. Prefer separated chart cards with visible percentages for status, revisions, and discipline concentration.
 - Also rejected for Engenharia: three upper chart cards using the same row/list/bar structure. The three upper charts should use visibly different models, such as stacked status rail, vertical revision columns, and lollipop/ranking bars.
+
+## Premature Tracking Publication
+
+- Rejected: displaying S04 Tracking / Trackfy before the user explicitly approves its release.
+- Keep the section, navigation entry, client initialization and Taskfy query behind `DASHFY_SHOW_TRACKING`, disabled by default.
+- The hidden Tracking section must not change the S03 Fabrication or S05 3D positions.

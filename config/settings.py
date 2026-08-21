@@ -44,6 +44,7 @@ APP_BRAND_SECONDARY = env("APP_BRAND_SECONDARY", "#06B6D4")
 APP_BRAND_DARK = env("APP_BRAND_DARK", "#0F172A")
 APP_BRAND_ACCENT = env("APP_BRAND_ACCENT", "#A78BFA")
 DASHFY_ENABLE_LEGACY_MODULES = env_bool("DASHFY_ENABLE_LEGACY_MODULES", False)
+DASHFY_SHOW_TRACKING = env_bool("DASHFY_SHOW_TRACKING", False)
 
 # ------------------------------------------------------------------
 # Real source systems (read-only dashboard integrations)

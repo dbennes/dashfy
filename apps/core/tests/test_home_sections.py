@@ -1,10 +1,12 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 
 class HomeSectionLayoutTests(TestCase):
-    """A home renderiza S00..S05 com a S03 dedicada a fabricacao."""
+    """A home mantem Tracking oculto ate sua liberacao explicita."""
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(
@@ -14,35 +16,55 @@ class HomeSectionLayoutTests(TestCase):
         )
         self.client.force_login(self.user)
 
-    def test_home_exposes_fabrication_as_s03_and_model_as_s05(self):
+    @override_settings(DASHFY_SHOW_TRACKING=False)
+    @patch("apps.core.views.tracking_source.tracking_dashboard_safe")
+    def test_home_exposes_fabrication_and_model_without_tracking(self, tracking_safe):
         response = self.client.get(reverse("core:home"))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode("utf-8")
 
+        tracking_safe.assert_not_called()
+        self.assertIs(response.context["show_tracking"], False)
+        self.assertIsNone(response.context["tracking"])
         self.assertIn('id="s03"', html)
         self.assertIn("S03 · Engineering · Fabrication", html)
         self.assertIn("<em>Fabrication</em> progress", html)
-        self.assertIn('id="s04"', html)
-        self.assertIn("S04 · Tracking", html)
+        self.assertNotIn('id="s04"', html)
+        self.assertNotIn('data-target="s04"', html)
+        self.assertNotIn("Container shipments · Trackfy", html)
+        self.assertNotIn("trkInit", html)
         self.assertIn('id="s05"', html)
         self.assertIn("S05 · 3D Model", html)
         self.assertNotIn("S04 · 3D Model", html)
 
-    def test_tracking_section_reads_taskfy_and_ships_charts(self):
+    @override_settings(DASHFY_SHOW_TRACKING=True)
+    @patch("apps.core.views.tracking_source.tracking_dashboard_safe")
+    def test_tracking_section_reads_taskfy_and_ships_charts(self, tracking_safe):
         """A S04 vem do banco do Taskfy (read-only) com os graficos do cockpit."""
+        tracking_safe.return_value = {
+            "available": True,
+            "kpis": {},
+            "charts": {},
+            "charts_json": "{}",
+            "open_shipments": [],
+            "recent_received": [],
+            "recent_issues": [],
+        }
         response = self.client.get(reverse("core:home"))
         html = response.content.decode("utf-8")
 
+        tracking_safe.assert_called_once_with()
+        self.assertIs(response.context["show_tracking"], True)
         tracking = response.context["tracking"]
         self.assertIn("available", tracking)
         self.assertIn("kpis", tracking)
         self.assertIn("charts", tracking)
-        if tracking["available"]:
-            self.assertIn('id="trkChartsData"', html)
-            for canvas_id in ("trkFlowChart", "trkItemsChart", "trkFleetChart"):
-                self.assertIn(f'id="{canvas_id}"', html)
-        else:
-            self.assertIn("Trackfy unavailable", html)
+        self.assertIn('data-target="s04"', html)
+        self.assertIn('id="s04"', html)
+        self.assertIn('id="trkChartsData"', html)
+        self.assertIn("trkInit", html)
+        for canvas_id in ("trkFlowChart", "trkItemsChart", "trkFleetChart"):
+            self.assertIn(f'id="{canvas_id}"', html)
 
     def test_fabrication_section_ships_its_own_scoped_stylesheet(self):
         """A S03 e uma ilha visual: precisa da folha propria e do Chart.js."""
@@ -88,9 +110,11 @@ class HomeSectionLayoutTests(TestCase):
         self.assertIn("kpis", fabrication)
         self.assertIn("charts", fabrication)
 
-    def test_section_nav_lists_six_sections(self):
+    @override_settings(DASHFY_SHOW_TRACKING=False)
+    def test_section_nav_omits_tracking_until_release(self):
         response = self.client.get(reverse("core:home"))
         html = response.content.decode("utf-8")
 
-        for target in ("s00", "s01", "s02", "s03", "s04", "s05"):
+        for target in ("s00", "s01", "s02", "s03", "s05"):
             self.assertIn(f'data-target="{target}"', html)
+        self.assertNotIn('data-target="s04"', html)
