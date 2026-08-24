@@ -81,6 +81,11 @@ class HomeSectionLayoutTests(TestCase):
 
         for canvas_id in ("fabCurve", "fabCampChart", "fabStageChart"):
             self.assertIn(f'id="{canvas_id}"', html)
+        self.assertIn("spanGaps: true", html)
+        self.assertIn("CHARTS.curve.report_dates", html)
+        self.assertIn("CHARTS.curve.point_types", html)
+        self.assertIn("W10 reportado em", html)
+        self.assertIn("Referência inicial (não reportada)", html)
         self.assertIn('id="fabChartsData"', html)
         self.assertIn('id="fabStagesMeta"', html)
         # subnivel busca no banco do DATAFY via endpoint, nada embutido no HTML

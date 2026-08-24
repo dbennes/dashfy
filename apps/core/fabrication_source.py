@@ -316,15 +316,13 @@ def _continuous_week_keys(keys) -> list[str]:
 
 
 def _reported_progress_details_by_week(
-    report_rows: list[dict], *, today: date_cls | None = None
+    report_rows: list[dict],
 ) -> dict[str, tuple[Decimal, date_cls]]:
     """Return the latest valid absolute report value/date for each week."""
     latest: dict[str, tuple[date_cls, int, int, Decimal]] = {}
     for position, row in enumerate(report_rows):
         report_date = _as_date(row.get("report_date"))
         if not report_date:
-            continue
-        if today is not None and report_date > today:
             continue
         try:
             reported = Decimal(str(row.get("reported_overall_pct")))
@@ -1071,45 +1069,53 @@ def _charts_payload(
             planned_by_week[key] = planned_by_week.get(key, Decimal("0")) + value
 
     current_week = _week_key(date_cls.today())
-    reported_by_week = {
-        key: value
-        for key, value in (reported_by_week or {}).items()
-        if _week_ending(date_cls.fromisoformat(key)) <= date_cls.fromisoformat(current_week)
-    }
+    reported_by_week = reported_by_week or {}
     report_date_by_week = report_date_by_week or {}
     use_reported = bool(reported_by_week)
     actual_weeks = reported_by_week if use_reported else actual_by_week
     week_keys = set(planned_by_week) | set(actual_weeks)
-    if actual_weeks:
+    if actual_weeks and not use_reported:
         week_keys.add(current_week)
+    baseline_week = None
+    if use_reported:
+        first_report_week = min(reported_by_week)
+        first_planned_week = min(planned_by_week) if planned_by_week else None
+        if first_planned_week and first_planned_week < first_report_week:
+            baseline_week = first_planned_week
+        else:
+            baseline_week = (
+                date_cls.fromisoformat(first_report_week) - timedelta(days=7)
+            ).isoformat()
+            week_keys.add(baseline_week)
     weeks = _continuous_week_keys(week_keys)
     curve_basis = sum(planned_by_week.values(), Decimal("0"))
     planned_cum: list[float] = []
     actual_cum: list[float | None] = []
     run_planned = run_actual = Decimal("0")
-    last_reported: Decimal | None = None
-    last_report_date: date_cls | None = None
     report_dates: list[str | None] = []
+    point_types: list[str | None] = []
     for key in weeks:
         run_planned += planned_by_week.get(key, Decimal("0"))
         planned_cum.append(
             round(float(run_planned * Decimal("100") / curve_basis), 1) if curve_basis else 0
         )
         if use_reported:
-            if key in reported_by_week:
-                last_reported = reported_by_week[key]
-                last_report_date = report_date_by_week.get(key) or date_cls.fromisoformat(key)
-            if key > current_week:
-                actual_cum.append(None)
-                report_dates.append(None)
-            elif last_reported is None:
-                # Start the actual line at zero instead of leaving the first
-                # imported weekly value as an isolated point.
+            reported = reported_by_week.get(key)
+            if reported is not None:
+                report_date = report_date_by_week.get(key) or date_cls.fromisoformat(key)
+                # Keep the imported W10 value intact in the payload. The chart
+                # formats it to two decimals only for display.
+                actual_cum.append(float(reported))
+                report_dates.append(report_date.isoformat())
+                point_types.append("reported")
+            elif key == baseline_week:
                 actual_cum.append(0.0)
                 report_dates.append(None)
+                point_types.append("baseline")
             else:
-                actual_cum.append(round(float(last_reported), 2))
-                report_dates.append(last_report_date.isoformat() if last_report_date else None)
+                actual_cum.append(None)
+                report_dates.append(None)
+                point_types.append(None)
         else:
             run_actual += actual_by_week.get(key, Decimal("0"))
             # A linha do real para na semana corrente — nao desenha futuro.
@@ -1119,6 +1125,7 @@ def _charts_payload(
                 else None
             )
             report_dates.append(None)
+            point_types.append(None)
 
     return {
         "curve": {
@@ -1128,6 +1135,7 @@ def _charts_payload(
             "planned": planned_cum,
             "actual": actual_cum,
             "report_dates": report_dates,
+            "point_types": point_types,
             "unit": "percent",
             "granularity": "week",
             "week_ending": "friday",
@@ -1272,7 +1280,7 @@ def fabrication_progress() -> dict:
             continue
         key = _week_key(progress_date)
         actual_by_week[key] = actual_by_week.get(key, Decimal("0")) + _decimal(row.get("total"))
-    reported_details = _reported_progress_details_by_week(report_rows, today=date_cls.today())
+    reported_details = _reported_progress_details_by_week(report_rows)
     reported_by_week = {key: value for key, (value, _report_date) in reported_details.items()}
     report_date_by_week = {key: report_date for key, (_value, report_date) in reported_details.items()}
 
@@ -1316,7 +1324,7 @@ def fabrication_progress_safe() -> dict:
         empty_charts = {
             "curve": {
                 "labels": [], "axis_labels": [], "periods": [], "planned": [], "actual": [],
-                "report_dates": [], "unit": "percent", "granularity": "week",
+                "report_dates": [], "point_types": [], "unit": "percent", "granularity": "week",
                 "week_ending": "friday", "actual_source": "dated_progress_entries",
             },
             "campaign": {"labels": [], "planned": [], "done": []},

@@ -46,7 +46,7 @@ class FabricationWeeklyProgressCompatibilityTests(SimpleTestCase):
         self.assertEqual(curve["week_ending"], "friday")
         self.assertEqual(curve["periods"][0], "2026-06-05")
 
-    def test_curve_starts_at_zero_then_uses_and_carries_latest_report(self):
+    def test_curve_shows_only_report_weeks_after_one_zero_baseline(self):
         rows = [{
             "_weight": Decimal("10"),
             "campaign": "Campaign A",
@@ -81,17 +81,24 @@ class FabricationWeeklyProgressCompatibilityTests(SimpleTestCase):
             "2026-10-02": Decimal("25.5"),
         })
         actual = dict(zip(curve["labels"], curve["actual"]))
-        self.assertEqual(actual["07/08/26"], 0.0)
-        self.assertEqual(actual["14/08/26"], 17.17)
-        self.assertEqual(actual["21/08/26"], 18.77)
+        self.assertEqual(actual["05/06/26"], 0.0)
+        self.assertIsNone(actual["07/08/26"])
+        self.assertAlmostEqual(actual["14/08/26"], 17.16531969256482)
+        self.assertEqual(actual["21/08/26"], 18.765)
         self.assertEqual(actual["02/10/26"], 25.5)
-        self.assertEqual(actual["16/10/26"], 25.5)
+        self.assertIsNone(actual["09/10/26"])
+        self.assertIsNone(actual["16/10/26"])
         self.assertIsNone(actual["23/10/26"])
         reports = dict(zip(curve["labels"], curve["report_dates"]))
+        point_types = dict(zip(curve["labels"], curve["point_types"]))
         self.assertEqual(reports["14/08/26"], "2026-08-14")
         self.assertEqual(reports["21/08/26"], "2026-08-18")
-        self.assertEqual(reports["09/10/26"], "2026-10-01")
+        self.assertEqual(reports["02/10/26"], "2026-10-01")
+        self.assertIsNone(reports["09/10/26"])
         self.assertIsNone(reports["23/10/26"])
+        self.assertEqual(point_types["05/06/26"], "baseline")
+        self.assertIsNone(point_types["07/08/26"])
+        self.assertEqual(point_types["14/08/26"], "reported")
         self.assertEqual(curve["actual_source"], "weekly_workbook")
 
     def test_curve_displays_the_exact_column_w_total_as_17_17_percent(self):
@@ -119,10 +126,109 @@ class FabricationWeeklyProgressCompatibilityTests(SimpleTestCase):
             )["curve"]
 
         actual = dict(zip(curve["labels"], curve["actual"]))
-        self.assertEqual(actual["07/08/26"], 0.0)
-        self.assertEqual(actual["14/08/26"], 17.17)
-        self.assertEqual(actual["21/08/26"], 17.17)
+        self.assertEqual(actual["05/06/26"], 0.0)
+        self.assertIsNone(actual["07/08/26"])
+        self.assertAlmostEqual(actual["14/08/26"], 17.16531969256482)
+        self.assertIsNone(actual["21/08/26"])
         self.assertIsNone(actual["28/08/26"])
+
+    def test_curve_keeps_past_and_future_reports_only_on_their_weeks(self):
+        class ReportDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 8, 21)
+
+        rows = [{
+            "_weight": Decimal("10"),
+            "campaign": "Campaign A",
+            "discipline": "piping",
+            "overall": 0,
+            "_planned_points": {
+                "2026-06-05": Decimal("5"),
+                "2026-12-04": Decimal("5"),
+            },
+        }]
+
+        with patch("apps.core.fabrication_source.date_cls", ReportDate):
+            curve = _charts_payload(
+                rows,
+                {},
+                {
+                    "2026-07-10": Decimal("10.25"),
+                    "2026-09-04": Decimal("20.2"),
+                },
+                {
+                    "2026-07-10": date(2026, 7, 10),
+                    "2026-09-04": date(2026, 9, 3),
+                },
+            )["curve"]
+
+        actual = dict(zip(curve["periods"], curve["actual"]))
+        report_dates = dict(zip(curve["periods"], curve["report_dates"]))
+        self.assertEqual(actual["2026-06-05"], 0.0)
+        self.assertEqual(actual["2026-07-10"], 10.25)
+        self.assertIsNone(actual["2026-07-17"])
+        self.assertEqual(actual["2026-09-04"], 20.2)
+        self.assertIsNone(actual["2026-09-11"])
+        self.assertEqual(report_dates["2026-07-10"], "2026-07-10")
+        self.assertEqual(report_dates["2026-09-04"], "2026-09-03")
+        self.assertIsNone(report_dates["2026-09-11"])
+
+    def test_curve_adds_previous_friday_baseline_when_report_precedes_plan(self):
+        rows = [{
+            "_weight": Decimal("10"),
+            "campaign": "Campaign A",
+            "discipline": "piping",
+            "overall": 0,
+            "_planned_points": {"2026-09-04": Decimal("10")},
+        }]
+
+        curve = _charts_payload(
+            rows,
+            {},
+            {"2026-08-14": Decimal("17.16531969256482")},
+        )["curve"]
+
+        self.assertEqual(curve["periods"][0], "2026-08-07")
+        self.assertEqual(curve["actual"][0], 0.0)
+        self.assertAlmostEqual(curve["actual"][1], 17.16531969256482)
+        self.assertEqual(curve["point_types"][:2], ["baseline", "reported"])
+        self.assertTrue(all(value is None for value in curve["actual"][2:]))
+
+    def test_report_curve_does_not_add_the_current_week_outside_its_data_range(self):
+        class ReportDate(date):
+            @classmethod
+            def today(cls):
+                return cls(2026, 8, 21)
+
+        rows = [{
+            "_weight": Decimal("10"),
+            "campaign": "Campaign A",
+            "discipline": "piping",
+            "overall": 0,
+            "_planned_points": {"2026-06-05": Decimal("10")},
+        }]
+
+        with patch("apps.core.fabrication_source.date_cls", ReportDate):
+            curve = _charts_payload(
+                rows,
+                {},
+                {"2026-07-10": Decimal("17.17")},
+                {"2026-07-10": date(2026, 7, 9)},
+            )["curve"]
+
+        self.assertEqual(curve["periods"][-1], "2026-07-10")
+        self.assertNotIn("2026-08-21", curve["periods"])
+        self.assertEqual(curve["point_types"][-1], "reported")
+
+    def test_same_week_uses_latest_report_date_and_id(self):
+        reported = _reported_progress_by_week([
+            {"id": 5, "report_date": date(2026, 8, 11), "reported_overall_pct": "16"},
+            {"id": 2, "report_date": date(2026, 8, 14), "reported_overall_pct": "17.17"},
+            {"id": 9, "report_date": date(2026, 8, 14), "reported_overall_pct": "17.5"},
+        ])
+
+        self.assertEqual(reported, {"2026-08-14": Decimal("17.5")})
 
     def test_curve_falls_back_entirely_to_legacy_tons_delta_without_reports(self):
         rows = [{
