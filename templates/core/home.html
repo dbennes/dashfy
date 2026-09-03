@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
-<link href="{% static 'css/fabrication-s03.css' %}?v=20260730-s03-full" rel="stylesheet">
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260903-s03-rundown" rel="stylesheet">
 {% endblock %}
 
 {% block tickers %}
@@ -1008,6 +1008,7 @@
 
     <script id="fabStagesMeta" type="application/json">{{ fab.stages_json|safe }}</script>
     <script id="fabChartsData" type="application/json">{{ fab.charts_json|safe }}</script>
+    <script id="fabRundownData" type="application/json">{{ rundown.charts_json|safe }}</script>
 
     {# ---------- KPI strip ---------- #}
     <div class="fab-kpis" id="fabKpis">
@@ -1225,6 +1226,33 @@
       <div class="fab-empty" id="fabNoResults" hidden>
         <i class="bi bi-search"></i>
         No drawings match the current filters.
+      </div>
+    </div>
+
+    {# ---------- Piping ISO rundown (snapshot from Runddown!T1:X75) ---------- #}
+    <div class="fab-rundown-card" data-fab-rundown>
+      <div class="fab-rundown-head">
+        <div class="fab-rundown-title">
+          <span class="fab-rundown-kicker">Piping · ISO delivery plan</span>
+          <h3><i class="bi bi-graph-down-arrow"></i> Piping ISO rundown</h3>
+          <p>Daily releases and remaining ISO lines · 60-day lookahead versus baseline</p>
+        </div>
+      </div>
+      <div class="fab-rundown-chart">
+        {% if rundown.available %}
+          <canvas id="fabRundownChart" role="img" aria-label="Piping ISO rundown comparing the 60-day lookahead with the baseline" aria-describedby="fabRundownSummary"></canvas>
+          <p class="visually-hidden" id="fabRundownSummary">
+            Rundown for {{ rundown.kpis.scope_total|default:0 }} piping ISO lines. Bars show daily releases and lines show the remaining balance.
+            The baseline reaches zero on {{ rundown.kpis.baseline_finish_label|default:"—" }} and the 60-day lookahead reaches zero on {{ rundown.kpis.lookahead_finish_label|default:"—" }},
+            {{ rundown.kpis.finish_variance_days|default:0 }} days later.
+          </p>
+          <div class="fab-chart-empty" id="fabRundownEmpty" hidden>No rundown points to show.</div>
+        {% else %}
+          <div class="fab-chart-empty">Rundown unavailable: {{ rundown.error|default:"the source snapshot could not be read." }}</div>
+        {% endif %}
+      </div>
+      <div class="fab-rundown-source">
+        Source · {{ rundown.source.workbook|default:"DATAFY material requisition"|truncatechars:76 }} · {{ rundown.source.worksheet|default:"Runddown" }}!{{ rundown.source.range|default:"T1:X75" }}
       </div>
     </div>
 
@@ -3854,6 +3882,205 @@
     c3WhenVisible(document.querySelector("#s03 .fab-charts"), initCharts);
   }
 
+  // ===== S03 · Piping ISO rundown — snapshot DATAFY / Runddown!T1:X75 =====
+  function fabRundownInit() {
+    var dataNode = document.getElementById("fabRundownData");
+    var canvas = document.getElementById("fabRundownChart");
+    var root = document.querySelector("[data-fab-rundown]");
+    if (!dataNode || !canvas || !root || typeof Chart === "undefined") return;
+
+    var data;
+    try {
+      data = JSON.parse(dataNode.textContent || "{}");
+    } catch (_err) {
+      data = {};
+    }
+    var dates = Array.isArray(data.dates) ? data.dates : [];
+    if (!dates.length) {
+      canvas.hidden = true;
+      var empty = document.getElementById("fabRundownEmpty");
+      if (empty) empty.hidden = false;
+      return;
+    }
+
+    var axisDate = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", timeZone: "UTC"
+    });
+    var tooltipDate = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", year: "numeric", timeZone: "UTC"
+    });
+    var timestamps = dates.map(function (value) {
+      return Date.parse(value + "T00:00:00Z");
+    });
+    function points(values) {
+      values = Array.isArray(values) ? values : [];
+      return timestamps.map(function (timestamp, index) {
+        return { x: timestamp, y: values[index] === undefined ? null : values[index] };
+      });
+    }
+    function dateFromValue(value) {
+      var parsed = new Date(Number(value));
+      return isNaN(parsed.getTime()) ? "" : axisDate.format(parsed);
+    }
+
+    c3WhenVisible(root, function () {
+      if (canvas.dataset.rundownRendered === "1") return;
+      canvas.dataset.rundownRendered = "1";
+      new Chart(canvas, {
+        type: "bar",
+        data: {
+          datasets: [
+            {
+              type: "bar",
+              label: "Lookahead daily",
+              data: points(data.lookahead_total),
+              yAxisID: "yDaily",
+              backgroundColor: "rgba(96,165,250,.50)",
+              borderColor: "rgba(96,165,250,.82)",
+              borderWidth: 1,
+              borderRadius: 2,
+              borderSkipped: false,
+              maxBarThickness: 7,
+              order: 3
+            },
+            {
+              type: "bar",
+              label: "Baseline daily",
+              data: points(data.baseline_total),
+              yAxisID: "yDaily",
+              backgroundColor: "rgba(34,197,94,.34)",
+              borderColor: "rgba(34,197,94,.70)",
+              borderWidth: 1,
+              borderRadius: 2,
+              borderSkipped: false,
+              maxBarThickness: 7,
+              order: 3
+            },
+            {
+              type: "line",
+              label: "Lookahead rundown",
+              data: points(data.lookahead_rundown),
+              yAxisID: "yRemaining",
+              borderColor: "#f87171",
+              backgroundColor: "rgba(248,113,113,.08)",
+              borderWidth: 2.25,
+              pointRadius: 0,
+              pointHoverRadius: 3,
+              tension: 0,
+              fill: false,
+              spanGaps: false,
+              order: 1
+            },
+            {
+              type: "line",
+              label: "Baseline rundown",
+              data: points(data.baseline_rundown),
+              yAxisID: "yRemaining",
+              borderColor: "#a8aeb8",
+              borderWidth: 2,
+              borderDash: [5, 4],
+              pointRadius: 0,
+              pointHoverRadius: 3,
+              tension: 0,
+              fill: false,
+              spanGaps: false,
+              order: 1
+            }
+          ]
+        },
+        options: {
+          parsing: false,
+          normalized: true,
+          maintainAspectRatio: false,
+          animation: { duration: 420, easing: "easeOutQuart" },
+          interaction: { mode: "index", intersect: false },
+          plugins: {
+            legend: {
+              position: "bottom",
+              align: "center",
+              labels: {
+                color: "#a8aeb8",
+                boxWidth: 16,
+                boxHeight: 7,
+                padding: 14,
+                font: { family: "Inter, 'IBM Plex Sans', sans-serif", size: 9 }
+              }
+            },
+            tooltip: {
+              filter: function (item) {
+                return item.raw && item.raw.y !== null && item.raw.y !== undefined;
+              },
+              callbacks: {
+                title: function (items) {
+                  if (!items.length) return "";
+                  return tooltipDate.format(new Date(items[0].raw.x));
+                },
+                label: function (context) {
+                  var daily = context.dataset.yAxisID === "yDaily";
+                  var suffix = daily ? " ISO lines" : " ISO lines remaining";
+                  return context.dataset.label + ": " + Number(context.raw.y).toLocaleString("en-US") + suffix;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              type: "linear",
+              min: timestamps[0],
+              max: timestamps[timestamps.length - 1],
+              grid: { display: false },
+              border: { color: "rgba(255,255,255,.10)" },
+              ticks: {
+                color: "#6b7280",
+                maxTicksLimit: 13,
+                maxRotation: 0,
+                minRotation: 0,
+                font: { family: "JetBrains Mono, monospace", size: 8.5 },
+                callback: dateFromValue
+              }
+            },
+            yRemaining: {
+              position: "left",
+              beginAtZero: true,
+              suggestedMax: 650,
+              grid: { color: "rgba(255,255,255,.07)" },
+              border: { display: false },
+              title: {
+                display: true,
+                text: "REMAINING ISO LINES",
+                color: "#6b7280",
+                font: { family: "JetBrains Mono, monospace", size: 8, weight: "600" }
+              },
+              ticks: {
+                color: "#a8aeb8",
+                precision: 0,
+                font: { family: "JetBrains Mono, monospace", size: 8.5 }
+              }
+            },
+            yDaily: {
+              position: "right",
+              beginAtZero: true,
+              suggestedMax: 100,
+              grid: { drawOnChartArea: false },
+              border: { display: false },
+              title: {
+                display: true,
+                text: "DAILY ISO LINES",
+                color: "#6b7280",
+                font: { family: "JetBrains Mono, monospace", size: 8, weight: "600" }
+              },
+              ticks: {
+                color: "#a8aeb8",
+                precision: 0,
+                font: { family: "JetBrains Mono, monospace", size: 8.5 }
+              }
+            }
+          }
+        }
+      });
+    }, { rootMargin: "600px 0px", idle: true });
+  }
+
   {% if show_tracking %}
   // ===== S04 · Tracking (Trackfy / Taskfy) — graficos no visual do cockpit =====
   function trkInit() {
@@ -4743,6 +4970,7 @@
     });
     renderAllPoPlaced();
     fabInit();
+    fabRundownInit();
     {% if show_tracking %}
     trkInit();
     {% endif %}

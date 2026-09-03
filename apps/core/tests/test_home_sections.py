@@ -97,6 +97,24 @@ class HomeSectionLayoutTests(TestCase):
         for short_label in ("PreFab", "Fit-up", "Weld", "NDT", "PWHT", "Hydro", "Paint"):
             self.assertIn(short_label, html)
 
+    def test_rundown_chart_sits_below_fabrication_and_keeps_all_excel_series(self):
+        response = self.client.get(reverse("core:home"))
+        html = response.content.decode("utf-8")
+
+        self.assertTrue(response.context["rundown"]["available"])
+        self.assertIn('id="fabRundownData"', html)
+        self.assertIn('id="fabRundownChart"', html)
+        self.assertIn("Piping ISO rundown", html)
+        for label in (
+            "Lookahead daily",
+            "Baseline daily",
+            "Lookahead rundown",
+            "Baseline rundown",
+        ):
+            self.assertIn(label, html)
+        self.assertLess(html.index('id="fabBody"'), html.index('id="fabRundownChart"'))
+        self.assertLess(html.index('id="fabRundownChart"'), html.index('id="s05"'))
+
     def test_fabrication_detail_endpoint_returns_json(self):
         """O subnivel do desenho e servido pelo endpoint que le o banco DATAFY."""
         response = self.client.get(reverse("core:fabrication_detail", args=[1]))
