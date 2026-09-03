@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
-<link href="{% static 'css/fabrication-s03.css' %}?v=20260903-s03-rundown" rel="stylesheet">
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260903-s03-delivery-v14" rel="stylesheet">
 {% endblock %}
 
 {% block tickers %}
@@ -1009,6 +1009,7 @@
     <script id="fabStagesMeta" type="application/json">{{ fab.stages_json|safe }}</script>
     <script id="fabChartsData" type="application/json">{{ fab.charts_json|safe }}</script>
     <script id="fabRundownData" type="application/json">{{ rundown.charts_json|safe }}</script>
+    {{ skyline.charts|json_script:"fabSkylineData" }}
 
     {# ---------- KPI strip ---------- #}
     <div class="fab-kpis" id="fabKpis">
@@ -1229,30 +1230,124 @@
       </div>
     </div>
 
-    {# ---------- Piping ISO rundown (reconciled DATAFY snapshot) ---------- #}
-    <div class="fab-rundown-card" data-fab-rundown>
-      <div class="fab-rundown-head">
-        <div class="fab-rundown-title">
-          <span class="fab-rundown-kicker">Piping · ISO delivery plan</span>
-          <h3><i class="bi bi-graph-down-arrow"></i> Piping ISO rundown</h3>
-          <p>Daily releases and remaining ISO lines · 60-day lookahead versus baseline</p>
+    {# ---------- Piping delivery analytics ---------- #}
+    <div class="fab-delivery-grid">
+      <article class="fab-rundown-card" data-fab-rundown data-snapshot-date="{{ rundown.source.snapshot_date|default:'' }}">
+        <div class="fab-rundown-head">
+          <div class="fab-rundown-title">
+            <span class="fab-rundown-kicker">Piping · ISO delivery plan</span>
+            <h3><i class="bi bi-graph-down-arrow"></i> Piping ISO rundown (ROS)</h3>
+            <p>Daily spool releases and remaining balance · 60-day lookahead versus baseline</p>
+          </div>
+          <dl class="fab-rundown-kpis" aria-label="Rundown summary">
+            <div class="is-scope" title="Reconciled piping spool scope">
+              <dt>Scope</dt>
+              <dd>{{ rundown.kpis.scope_total|default:0 }} <span>spools</span></dd>
+            </div>
+            <div class="is-baseline" title="First date when the baseline remaining balance reaches zero">
+              <dt>Baseline zero</dt>
+              <dd>{{ rundown.kpis.baseline_finish_label|default:"—" }}</dd>
+            </div>
+            <div class="is-lookahead" title="First date when the 60-day lookahead remaining balance reaches zero">
+              <dt>Lookahead zero</dt>
+              <dd>{{ rundown.kpis.lookahead_finish_label|default:"—" }}</dd>
+            </div>
+            <div class="is-variance" title="Difference between the two zero-balance dates">
+              <dt>Zero-date gap</dt>
+              <dd>{% if rundown.kpis.finish_variance_days > 0 %}+{% endif %}{{ rundown.kpis.finish_variance_days|default:0 }} <span>days</span></dd>
+            </div>
+          </dl>
         </div>
-      </div>
-      <div class="fab-rundown-chart">
-        {% if rundown.available %}
-          <canvas id="fabRundownChart" role="img" aria-label="Piping ISO rundown comparing the 60-day lookahead with the baseline" aria-describedby="fabRundownSummary"></canvas>
-          <p class="visually-hidden" id="fabRundownSummary">
-            Rundown for {{ rundown.kpis.scope_total|default:0 }} piping ISO lines. Bars show daily releases and lines show the remaining balance.
-            The baseline reaches zero on {{ rundown.kpis.baseline_finish_label|default:"—" }} and the 60-day lookahead reaches zero on {{ rundown.kpis.lookahead_finish_label|default:"—" }},
-            {{ rundown.kpis.finish_variance_days|default:0 }} days later.
-          </p>
-          <div class="fab-chart-empty" id="fabRundownEmpty" hidden>No rundown points to show.</div>
-        {% else %}
-          <div class="fab-chart-empty">Rundown unavailable: {{ rundown.error|default:"the source snapshot could not be read." }}</div>
-        {% endif %}
-      </div>
-      <div class="fab-rundown-source">
-        Source · {{ rundown.source.workbook|default:"DATAFY material requisition"|truncatechars:76 }} · {{ rundown.source.worksheet|default:"Runddown" }}!{{ rundown.source.range|default:"T1:X79" }}
+        <div class="fab-rundown-chart">
+          {% if rundown.available %}
+            <div class="fab-rundown-legend" role="group" aria-label="Rundown series legend">
+              <div class="fab-rundown-legend-group">
+                <span class="fab-rundown-legend-label">Remaining</span>
+                <span class="fab-rundown-legend-item"><i class="fab-rundown-key is-line is-lookahead" aria-hidden="true"></i>Lookahead</span>
+                <span class="fab-rundown-legend-item"><i class="fab-rundown-key is-line is-baseline" aria-hidden="true"></i>Baseline</span>
+              </div>
+              <div class="fab-rundown-legend-group">
+                <span class="fab-rundown-legend-label">Daily releases</span>
+                <span class="fab-rundown-legend-item"><i class="fab-rundown-key is-bar is-lookahead" aria-hidden="true"></i>Lookahead</span>
+                <span class="fab-rundown-legend-item"><i class="fab-rundown-key is-bar is-baseline" aria-hidden="true"></i>Baseline</span>
+              </div>
+              <span class="fab-rundown-data-date" title="Workbook snapshot date"><i class="bi bi-calendar-event" aria-hidden="true"></i>Data date · {{ rundown.source.snapshot_label|default:"—" }}</span>
+            </div>
+            <div class="fab-rundown-canvas">
+              <canvas id="fabRundownChart" role="img" aria-label="Piping spool rundown comparing the 60-day lookahead with the baseline" aria-describedby="fabRundownSummary"></canvas>
+              <p class="visually-hidden" id="fabRundownSummary">
+                Rundown for {{ rundown.kpis.scope_total|default:0 }} piping spools. Bars show daily releases and lines show the remaining balance.
+                The baseline reaches zero on {{ rundown.kpis.baseline_finish_label|default:"—" }} and the 60-day lookahead reaches zero on {{ rundown.kpis.lookahead_finish_label|default:"—" }},
+                with a zero-date difference of {{ rundown.kpis.finish_variance_days|default:0 }} days.
+              </p>
+              <div class="fab-chart-empty" id="fabRundownEmpty" role="status" hidden>No rundown points to show.</div>
+            </div>
+          {% else %}
+            <div class="fab-chart-empty" role="status">Rundown unavailable: {{ rundown.error|default:"the source snapshot could not be read." }}</div>
+          {% endif %}
+        </div>
+        <div class="fab-rundown-source" title="{{ rundown.source.workbook|default:'DATAFY material requisition' }} · {{ rundown.source.worksheet|default:'Runddown' }}!{{ rundown.source.range|default:'T1:X79' }} · reconciled from {{ rundown.source.reconciled_from|default:'source schedule' }}">
+          Source · {{ rundown.source.worksheet|default:"Runddown" }}!{{ rundown.source.range|default:"T1:X79" }} · snapshot {{ rundown.source.snapshot_label|default:"—" }}
+        </div>
+      </article>
+
+      <article class="fab-skyline-card" data-fab-skyline data-as-of-date="{{ skyline.source.as_of_date|default:'2026-09-03' }}">
+        <div class="fab-rundown-head fab-skyline-head">
+          <div class="fab-rundown-title">
+            <span class="fab-rundown-kicker">Piping · Baseline forecast vs actual</span>
+            <h3><i class="bi bi-bar-chart-steps"></i> Fabrication skyline</h3>
+            <p>Baseline forecast above · Actual below from Runddown F:G dates before {{ skyline.source.as_of_label|default:"today" }}</p>
+          </div>
+          <span class="fab-skyline-scope">{{ skyline.kpis.line_count|default:0 }} lines · {{ skyline.kpis.actual_spools|default:0 }} actual / {{ skyline.kpis.scope_spools|default:0 }} forecast spools</span>
+        </div>
+        <div class="fab-skyline-plot">
+          {% if skyline.available %}
+            <div class="fab-skyline-legend" aria-label="Skyline series legend">
+              <span class="is-forecast" title="Forecast uses the baseline schedule in Planilha1."><i class="bi bi-calendar3" aria-hidden="true"></i>Forecast · Planilha1 baseline <b>{{ skyline.kpis.line_count|default:0 }} lines · {{ skyline.kpis.scope_spools|default:0 }} spools</b></span>
+              <span class="is-actual" title="Actual temporarily includes only Runddown F:G dates before the cutoff."><i class="bi bi-check2-circle" aria-hidden="true"></i>Actual · F:G before cutoff <b>{{ skyline.kpis.actual_line_count|default:0 }} lines · {{ skyline.kpis.actual_spools|default:0 }} spools</b></span>
+              <span class="is-current" title="The amber axis marks the week containing the current Actual cutoff."><i class="bi bi-calendar-week" aria-hidden="true"></i>Current week · cutoff <b>{{ skyline.source.as_of_label|default:"today" }}</b></span>
+              <span class="is-scale" title="Darker blocks contain more spools; the exact quantity remains inside each block."><i class="bi bi-circle-half" aria-hidden="true"></i>Shade intensity · spool quantity</span>
+            </div>
+            <div class="fab-skyline-band-labels" aria-hidden="true">
+              <span>Forecast</span><span></span><span>Actual</span>
+            </div>
+            <div class="fab-skyline-viewport" role="group" aria-label="Weekly forecast and actual skyline with all scheduled lines visible" aria-describedby="fabSkylineSummary">
+              <div class="fab-skyline-matrix" id="fabSkylinePlot"></div>
+            </div>
+            <p class="visually-hidden" id="fabSkylineSummary">
+              Weekly skyline for {{ skyline.kpis.line_count|default:0 }} piping lines.
+              Baseline forecast is above the date axis with {{ skyline.kpis.scope_spools|default:0 }} spools. Actual is below it with {{ skyline.kpis.actual_spools|default:0 }} spools whose 60-day-lookahead date is before {{ skyline.source.as_of_label|default:"today" }}.
+              Select a weekly tower to inspect every line and quantity.
+            </p>
+            <div class="fab-chart-empty" id="fabSkylineEmpty" role="status" hidden>No skyline points to show.</div>
+          {% else %}
+            <div class="fab-chart-empty" role="status">Skyline unavailable: {{ skyline.error|default:"the source snapshot could not be read." }}</div>
+          {% endif %}
+        </div>
+        <div class="fab-rundown-source">
+          Source · {{ skyline.source.workbook|default:"DATAFY material requisition"|truncatechars:54 }} · Forecast {{ skyline.source.forecast_scope|default:"Planilha1!A1:E176" }} · Actual {{ skyline.source.actual_scope|default:"Runddown!F5:G180" }} · source snapshot {{ skyline.source.snapshot_label|default:"—" }} · Actual cutoff {{ skyline.source.as_of_label|default:"today" }}
+        </div>
+      </article>
+    </div>
+
+    <div class="fab-ovl" id="fabSkylineModal" hidden>
+      <div class="fab-ovl-bg" data-close="fabSkylineModal"></div>
+      <div class="fab-card fab-skyline-modal-card" role="dialog" aria-modal="true" aria-labelledby="fabSkylineModalTitle">
+        <div class="fab-card-head">
+          <span class="fab-card-icon"><i class="bi bi-bar-chart-steps"></i></span>
+          <div style="min-width:0;">
+            <div class="fab-card-kicker" id="fabSkylineModalKicker">Weekly fabrication load</div>
+            <div class="fab-card-title"><strong id="fabSkylineModalTitle">Skyline details</strong><span id="fabSkylineModalMeta"></span></div>
+          </div>
+          <button class="fab-x" type="button" data-close="fabSkylineModal" title="Close" aria-label="Close skyline details" style="margin-left:auto;"><i class="bi bi-x-lg"></i></button>
+        </div>
+        <div class="fab-po-table-wrap">
+          <table class="fab-po-table fab-skyline-detail-table">
+            <thead><tr><th>Line</th><th>Date</th><th>Series</th><th class="r">Spools</th></tr></thead>
+            <tbody id="fabSkylineModalBody"></tbody>
+          </table>
+        </div>
+        <div class="fab-card-note"><i class="bi bi-info-circle"></i> Temporary Actual rule: a Runddown F:G 60-day-lookahead date before {{ skyline.source.as_of_label|default:"today" }} is treated as completed. Blue is Forecast; green is Actual.</div>
       </div>
     </div>
 
@@ -3887,7 +3982,18 @@
     var dataNode = document.getElementById("fabRundownData");
     var canvas = document.getElementById("fabRundownChart");
     var root = document.querySelector("[data-fab-rundown]");
-    if (!dataNode || !canvas || !root || typeof Chart === "undefined") return;
+    var empty = document.getElementById("fabRundownEmpty");
+    if (!dataNode || !canvas || !root) return;
+    function showRundownError(message) {
+      canvas.hidden = true;
+      if (!empty) return;
+      empty.textContent = message;
+      empty.hidden = false;
+    }
+    if (typeof Chart === "undefined") {
+      showRundownError("Rundown chart could not be loaded.");
+      return;
+    }
 
     var data;
     try {
@@ -3897,9 +4003,7 @@
     }
     var dates = Array.isArray(data.dates) ? data.dates : [];
     if (!dates.length) {
-      canvas.hidden = true;
-      var empty = document.getElementById("fabRundownEmpty");
-      if (empty) empty.hidden = false;
+      showRundownError("No rundown points to show.");
       return;
     }
 
@@ -3907,11 +4011,41 @@
       day: "2-digit", month: "short", timeZone: "UTC"
     });
     var tooltipDate = new Intl.DateTimeFormat("en-GB", {
-      day: "2-digit", month: "short", year: "numeric", timeZone: "UTC"
+      weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "UTC"
+    });
+    var dataDate = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", year: "2-digit", timeZone: "UTC"
     });
     var timestamps = dates.map(function (value) {
       return Date.parse(value + "T00:00:00Z");
     });
+    var snapshotTimestamp = Date.parse((root.dataset.snapshotDate || "") + "T00:00:00Z");
+    var rootStyle = window.getComputedStyle(root);
+    function cssColor(name, fallback) {
+      return rootStyle.getPropertyValue(name).trim() || fallback;
+    }
+    var palette = {
+      bgElev: cssColor("--fb-bg-elev", "#0f1115"),
+      bgSubtle: cssColor("--fb-bg-subtle", "#14171c"),
+      fg: cssColor("--fb-fg", "#f4f6f9"),
+      fgMuted: cssColor("--fb-fg-muted", "#c3c9d2"),
+      fgSubtle: cssColor("--fb-fg-subtle", "#a8aeb8"),
+      fgFaint: cssColor("--fb-fg-faint", "#6b7280"),
+      border: cssColor("--fb-border", "rgba(255,255,255,.09)"),
+      borderSubtle: cssColor("--fb-border-subtle", "rgba(255,255,255,.05)"),
+      borderStrong: cssColor("--fb-border-strong", "rgba(255,255,255,.18)"),
+      info: cssColor("--fb-info", "#60a5fa"),
+      infoBorder: cssColor("--fb-info-border", "rgba(96,165,250,.35)"),
+      success: cssColor("--fb-success", "#22c55e"),
+      successBorder: cssColor("--fb-success-border", "rgba(34,197,94,.35)"),
+      warning: cssColor("--fb-warning", "#fbbf24"),
+      warningBorder: cssColor("--fb-warning-border", "rgba(251,191,36,.35)"),
+      lookahead: cssColor("--fb-rundown-lookahead", "#f87171")
+    };
+    var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function tickLimitFor(width) {
+      return Number(width || 0) < 720 ? 6 : 12;
+    }
     function points(values) {
       values = Array.isArray(values) ? values : [];
       return timestamps.map(function (timestamp, index) {
@@ -3922,50 +4056,69 @@
       var parsed = new Date(Number(value));
       return isNaN(parsed.getTime()) ? "" : axisDate.format(parsed);
     }
+    var dataDatePlugin = {
+      id: "fabRundownDataDate",
+      beforeDatasetsDraw: function (chart) {
+        if (isNaN(snapshotTimestamp) || !chart.scales.x) return;
+        var area = chart.chartArea;
+        var x = chart.scales.x.getPixelForValue(snapshotTimestamp);
+        if (!area || x < area.left || x > area.right) return;
+        var ctx = chart.ctx;
+        ctx.save();
+        ctx.strokeStyle = palette.warning;
+        ctx.globalAlpha = .62;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(Math.round(x) + .5, area.top);
+        ctx.lineTo(Math.round(x) + .5, area.bottom);
+        ctx.stroke();
+        ctx.restore();
+      },
+      afterDatasetsDraw: function (chart) {
+        if (isNaN(snapshotTimestamp) || !chart.scales.x) return;
+        var area = chart.chartArea;
+        var x = chart.scales.x.getPixelForValue(snapshotTimestamp);
+        if (!area || x < area.left || x > area.right) return;
+        var ctx = chart.ctx;
+        var label = "DATA DATE · " + dataDate.format(new Date(snapshotTimestamp)).toUpperCase();
+        ctx.save();
+        ctx.font = "600 8px 'JetBrains Mono', monospace";
+        var labelWidth = Math.ceil(ctx.measureText(label).width) + 10;
+        var labelX = Math.min(Math.max(x + 5, area.left + 2), area.right - labelWidth - 2);
+        var labelY = area.top + 5;
+        ctx.fillStyle = palette.bgElev;
+        ctx.globalAlpha = .94;
+        ctx.fillRect(labelX, labelY, labelWidth, 16);
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = palette.warningBorder;
+        ctx.strokeRect(labelX + .5, labelY + .5, labelWidth - 1, 15);
+        ctx.fillStyle = palette.warning;
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, labelX + 5, labelY + 8);
+        ctx.restore();
+      }
+    };
 
     c3WhenVisible(root, function () {
       if (canvas.dataset.rundownRendered === "1") return;
-      canvas.dataset.rundownRendered = "1";
-      new Chart(canvas, {
+      var initialTickLimit = tickLimitFor(canvas.clientWidth || root.clientWidth || window.innerWidth);
+      try {
+        new Chart(canvas, {
         type: "bar",
         data: {
           datasets: [
             {
-              type: "bar",
-              label: "Lookahead daily",
-              data: points(data.lookahead_total),
-              yAxisID: "yDaily",
-              backgroundColor: "rgba(96,165,250,.50)",
-              borderColor: "rgba(96,165,250,.82)",
-              borderWidth: 1,
-              borderRadius: 2,
-              borderSkipped: false,
-              maxBarThickness: 7,
-              order: 3
-            },
-            {
-              type: "bar",
-              label: "Baseline daily",
-              data: points(data.baseline_total),
-              yAxisID: "yDaily",
-              backgroundColor: "rgba(34,197,94,.34)",
-              borderColor: "rgba(34,197,94,.70)",
-              borderWidth: 1,
-              borderRadius: 2,
-              borderSkipped: false,
-              maxBarThickness: 7,
-              order: 3
-            },
-            {
               type: "line",
               label: "Lookahead rundown",
+              metricKey: "lookaheadRemaining",
               data: points(data.lookahead_rundown),
               yAxisID: "yRemaining",
-              borderColor: "#f87171",
+              borderColor: palette.lookahead,
               backgroundColor: "rgba(248,113,113,.08)",
-              borderWidth: 2.25,
+              borderWidth: 2.5,
               pointRadius: 0,
-              pointHoverRadius: 3,
+              pointHoverRadius: 4,
               tension: 0,
               fill: false,
               spanGaps: false,
@@ -3974,39 +4127,71 @@
             {
               type: "line",
               label: "Baseline rundown",
+              metricKey: "baselineRemaining",
               data: points(data.baseline_rundown),
               yAxisID: "yRemaining",
-              borderColor: "#a8aeb8",
-              borderWidth: 2,
+              borderColor: palette.fgSubtle,
+              borderWidth: 1.75,
               borderDash: [5, 4],
               pointRadius: 0,
-              pointHoverRadius: 3,
+              pointHoverRadius: 4,
               tension: 0,
               fill: false,
               spanGaps: false,
               order: 1
+            },
+            {
+              type: "bar",
+              label: "Lookahead releases",
+              metricKey: "lookaheadDaily",
+              data: points(data.lookahead_total),
+              yAxisID: "yDaily",
+              backgroundColor: palette.infoBorder,
+              borderColor: palette.info,
+              borderWidth: 1,
+              borderRadius: 2,
+              borderSkipped: false,
+              maxBarThickness: 8,
+              order: 3
+            },
+            {
+              type: "bar",
+              label: "Baseline releases",
+              metricKey: "baselineDaily",
+              data: points(data.baseline_total),
+              yAxisID: "yDaily",
+              backgroundColor: "transparent",
+              borderColor: palette.success,
+              borderWidth: 1.5,
+              borderRadius: 2,
+              borderSkipped: false,
+              maxBarThickness: 8,
+              order: 3
             }
           ]
         },
+        plugins: [dataDatePlugin],
         options: {
           parsing: false,
           normalized: true,
           maintainAspectRatio: false,
-          animation: { duration: 420, easing: "easeOutQuart" },
+          animation: reduceMotion ? false : { duration: 360, easing: "easeOutQuart" },
+          onResize: function (chart, size) {
+            chart.options.scales.x.ticks.maxTicksLimit = tickLimitFor(size.width);
+          },
           interaction: { mode: "index", intersect: false },
+          layout: { padding: { top: 3, right: 4, bottom: 0, left: 2 } },
           plugins: {
-            legend: {
-              position: "bottom",
-              align: "center",
-              labels: {
-                color: "#a8aeb8",
-                boxWidth: 16,
-                boxHeight: 7,
-                padding: 14,
-                font: { family: "Inter, 'IBM Plex Sans', sans-serif", size: 9 }
-              }
-            },
+            legend: { display: false },
             tooltip: {
+              backgroundColor: palette.bgSubtle,
+              titleColor: palette.fg,
+              bodyColor: palette.fgMuted,
+              borderColor: palette.borderStrong,
+              borderWidth: 1,
+              padding: 10,
+              boxPadding: 4,
+              displayColors: true,
               filter: function (item) {
                 return item.raw && item.raw.y !== null && item.raw.y !== undefined;
               },
@@ -4017,8 +4202,19 @@
                 },
                 label: function (context) {
                   var daily = context.dataset.yAxisID === "yDaily";
-                  var suffix = daily ? " ISO lines" : " ISO lines remaining";
-                  return context.dataset.label + ": " + Number(context.raw.y).toLocaleString("en-US") + suffix;
+                  var suffix = daily ? " spools released" : " spools remaining";
+                  return context.dataset.label + ": " + Number(context.parsed.y).toLocaleString("en-US") + suffix;
+                },
+                footer: function (items) {
+                  var balances = {};
+                  items.forEach(function (item) {
+                    if (item.dataset.yAxisID !== "yRemaining") return;
+                    if (item.dataset.metricKey === "lookaheadRemaining") balances.lookahead = Number(item.parsed.y);
+                    if (item.dataset.metricKey === "baselineRemaining") balances.baseline = Number(item.parsed.y);
+                  });
+                  if (!Number.isFinite(balances.lookahead) || !Number.isFinite(balances.baseline)) return "";
+                  var gap = balances.lookahead - balances.baseline;
+                  return "Remaining gap: " + (gap > 0 ? "+" : "") + gap.toLocaleString("en-US") + " spools";
                 }
               }
             }
@@ -4028,11 +4224,12 @@
               type: "linear",
               min: timestamps[0],
               max: timestamps[timestamps.length - 1],
+              offset: true,
               grid: { display: false },
-              border: { color: "rgba(255,255,255,.10)" },
+              border: { color: palette.border },
               ticks: {
-                color: "#6b7280",
-                maxTicksLimit: 13,
+                color: palette.fgSubtle,
+                maxTicksLimit: initialTickLimit,
                 maxRotation: 0,
                 minRotation: 0,
                 font: { family: "JetBrains Mono, monospace", size: 8.5 },
@@ -4042,19 +4239,21 @@
             yRemaining: {
               position: "left",
               beginAtZero: true,
-              suggestedMax: 650,
-              grid: { color: "rgba(255,255,255,.07)" },
+              suggestedMax: 700,
+              grid: { color: palette.borderSubtle },
               border: { display: false },
               title: {
                 display: true,
-                text: "REMAINING ISO LINES",
-                color: "#6b7280",
+                text: "REMAINING SPOOLS",
+                color: palette.fgSubtle,
                 font: { family: "JetBrains Mono, monospace", size: 8, weight: "600" }
               },
               ticks: {
-                color: "#a8aeb8",
+                color: palette.fgSubtle,
+                stepSize: 100,
                 precision: 0,
-                font: { family: "JetBrains Mono, monospace", size: 8.5 }
+                font: { family: "JetBrains Mono, monospace", size: 8.5 },
+                callback: function (value) { return Number(value).toLocaleString("en-US"); }
               }
             },
             yDaily: {
@@ -4065,20 +4264,289 @@
               border: { display: false },
               title: {
                 display: true,
-                text: "DAILY ISO LINES",
-                color: "#6b7280",
+                text: "DAILY RELEASES · SPOOLS",
+                color: palette.fgSubtle,
                 font: { family: "JetBrains Mono, monospace", size: 8, weight: "600" }
               },
               ticks: {
-                color: "#a8aeb8",
+                color: palette.fgSubtle,
+                stepSize: 10,
                 precision: 0,
-                font: { family: "JetBrains Mono, monospace", size: 8.5 }
+                font: { family: "JetBrains Mono, monospace", size: 8.5 },
+                callback: function (value) { return Number(value).toLocaleString("en-US"); }
               }
             }
           }
         }
-      });
+        });
+        canvas.dataset.rundownRendered = "1";
+      } catch (_err) {
+        showRundownError("Rundown chart could not be rendered.");
+      }
     }, { rootMargin: "600px 0px", idle: true });
+  }
+
+  // ===== S03 · Weekly fabrication skyline — Runddown baseline/lookahead =====
+  function fabSkylineInit() {
+    var dataNode = document.getElementById("fabSkylineData");
+    var root = document.querySelector("[data-fab-skyline]");
+    var matrix = document.getElementById("fabSkylinePlot");
+    var viewport = root ? root.querySelector(".fab-skyline-viewport") : null;
+    if (!dataNode || !root || !matrix || !viewport) return;
+
+    var data;
+    try {
+      data = JSON.parse(dataNode.textContent || "{}");
+    } catch (_err) {
+      data = {};
+    }
+    function hasSkylineData(week) {
+      if (!week) return false;
+      return (Array.isArray(week.forecast) && week.forecast.length > 0)
+        || (Array.isArray(week.actual) && week.actual.length > 0)
+        || Number(week.forecast_total || 0) > 0
+        || Number(week.actual_total || 0) > 0;
+    }
+    var weeks = Array.isArray(data.weeks) ? data.weeks.filter(hasSkylineData) : [];
+    if (!weeks.length) {
+      viewport.hidden = true;
+      var empty = document.getElementById("fabSkylineEmpty");
+      if (empty) empty.hidden = false;
+      return;
+    }
+
+    var SCENARIOS = {
+      forecast: { label: "Forecast", detailLabel: "Baseline forecast", icon: "bi-calendar3", key: "forecast", totalKey: "forecast_total" },
+      actual: { label: "Actual", detailLabel: "Actual", icon: "bi-check2-circle", key: "actual", totalKey: "actual_total" }
+    };
+    var shortDate = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", timeZone: "UTC"
+    });
+    var longDate = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit", month: "short", year: "numeric", timeZone: "UTC"
+    });
+    var asOfTimestamp = Date.parse((root.dataset.asOfDate || "") + "T00:00:00Z");
+    var modal = document.getElementById("fabSkylineModal");
+    var modalBody = document.getElementById("fabSkylineModalBody");
+    var modalKicker = document.getElementById("fabSkylineModalKicker");
+    var modalTitle = document.getElementById("fabSkylineModalTitle");
+    var modalMeta = document.getElementById("fabSkylineModalMeta");
+    var lastTrigger = null;
+    var bodyOverflowBeforeModal = "";
+    if (modal && modal.parentElement !== document.body) {
+      modal.classList.add("fab-skyline-portal");
+      document.body.appendChild(modal);
+    }
+
+    function dateObject(value) {
+      return new Date(String(value) + "T00:00:00Z");
+    }
+    function displayLine(value) {
+      return String(value || "—").replace(/^1\.1\/2"/, '1-1/2"');
+    }
+    function spoolLabel(value) {
+      return Number(value || 0).toLocaleString("en-US") + " spool" + (Number(value) === 1 ? "" : "s");
+    }
+    function orderedSegments(entries, scenarioKey) {
+      return entries.slice().sort(function (a, b) {
+        var delta = Number(a.spools || 0) - Number(b.spools || 0);
+        return (scenarioKey === "forecast" ? delta : -delta) || String(a.line).localeCompare(String(b.line));
+      });
+    }
+    function stackRows(entryCount) {
+      return Math.max(0, Number(entryCount || 0));
+    }
+    function loadClass(value) {
+      var spools = Number(value || 0);
+      if (spools >= 6) return "is-load-high";
+      if (spools >= 3) return "is-load-medium";
+      return "is-load-low";
+    }
+    function segmentNode(segment, scenarioKey) {
+      var scenario = SCENARIOS[scenarioKey];
+      var item = document.createElement("span");
+      item.className = "fab-skyline-item is-" + scenarioKey + " " + loadClass(segment.spools);
+      item.title = displayLine(segment.line) + " · " + spoolLabel(segment.spools) + " · " + scenario.detailLabel;
+
+      var code = document.createElement("span");
+      code.className = "fab-skyline-code";
+      code.textContent = displayLine(segment.line);
+      var quantity = document.createElement("span");
+      quantity.className = "fab-skyline-qty";
+      quantity.textContent = Number(segment.spools || 0).toLocaleString("en-US");
+      quantity.setAttribute("aria-label", spoolLabel(segment.spools));
+      item.appendChild(code);
+      item.appendChild(quantity);
+      return item;
+    }
+    function seriesCell(scenarioKey) {
+      var scenario = SCENARIOS[scenarioKey];
+      var badge = document.createElement("span");
+      badge.className = "fab-skyline-status is-" + scenarioKey;
+      var icon = document.createElement("i");
+      icon.className = "bi " + scenario.icon;
+      icon.setAttribute("aria-hidden", "true");
+      badge.appendChild(icon);
+      badge.appendChild(document.createTextNode(scenario.detailLabel));
+      return badge;
+    }
+    function closeDetail() {
+      if (modal && !modal.hidden) {
+        modal.hidden = true;
+        document.body.style.overflow = bodyOverflowBeforeModal;
+      }
+      if (lastTrigger) {
+        lastTrigger.setAttribute("aria-expanded", "false");
+        lastTrigger.focus({ preventScroll: true });
+        lastTrigger = null;
+      }
+    }
+    function openDetail(week, scenarioKey, trigger) {
+      if (!modal || !modalBody || !modalKicker || !modalTitle || !modalMeta) return;
+      var scenario = SCENARIOS[scenarioKey];
+      var entries = Array.isArray(week[scenario.key]) ? week[scenario.key] : [];
+      var total = Number(week[scenario.totalKey] || 0);
+      if (lastTrigger && lastTrigger !== trigger) lastTrigger.setAttribute("aria-expanded", "false");
+      lastTrigger = trigger;
+      trigger.setAttribute("aria-expanded", "true");
+      modalKicker.textContent = scenario.label + " · week ending";
+      modalTitle.textContent = longDate.format(dateObject(week.date));
+      modalMeta.textContent = entries.length.toLocaleString("en-US") + " line" + (entries.length === 1 ? "" : "s") + " · " + spoolLabel(total);
+      modalBody.replaceChildren();
+      entries.slice().sort(function (a, b) { return String(a.line).localeCompare(String(b.line)); }).forEach(function (segment) {
+        var row = document.createElement("tr");
+        var lineCell = document.createElement("td");
+        lineCell.textContent = displayLine(segment.line);
+        var dateCell = document.createElement("td");
+        dateCell.textContent = (segment.dates || []).map(function (value) { return shortDate.format(dateObject(value)); }).join(" · ") || "—";
+        var stateCell = document.createElement("td");
+        stateCell.appendChild(seriesCell(scenarioKey));
+        var spoolCell = document.createElement("td");
+        spoolCell.className = "r";
+        spoolCell.textContent = Number(segment.spools || 0).toLocaleString("en-US");
+        row.appendChild(lineCell);
+        row.appendChild(dateCell);
+        row.appendChild(stateCell);
+        row.appendChild(spoolCell);
+        modalBody.appendChild(row);
+      });
+      if (modal.hidden) bodyOverflowBeforeModal = document.body.style.overflow;
+      modal.hidden = false;
+      document.body.style.overflow = "hidden";
+      var closeButton = modal.querySelector(".fab-x");
+      if (closeButton) closeButton.focus({ preventScroll: true });
+    }
+    function halfNode(week, scenarioKey) {
+      var scenario = SCENARIOS[scenarioKey];
+      var entries = Array.isArray(week[scenario.key]) ? week[scenario.key] : [];
+      var total = Number(week[scenario.totalKey] || 0);
+      var half = document.createElement("div");
+      half.className = "fab-skyline-half is-" + scenarioKey;
+      var totalNode = document.createElement("span");
+      totalNode.className = "fab-skyline-total";
+      if (!total) totalNode.classList.add("is-zero");
+      var totalValue = document.createElement("b");
+      totalValue.textContent = total.toLocaleString("en-US");
+      var totalUnit = document.createElement("span");
+      totalUnit.className = "fab-skyline-total-unit";
+      totalUnit.textContent = total === 1 ? "spool" : "spools";
+      totalNode.appendChild(totalValue);
+      totalNode.appendChild(totalUnit);
+      totalNode.setAttribute("aria-label", "Weekly total: " + spoolLabel(total));
+      totalNode.title = "Weekly total · " + spoolLabel(total);
+
+      var stack;
+      if (entries.length) {
+        var ordered = orderedSegments(entries, scenarioKey);
+        stack = document.createElement("button");
+        stack.type = "button";
+        stack.className = "fab-skyline-stack";
+        stack.setAttribute("aria-expanded", "false");
+        stack.setAttribute("aria-controls", "fabSkylineModal");
+        stack.setAttribute("aria-label", scenario.label + ", week ending " + longDate.format(dateObject(week.date)) + ": " + entries.length + " lines and " + spoolLabel(total) + ". Open details.");
+        ordered.forEach(function (segment) { stack.appendChild(segmentNode(segment, scenarioKey)); });
+        stack.addEventListener("click", function () { openDetail(week, scenarioKey, stack); });
+      } else {
+        stack = document.createElement("span");
+        stack.className = "fab-skyline-zero";
+        stack.setAttribute("aria-hidden", "true");
+      }
+
+      if (scenarioKey === "forecast") {
+        half.appendChild(totalNode);
+        half.appendChild(stack);
+      } else {
+        half.appendChild(stack);
+        half.appendChild(totalNode);
+      }
+      return half;
+    }
+    function render() {
+      if (matrix.dataset.skylineRendered === "1") return;
+      matrix.dataset.skylineRendered = "1";
+      var plot = root.querySelector(".fab-skyline-plot");
+      var forecastRows = Math.max.apply(null, weeks.map(function (week) {
+        return stackRows(Array.isArray(week.forecast) ? week.forecast.length : 0);
+      }));
+      var actualRows = Math.max.apply(null, weeks.map(function (week) {
+        return stackRows(Array.isArray(week.actual) ? week.actual.length : 0);
+      }));
+      var linePitch = 16;
+      var forecastHeight = Math.max(180, 22 + (forecastRows * linePitch));
+      var actualHeight = Math.max(76, 22 + (actualRows * linePitch));
+      if (plot) {
+        plot.style.setProperty("--fab-skyline-forecast-height", forecastHeight + "px");
+        plot.style.setProperty("--fab-skyline-actual-height", actualHeight + "px");
+      }
+      matrix.style.setProperty("--fab-skyline-week-count", String(weeks.length));
+      weeks.forEach(function (week) {
+        var column = document.createElement("div");
+        column.className = "fab-skyline-week";
+        var weekTimestamp = dateObject(week.date).getTime();
+        if (!isNaN(asOfTimestamp) && asOfTimestamp <= weekTimestamp && asOfTimestamp > weekTimestamp - (7 * 86400000)) {
+          column.classList.add("is-as-of");
+        }
+        if (Array.isArray(week.actual) && week.actual.length) column.classList.add("has-actual");
+        column.appendChild(halfNode(week, "forecast"));
+        var axis = document.createElement("div");
+        axis.className = "fab-skyline-axis";
+        var time = document.createElement("time");
+        time.dateTime = week.date;
+        time.textContent = shortDate.format(dateObject(week.date));
+        axis.appendChild(time);
+        column.appendChild(axis);
+        column.appendChild(halfNode(week, "actual"));
+        matrix.appendChild(column);
+      });
+    }
+
+    render();
+    if (modal) {
+      modal.querySelectorAll('[data-close="fabSkylineModal"]').forEach(function (control) {
+        control.addEventListener("click", function () { window.setTimeout(closeDetail, 0); });
+      });
+      modal.addEventListener("keydown", function (event) {
+        if (event.key !== "Tab") return;
+        var focusable = Array.from(modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+          .filter(function (element) { return !element.hidden && !element.disabled; });
+        if (!focusable.length) {
+          event.preventDefault();
+          return;
+        }
+        var first = focusable[0];
+        var last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+    }
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && lastTrigger) window.setTimeout(closeDetail, 0);
+    });
   }
 
   {% if show_tracking %}
@@ -4971,6 +5439,7 @@
     renderAllPoPlaced();
     fabInit();
     fabRundownInit();
+    fabSkylineInit();
     {% if show_tracking %}
     trkInit();
     {% endif %}

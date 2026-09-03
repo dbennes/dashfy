@@ -22,7 +22,7 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.accounts.permissions import has_module_permission
-from apps.core import fabrication_source, rundown_source, tracking_source
+from apps.core import fabrication_source, rundown_source, skyline_source, tracking_source
 from apps.core.datafy_supply import refresh_supply_snapshot, supply_filters_hash
 from apps.core.engineering_import import import_engineering_status_workbook
 from apps.core.engineering_monitor_import import import_engineering_monitor_workbook, normalize_monitor_discipline
@@ -417,6 +417,9 @@ def home_view(request):
     # Snapshot versionado do grafico de rundown. A fonte e independente do
     # PostgreSQL de fabricacao para uma falha nao derrubar o restante da S03.
     rundown = rundown_source.fabrication_rundown_safe()
+    # A skyline combina a baseline da Planilha1 com o lookahead do Runddown e
+    # falha de forma independente para preservar a Fabricacao e a curva.
+    skyline = skyline_source.fabrication_skyline_safe()
     # S04 · Tracking fica atras de uma flag ate a secao estar pronta para
     # publicacao. Desligada, a home tambem evita consultar o Taskfy.
     show_tracking = settings.DASHFY_SHOW_TRACKING
@@ -428,6 +431,7 @@ def home_view(request):
         "manager": manager,
         "fabrication": fabrication,
         "rundown": rundown,
+        "skyline": skyline,
         "tracking": tracking,
         "show_tracking": show_tracking,
         "DATAFY_BASE_URL": settings.DATAFY_BASE_URL,
