@@ -15,11 +15,16 @@ from django.utils import timezone
 SKYLINE_DATA_PATH = Path(__file__).resolve().parent / "data" / "fabrication_skyline_20260902.json"
 logger = logging.getLogger(__name__)
 
-_EXPECTED_COLUMNS = ["line", "baseline_date", "line_lookahead_date", "spools"]
+_EXPECTED_COLUMNS = ["line", "baseline_date", "lookahead_date", "spools"]
+_STATUS_KEYS = ("on_time", "late", "partial", "upcoming")
 
 
 def _empty_payload(error: str = "") -> dict[str, Any]:
-    charts = {"weeks": []}
+    charts = {
+        "weeks": [],
+        "status_totals": {status: 0 for status in _STATUS_KEYS},
+        "status_line_counts": {status: 0 for status in _STATUS_KEYS},
+    }
     return {
         "available": False,
         "error": error,
@@ -28,8 +33,16 @@ def _empty_payload(error: str = "") -> dict[str, Any]:
             "line_count": 0,
             "entry_count": 0,
             "scope_spools": 0,
-            "actual_line_count": 0,
-            "actual_spools": 0,
+            "performed_line_count": 0,
+            "performed_spools": 0,
+            "upcoming_line_count": 0,
+            "upcoming_spools": 0,
+            "on_time_line_count": 0,
+            "on_time_spools": 0,
+            "late_line_count": 0,
+            "late_spools": 0,
+            "partial_line_count": 0,
+            "partial_spools": 0,
             "baseline_last_release_label": "—",
             "lookahead_last_release_label": "—",
             "last_release_variance_days": 0,
@@ -61,7 +74,7 @@ def _week_ending_friday(value: date) -> date:
 
 
 def _validated_snapshot(raw: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    if not isinstance(raw, dict) or raw.get("schema") != 2:
+    if not isinstance(raw, dict) or raw.get("schema") != 3:
         raise ValueError("unsupported skyline data schema")
     if raw.get("columns") != _EXPECTED_COLUMNS:
         raise ValueError("unsupported skyline row columns")
@@ -73,31 +86,21 @@ def _validated_snapshot(raw: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]
     raw_rows = raw.get("rows")
     if not isinstance(raw_rows, list) or not raw_rows:
         raise ValueError("skyline rows are missing")
-    raw_actual_dates = raw.get("actual_dates")
-    if not isinstance(raw_actual_dates, list) or len(raw_actual_dates) != len(raw_rows):
-        raise ValueError("skyline actual dates must align with every row")
-
     rows: list[dict[str, Any]] = []
     baseline_by_line: dict[str, date] = {}
     for index, raw_row in enumerate(raw_rows):
         if not isinstance(raw_row, list) or len(raw_row) != len(_EXPECTED_COLUMNS):
             raise ValueError(f"rows[{index}] must contain four values")
-        raw_line, raw_baseline, raw_line_lookahead, raw_spools = raw_row
+        raw_line, raw_baseline, raw_lookahead, raw_spools = raw_row
         line = str(raw_line).strip() if raw_line is not None else ""
         if not line:
             raise ValueError(f"rows[{index}].line cannot be blank")
         baseline = _iso_date(raw_baseline, row_index=index, field="baseline_date")
-        line_lookahead = _iso_date(
-            raw_line_lookahead,
+        lookahead = _iso_date(
+            raw_lookahead,
             row_index=index,
-            field="line_lookahead_date",
+            field="lookahead_date",
         )
-        actual = _iso_date(raw_actual_dates[index], row_index=index, field="actual_date")
-        # This versioned snapshot was paired ordinally with Runddown F:G and
-        # independently reconciled at +4 calendar days for all 175 records.
-        # Fail closed if either parallel sequence is later reordered alone.
-        if actual != line_lookahead + timedelta(days=4):
-            raise ValueError(f"rows[{index}].actual_date no longer matches Runddown F:G")
         spools = _positive_integer(raw_spools, row_index=index)
         previous_baseline = baseline_by_line.setdefault(line, baseline)
         if previous_baseline != baseline:
@@ -106,8 +109,7 @@ def _validated_snapshot(raw: Any) -> tuple[dict[str, Any], list[dict[str, Any]]]
             {
                 "line": line,
                 "baseline": baseline,
-                "line_lookahead": line_lookahead,
-                "actual": actual,
+                "lookahead": lookahead,
                 "spools": spools,
             }
         )
@@ -120,7 +122,22 @@ def _weekly_segments(
     as_of_date: date,
 ) -> list[dict[str, Any]]:
     forecast_groups: dict[date, dict[str, dict[str, Any]]] = defaultdict(dict)
-    actual_groups: dict[date, dict[str, dict[str, Any]]] = defaultdict(dict)
+    lookahead_groups: dict[date, dict[tuple[str, str], dict[str, Any]]] = defaultdict(dict)
+
+    line_profiles: dict[str, dict[str, bool]] = {}
+    rows_by_line: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        rows_by_line[row["line"]].append(row)
+    for line, line_rows in rows_by_line.items():
+        has_past = any(row["lookahead"] < as_of_date for row in line_rows)
+        has_upcoming = any(row["lookahead"] >= as_of_date for row in line_rows)
+        line_profiles[line] = {
+            "has_past": has_past,
+            "has_upcoming": has_upcoming,
+            "is_late": (not has_upcoming) and any(
+                row["lookahead"] > row["baseline"] for row in line_rows
+            ),
+        }
 
     for row in rows:
         line = row["line"]
@@ -135,39 +152,48 @@ def _weekly_segments(
         )
         baseline_segment["spools"] += row["spools"]
 
-        # Runddown F:G carries the complete 60-day lookahead, including future
-        # dates. Per the temporary business rule, only dates strictly before
-        # the application date belong in the lower (Actual) band.
-        if row["actual"] >= as_of_date:
-            continue
-        actual_week = _week_ending_friday(row["actual"])
-        actual_segment = actual_groups[actual_week].setdefault(
-            line,
+        profile = line_profiles[line]
+        if row["lookahead"] >= as_of_date:
+            status = "upcoming"
+        elif profile["has_past"] and profile["has_upcoming"]:
+            status = "partial"
+        elif profile["is_late"]:
+            status = "late"
+        else:
+            status = "on_time"
+
+        lookahead_week = _week_ending_friday(row["lookahead"])
+        lookahead_segment = lookahead_groups[lookahead_week].setdefault(
+            (line, status),
             {
                 "line": line,
+                "status": status,
                 "spools": 0,
                 "dates": [],
             },
         )
-        actual_segment["spools"] += row["spools"]
-        actual_segment["dates"].append(row["actual"].isoformat())
-    all_weeks = set(forecast_groups) | set(actual_groups)
+        lookahead_segment["spools"] += row["spools"]
+        lookahead_segment["dates"].append(row["lookahead"].isoformat())
+    all_weeks = set(forecast_groups) | set(lookahead_groups)
     first_week = min(all_weeks)
     last_week = max(all_weeks)
     weeks: list[dict[str, Any]] = []
     current = first_week
     while current <= last_week:
         forecast = sorted(forecast_groups.get(current, {}).values(), key=lambda item: item["line"])
-        actual = sorted(actual_groups.get(current, {}).values(), key=lambda item: item["line"])
-        for segment in actual:
+        lookahead = sorted(
+            lookahead_groups.get(current, {}).values(),
+            key=lambda item: (item["line"], item["status"]),
+        )
+        for segment in lookahead:
             segment["dates"] = sorted(set(segment["dates"]))
         weeks.append(
             {
                 "date": current.isoformat(),
                 "forecast_total": sum(item["spools"] for item in forecast),
-                "actual_total": sum(item["spools"] for item in actual),
+                "lookahead_total": sum(item["spools"] for item in lookahead),
                 "forecast": forecast,
-                "actual": actual,
+                "lookahead": lookahead,
             }
         )
         current += timedelta(days=7)
@@ -185,25 +211,41 @@ def fabrication_skyline(*, as_of_date: date | None = None) -> dict[str, Any]:
     weeks = _weekly_segments(rows, as_of_date=as_of_date)
     scope_spools = sum(row["spools"] for row in rows)
     line_count = len({row["line"] for row in rows})
-    actual_line_count = len({
-        row["line"] for row in rows
-        if row["actual"] < as_of_date
-    })
-    actual_spools = sum(
-        row["spools"] for row in rows
-        if row["actual"] < as_of_date
-    )
+    performed_line_count = len({row["line"] for row in rows if row["lookahead"] < as_of_date})
+    performed_spools = sum(row["spools"] for row in rows if row["lookahead"] < as_of_date)
+    upcoming_line_count = len({row["line"] for row in rows if row["lookahead"] >= as_of_date})
+    upcoming_spools = sum(row["spools"] for row in rows if row["lookahead"] >= as_of_date)
     baseline_last_release = max(row["baseline"] for row in rows)
-    lookahead_last_release = max(row["actual"] for row in rows)
-    charts = {"weeks": weeks}
+    lookahead_last_release = max(row["lookahead"] for row in rows)
+
+    status_totals = {status: 0 for status in _STATUS_KEYS}
+    status_lines = {status: set() for status in _STATUS_KEYS}
+    for week in weeks:
+        for segment in week["lookahead"]:
+            status = segment["status"]
+            status_totals[status] += segment["spools"]
+            status_lines[status].add(segment["line"])
+    status_line_counts = {
+        status: len(lines)
+        for status, lines in status_lines.items()
+    }
+    charts = {
+        "weeks": weeks,
+        "status_totals": status_totals,
+        "status_line_counts": status_line_counts,
+    }
     source["snapshot_label"] = snapshot_date.strftime("%d %b %y")
     source["as_of_date"] = as_of_date.isoformat()
     source["as_of_label"] = as_of_date.strftime("%d %b %y")
 
     if sum(week["forecast_total"] for week in weeks) != scope_spools:
         raise ValueError("forecast skyline does not reconcile with the spool scope")
-    if sum(week["actual_total"] for week in weeks) != actual_spools:
-        raise ValueError("actual skyline does not reconcile with the as-of date")
+    if sum(week["lookahead_total"] for week in weeks) != scope_spools:
+        raise ValueError("lookahead skyline does not reconcile with the spool scope")
+    if sum(status_totals.values()) != scope_spools:
+        raise ValueError("lookahead statuses do not reconcile with the spool scope")
+    if performed_spools + upcoming_spools != scope_spools:
+        raise ValueError("performed and upcoming spools do not reconcile with the spool scope")
 
     return {
         "available": True,
@@ -213,8 +255,16 @@ def fabrication_skyline(*, as_of_date: date | None = None) -> dict[str, Any]:
             "line_count": line_count,
             "entry_count": len(rows),
             "scope_spools": scope_spools,
-            "actual_line_count": actual_line_count,
-            "actual_spools": actual_spools,
+            "performed_line_count": performed_line_count,
+            "performed_spools": performed_spools,
+            "upcoming_line_count": upcoming_line_count,
+            "upcoming_spools": upcoming_spools,
+            "on_time_line_count": status_line_counts["on_time"],
+            "on_time_spools": status_totals["on_time"],
+            "late_line_count": status_line_counts["late"],
+            "late_spools": status_totals["late"],
+            "partial_line_count": status_line_counts["partial"],
+            "partial_spools": status_totals["partial"],
             "baseline_last_release_label": baseline_last_release.strftime("%d %b %y"),
             "lookahead_last_release_label": lookahead_last_release.strftime("%d %b %y"),
             "last_release_variance_days": (lookahead_last_release - baseline_last_release).days,

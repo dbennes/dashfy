@@ -14,22 +14,30 @@ class FabricationRundownSnapshotTests(SimpleTestCase):
         self.assertTrue(payload["available"])
         self.assertEqual(
             payload["source"]["workbook"],
-            "datafy-material-requisition-20260902-0954 para curva Piping 02.09.26 (003) (002).xlsx",
+            "Cópia de datafy-material-requisition-20260902-0954 para curva Piping 02.09.26 (003) atualizado 22h.xlsx",
         )
         self.assertEqual(payload["source"]["worksheet"], "Runddown")
-        self.assertEqual(payload["source"]["range"], "T1:X79")
-        self.assertEqual(payload["source"]["reconciled_from"], "F6:G180 / K6:L180")
+        self.assertEqual(payload["source"]["range"], "T1:X75")
+        self.assertEqual(payload["source"]["reconciled_from"], "F6:G180 / K6:L168")
         self.assertEqual(payload["source"]["snapshot_date"], "2026-09-02")
+        self.assertEqual(payload["source"]["revision_timestamp"], "2026-09-03T21:07:18")
+        self.assertEqual(
+            payload["source"]["workbook_sha256"],
+            "FA5D662EAD24A555985488130F3528F7F9AB5A666FDF919D7A65A5C6CBBEE9BD",
+        )
         self.assertEqual(charts["dates"][0], "2026-08-21")
         self.assertEqual(charts["dates"][-1], "2026-12-15")
-        self.assertTrue(all(len(values) == 94 for values in charts.values()))
+        self.assertTrue(all(len(values) == 92 for values in charts.values()))
 
         self.assertEqual(sum(charts["lookahead_total"]), 607)
         self.assertEqual(sum(value or 0 for value in charts["baseline_total"]), 607)
         self.assertEqual(charts["lookahead_rundown"][0], 607)
         self.assertEqual(charts["lookahead_rundown"][-1], 0)
-        self.assertEqual(charts["lookahead_total"][charts["dates"].index("2026-08-28")], 21)
+        self.assertEqual(charts["lookahead_total"][charts["dates"].index("2026-08-24")], 21)
+        self.assertEqual(charts["lookahead_total"][charts["dates"].index("2026-09-02")], 27)
         self.assertEqual(charts["lookahead_total"][charts["dates"].index("2026-11-30")], 1)
+        self.assertNotIn("2026-08-28", charts["dates"])
+        self.assertNotIn("2026-09-06", charts["dates"])
 
     def test_rundown_balances_reconcile_with_the_previous_daily_bucket(self):
         charts = fabrication_rundown()["charts"]

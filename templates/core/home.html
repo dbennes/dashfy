@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
-<link href="{% static 'css/fabrication-s03.css' %}?v=20260903-s03-delivery-v14" rel="stylesheet">
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260903-s03-delivery-v15" rel="stylesheet">
 {% endblock %}
 
 {% block tickers %}
@@ -1286,37 +1286,40 @@
             <div class="fab-chart-empty" role="status">Rundown unavailable: {{ rundown.error|default:"the source snapshot could not be read." }}</div>
           {% endif %}
         </div>
-        <div class="fab-rundown-source" title="{{ rundown.source.workbook|default:'DATAFY material requisition' }} · {{ rundown.source.worksheet|default:'Runddown' }}!{{ rundown.source.range|default:'T1:X79' }} · reconciled from {{ rundown.source.reconciled_from|default:'source schedule' }}">
-          Source · {{ rundown.source.worksheet|default:"Runddown" }}!{{ rundown.source.range|default:"T1:X79" }} · snapshot {{ rundown.source.snapshot_label|default:"—" }}
+        <div class="fab-rundown-source" title="{{ rundown.source.workbook|default:'DATAFY material requisition' }} · {{ rundown.source.worksheet|default:'Runddown' }}!{{ rundown.source.range|default:'T1:X75' }} · reconciled from {{ rundown.source.reconciled_from|default:'source schedule' }}">
+          Source · {{ rundown.source.worksheet|default:"Runddown" }}!{{ rundown.source.range|default:"T1:X75" }} · reconciled schedule · snapshot {{ rundown.source.snapshot_label|default:"—" }}
         </div>
       </article>
 
       <article class="fab-skyline-card" data-fab-skyline data-as-of-date="{{ skyline.source.as_of_date|default:'2026-09-03' }}">
         <div class="fab-rundown-head fab-skyline-head">
           <div class="fab-rundown-title">
-            <span class="fab-rundown-kicker">Piping · Baseline forecast vs actual</span>
+            <span class="fab-rundown-kicker">Piping · Baseline forecast vs 60-day lookahead</span>
             <h3><i class="bi bi-bar-chart-steps"></i> Fabrication skyline</h3>
-            <p>Baseline forecast above · Actual below from Runddown F:G dates before {{ skyline.source.as_of_label|default:"today" }}</p>
+            <p>Baseline forecast above · full 60-day lookahead below, classified at {{ skyline.source.as_of_label|default:"today" }}</p>
           </div>
-          <span class="fab-skyline-scope">{{ skyline.kpis.line_count|default:0 }} lines · {{ skyline.kpis.actual_spools|default:0 }} actual / {{ skyline.kpis.scope_spools|default:0 }} forecast spools</span>
+          <span class="fab-skyline-scope">{{ skyline.kpis.line_count|default:0 }} lines · {{ skyline.kpis.scope_spools|default:0 }} spools · {{ skyline.kpis.performed_spools|default:0 }} performed / {{ skyline.kpis.upcoming_spools|default:0 }} upcoming</span>
         </div>
         <div class="fab-skyline-plot">
           {% if skyline.available %}
             <div class="fab-skyline-legend" aria-label="Skyline series legend">
-              <span class="is-forecast" title="Forecast uses the baseline schedule in Planilha1."><i class="bi bi-calendar3" aria-hidden="true"></i>Forecast · Planilha1 baseline <b>{{ skyline.kpis.line_count|default:0 }} lines · {{ skyline.kpis.scope_spools|default:0 }} spools</b></span>
-              <span class="is-actual" title="Actual temporarily includes only Runddown F:G dates before the cutoff."><i class="bi bi-check2-circle" aria-hidden="true"></i>Actual · F:G before cutoff <b>{{ skyline.kpis.actual_line_count|default:0 }} lines · {{ skyline.kpis.actual_spools|default:0 }} spools</b></span>
-              <span class="is-current" title="The amber axis marks the week containing the current Actual cutoff."><i class="bi bi-calendar-week" aria-hidden="true"></i>Current week · cutoff <b>{{ skyline.source.as_of_label|default:"today" }}</b></span>
-              <span class="is-scale" title="Darker blocks contain more spools; the exact quantity remains inside each block."><i class="bi bi-circle-half" aria-hidden="true"></i>Shade intensity · spool quantity</span>
+              <span class="is-forecast" title="Forecast uses the baseline schedule in Planilha1."><i class="bi bi-calendar3" aria-hidden="true"></i>Forecast · baseline <b>{{ skyline.kpis.scope_spools|default:0 }} spools</b></span>
+              <span class="is-on-time" title="A fully performed line whose lookahead dates do not exceed its baseline."><i class="bi bi-check2-circle" aria-hidden="true"></i>On time <b>{{ skyline.kpis.on_time_spools|default:0 }} spools</b></span>
+              <span class="is-late" title="A fully performed line with at least one lookahead date after its baseline."><i class="bi bi-exclamation-diamond" aria-hidden="true"></i>Late <b>{{ skyline.kpis.late_spools|default:0 }} spools</b></span>
+              <span class="is-partial" title="Performed spools from a line that still has upcoming work."><i class="bi bi-circle-half" aria-hidden="true"></i>Partial <b>{{ skyline.kpis.partial_spools|default:0 }} spools</b></span>
+              <span class="is-upcoming" title="Lookahead dates on or after the cutoff remain predicted."><i class="bi bi-clock-history" aria-hidden="true"></i>Upcoming <b>{{ skyline.kpis.upcoming_spools|default:0 }} spools</b></span>
+              <span class="is-current" title="The amber axis marks the week containing the classification cutoff."><i class="bi bi-calendar-week" aria-hidden="true"></i>Cutoff <b>{{ skyline.source.as_of_label|default:"today" }}</b></span>
             </div>
             <div class="fab-skyline-band-labels" aria-hidden="true">
-              <span>Forecast</span><span></span><span>Actual</span>
+              <span>Forecast</span><span></span><span>Lookahead</span>
             </div>
-            <div class="fab-skyline-viewport" role="group" aria-label="Weekly forecast and actual skyline with all scheduled lines visible" aria-describedby="fabSkylineSummary">
+            <div class="fab-skyline-viewport" role="group" aria-label="Weekly baseline forecast and full 60-day lookahead skyline with all scheduled lines visible" aria-describedby="fabSkylineSummary">
               <div class="fab-skyline-matrix" id="fabSkylinePlot"></div>
             </div>
             <p class="visually-hidden" id="fabSkylineSummary">
               Weekly skyline for {{ skyline.kpis.line_count|default:0 }} piping lines.
-              Baseline forecast is above the date axis with {{ skyline.kpis.scope_spools|default:0 }} spools. Actual is below it with {{ skyline.kpis.actual_spools|default:0 }} spools whose 60-day-lookahead date is before {{ skyline.source.as_of_label|default:"today" }}.
+              Baseline forecast is above the date axis with {{ skyline.kpis.scope_spools|default:0 }} spools. The full 60-day lookahead is below it with {{ skyline.kpis.scope_spools|default:0 }} spools.
+              Dates on or after {{ skyline.source.as_of_label|default:"today" }} are gray. Past work is yellow when its line is partial, red when its completed line is late, and green when its completed line is on time.
               Select a weekly tower to inspect every line and quantity.
             </p>
             <div class="fab-chart-empty" id="fabSkylineEmpty" role="status" hidden>No skyline points to show.</div>
@@ -1325,7 +1328,7 @@
           {% endif %}
         </div>
         <div class="fab-rundown-source">
-          Source · {{ skyline.source.workbook|default:"DATAFY material requisition"|truncatechars:54 }} · Forecast {{ skyline.source.forecast_scope|default:"Planilha1!A1:E176" }} · Actual {{ skyline.source.actual_scope|default:"Runddown!F5:G180" }} · source snapshot {{ skyline.source.snapshot_label|default:"—" }} · Actual cutoff {{ skyline.source.as_of_label|default:"today" }}
+          Source · {{ skyline.source.workbook|default:"DATAFY material requisition"|truncatechars:54 }} · Forecast {{ skyline.source.forecast_scope|default:"Planilha1!A1:E176" }} · Lookahead {{ skyline.source.lookahead_scope|default:"Runddown!F5:G180" }} · source snapshot {{ skyline.source.snapshot_label|default:"—" }} · status cutoff {{ skyline.source.as_of_label|default:"today" }}
         </div>
       </article>
     </div>
@@ -1343,11 +1346,11 @@
         </div>
         <div class="fab-po-table-wrap">
           <table class="fab-po-table fab-skyline-detail-table">
-            <thead><tr><th>Line</th><th>Date</th><th>Series</th><th class="r">Spools</th></tr></thead>
+            <thead><tr><th>Line</th><th>Date</th><th>Status</th><th class="r">Spools</th></tr></thead>
             <tbody id="fabSkylineModalBody"></tbody>
           </table>
         </div>
-        <div class="fab-card-note"><i class="bi bi-info-circle"></i> Temporary Actual rule: a Runddown F:G 60-day-lookahead date before {{ skyline.source.as_of_label|default:"today" }} is treated as completed. Blue is Forecast; green is Actual.</div>
+        <div class="fab-card-note"><i class="bi bi-info-circle"></i> Temporary completion proxy: dates before {{ skyline.source.as_of_label|default:"today" }} are treated as performed. Gray is upcoming; yellow is partial; red is late; green is on time.</div>
       </div>
     </div>
 
@@ -4303,9 +4306,9 @@
     function hasSkylineData(week) {
       if (!week) return false;
       return (Array.isArray(week.forecast) && week.forecast.length > 0)
-        || (Array.isArray(week.actual) && week.actual.length > 0)
+        || (Array.isArray(week.lookahead) && week.lookahead.length > 0)
         || Number(week.forecast_total || 0) > 0
-        || Number(week.actual_total || 0) > 0;
+        || Number(week.lookahead_total || 0) > 0;
     }
     var weeks = Array.isArray(data.weeks) ? data.weeks.filter(hasSkylineData) : [];
     if (!weeks.length) {
@@ -4317,8 +4320,16 @@
 
     var SCENARIOS = {
       forecast: { label: "Forecast", detailLabel: "Baseline forecast", icon: "bi-calendar3", key: "forecast", totalKey: "forecast_total" },
-      actual: { label: "Actual", detailLabel: "Actual", icon: "bi-check2-circle", key: "actual", totalKey: "actual_total" }
+      lookahead: { label: "Lookahead", detailLabel: "60-day lookahead", icon: "bi-calendar-range", key: "lookahead", totalKey: "lookahead_total" }
     };
+    var STATUSES = {
+      forecast: { label: "Baseline forecast", icon: "bi-calendar3" },
+      on_time: { label: "Performed on time", icon: "bi-check2-circle" },
+      late: { label: "Performed late", icon: "bi-exclamation-diamond" },
+      partial: { label: "Partially performed", icon: "bi-circle-half" },
+      upcoming: { label: "Upcoming", icon: "bi-clock-history" }
+    };
+    var STATUS_ORDER = { late: 0, partial: 1, on_time: 2, upcoming: 3 };
     var shortDate = new Intl.DateTimeFormat("en-GB", {
       day: "2-digit", month: "short", timeZone: "UTC"
     });
@@ -4349,6 +4360,10 @@
     }
     function orderedSegments(entries, scenarioKey) {
       return entries.slice().sort(function (a, b) {
+        if (scenarioKey === "lookahead") {
+          var stateDelta = Number(STATUS_ORDER[a.status] || 0) - Number(STATUS_ORDER[b.status] || 0);
+          if (stateDelta) return stateDelta;
+        }
         var delta = Number(a.spools || 0) - Number(b.spools || 0);
         return (scenarioKey === "forecast" ? delta : -delta) || String(a.line).localeCompare(String(b.line));
       });
@@ -4362,11 +4377,16 @@
       if (spools >= 3) return "is-load-medium";
       return "is-load-low";
     }
+    function statusClassName(statusKey) {
+      return "is-" + String(statusKey || "upcoming").replace(/_/g, "-");
+    }
     function segmentNode(segment, scenarioKey) {
       var scenario = SCENARIOS[scenarioKey];
+      var statusKey = scenarioKey === "forecast" ? "forecast" : (STATUSES[segment.status] ? segment.status : "upcoming");
+      var status = STATUSES[statusKey];
       var item = document.createElement("span");
-      item.className = "fab-skyline-item is-" + scenarioKey + " " + loadClass(segment.spools);
-      item.title = displayLine(segment.line) + " · " + spoolLabel(segment.spools) + " · " + scenario.detailLabel;
+      item.className = "fab-skyline-item " + statusClassName(statusKey) + " " + loadClass(segment.spools);
+      item.title = displayLine(segment.line) + " · " + spoolLabel(segment.spools) + " · " + status.label;
 
       var code = document.createElement("span");
       code.className = "fab-skyline-code";
@@ -4379,15 +4399,16 @@
       item.appendChild(quantity);
       return item;
     }
-    function seriesCell(scenarioKey) {
-      var scenario = SCENARIOS[scenarioKey];
+    function seriesCell(scenarioKey, segmentStatus) {
+      var statusKey = scenarioKey === "forecast" ? "forecast" : (STATUSES[segmentStatus] ? segmentStatus : "upcoming");
+      var status = STATUSES[statusKey];
       var badge = document.createElement("span");
-      badge.className = "fab-skyline-status is-" + scenarioKey;
+      badge.className = "fab-skyline-status " + statusClassName(statusKey);
       var icon = document.createElement("i");
-      icon.className = "bi " + scenario.icon;
+      icon.className = "bi " + status.icon;
       icon.setAttribute("aria-hidden", "true");
       badge.appendChild(icon);
-      badge.appendChild(document.createTextNode(scenario.detailLabel));
+      badge.appendChild(document.createTextNode(status.label));
       return badge;
     }
     function closeDetail() {
@@ -4413,14 +4434,14 @@
       modalTitle.textContent = longDate.format(dateObject(week.date));
       modalMeta.textContent = entries.length.toLocaleString("en-US") + " line" + (entries.length === 1 ? "" : "s") + " · " + spoolLabel(total);
       modalBody.replaceChildren();
-      entries.slice().sort(function (a, b) { return String(a.line).localeCompare(String(b.line)); }).forEach(function (segment) {
+      orderedSegments(entries, scenarioKey).forEach(function (segment) {
         var row = document.createElement("tr");
         var lineCell = document.createElement("td");
         lineCell.textContent = displayLine(segment.line);
         var dateCell = document.createElement("td");
         dateCell.textContent = (segment.dates || []).map(function (value) { return shortDate.format(dateObject(value)); }).join(" · ") || "—";
         var stateCell = document.createElement("td");
-        stateCell.appendChild(seriesCell(scenarioKey));
+        stateCell.appendChild(seriesCell(scenarioKey, segment.status));
         var spoolCell = document.createElement("td");
         spoolCell.className = "r";
         spoolCell.textContent = Number(segment.spools || 0).toLocaleString("en-US");
@@ -4444,7 +4465,10 @@
       half.className = "fab-skyline-half is-" + scenarioKey;
       var totalNode = document.createElement("span");
       totalNode.className = "fab-skyline-total";
-      if (!total) totalNode.classList.add("is-zero");
+      if (!total) {
+        totalNode.classList.add("is-zero");
+        totalNode.hidden = true;
+      }
       var totalValue = document.createElement("b");
       totalValue.textContent = total.toLocaleString("en-US");
       var totalUnit = document.createElement("span");
@@ -4488,15 +4512,15 @@
       var forecastRows = Math.max.apply(null, weeks.map(function (week) {
         return stackRows(Array.isArray(week.forecast) ? week.forecast.length : 0);
       }));
-      var actualRows = Math.max.apply(null, weeks.map(function (week) {
-        return stackRows(Array.isArray(week.actual) ? week.actual.length : 0);
+      var lookaheadRows = Math.max.apply(null, weeks.map(function (week) {
+        return stackRows(Array.isArray(week.lookahead) ? week.lookahead.length : 0);
       }));
       var linePitch = 16;
       var forecastHeight = Math.max(180, 22 + (forecastRows * linePitch));
-      var actualHeight = Math.max(76, 22 + (actualRows * linePitch));
+      var lookaheadHeight = Math.max(76, 22 + (lookaheadRows * linePitch));
       if (plot) {
         plot.style.setProperty("--fab-skyline-forecast-height", forecastHeight + "px");
-        plot.style.setProperty("--fab-skyline-actual-height", actualHeight + "px");
+        plot.style.setProperty("--fab-skyline-lookahead-height", lookaheadHeight + "px");
       }
       matrix.style.setProperty("--fab-skyline-week-count", String(weeks.length));
       weeks.forEach(function (week) {
@@ -4506,7 +4530,7 @@
         if (!isNaN(asOfTimestamp) && asOfTimestamp <= weekTimestamp && asOfTimestamp > weekTimestamp - (7 * 86400000)) {
           column.classList.add("is-as-of");
         }
-        if (Array.isArray(week.actual) && week.actual.length) column.classList.add("has-actual");
+        if (Array.isArray(week.lookahead) && week.lookahead.length) column.classList.add("has-lookahead");
         column.appendChild(halfNode(week, "forecast"));
         var axis = document.createElement("div");
         axis.className = "fab-skyline-axis";
@@ -4515,7 +4539,7 @@
         time.textContent = shortDate.format(dateObject(week.date));
         axis.appendChild(time);
         column.appendChild(axis);
-        column.appendChild(halfNode(week, "actual"));
+        column.appendChild(halfNode(week, "lookahead"));
         matrix.appendChild(column);
       });
     }
