@@ -1229,7 +1229,7 @@
       </div>
     </div>
 
-    {# ---------- Piping ISO rundown (snapshot from Runddown!T1:X75) ---------- #}
+    {# ---------- Piping ISO rundown (reconciled DATAFY snapshot) ---------- #}
     <div class="fab-rundown-card" data-fab-rundown>
       <div class="fab-rundown-head">
         <div class="fab-rundown-title">
@@ -1252,7 +1252,7 @@
         {% endif %}
       </div>
       <div class="fab-rundown-source">
-        Source · {{ rundown.source.workbook|default:"DATAFY material requisition"|truncatechars:76 }} · {{ rundown.source.worksheet|default:"Runddown" }}!{{ rundown.source.range|default:"T1:X75" }}
+        Source · {{ rundown.source.workbook|default:"DATAFY material requisition"|truncatechars:76 }} · {{ rundown.source.worksheet|default:"Runddown" }}!{{ rundown.source.range|default:"T1:X79" }}
       </div>
     </div>
 
@@ -3882,7 +3882,7 @@
     c3WhenVisible(document.querySelector("#s03 .fab-charts"), initCharts);
   }
 
-  // ===== S03 · Piping ISO rundown — snapshot DATAFY / Runddown!T1:X75 =====
+  // ===== S03 · Piping ISO rundown — reconciled DATAFY snapshot =====
   function fabRundownInit() {
     var dataNode = document.getElementById("fabRundownData");
     var canvas = document.getElementById("fabRundownChart");

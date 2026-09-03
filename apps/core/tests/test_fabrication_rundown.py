@@ -7,22 +7,29 @@ from apps.core.rundown_source import fabrication_rundown, fabrication_rundown_sa
 
 
 class FabricationRundownSnapshotTests(SimpleTestCase):
-    def test_snapshot_matches_the_runddown_t_to_x_range(self):
+    def test_snapshot_matches_the_reconciled_rundown_sources(self):
         payload = fabrication_rundown()
         charts = payload["charts"]
 
         self.assertTrue(payload["available"])
+        self.assertEqual(
+            payload["source"]["workbook"],
+            "datafy-material-requisition-20260902-0954 para curva Piping 02.09.26 (003) (002).xlsx",
+        )
         self.assertEqual(payload["source"]["worksheet"], "Runddown")
-        self.assertEqual(payload["source"]["range"], "T1:X75")
+        self.assertEqual(payload["source"]["range"], "T1:X79")
+        self.assertEqual(payload["source"]["reconciled_from"], "F6:G180 / K6:L180")
         self.assertEqual(payload["source"]["snapshot_date"], "2026-09-02")
         self.assertEqual(charts["dates"][0], "2026-08-21")
-        self.assertEqual(charts["dates"][-1], "2026-12-11")
-        self.assertTrue(all(len(values) == 74 for values in charts.values()))
+        self.assertEqual(charts["dates"][-1], "2026-12-15")
+        self.assertTrue(all(len(values) == 94 for values in charts.values()))
 
         self.assertEqual(sum(charts["lookahead_total"]), 607)
         self.assertEqual(sum(value or 0 for value in charts["baseline_total"]), 607)
         self.assertEqual(charts["lookahead_rundown"][0], 607)
         self.assertEqual(charts["lookahead_rundown"][-1], 0)
+        self.assertEqual(charts["lookahead_total"][charts["dates"].index("2026-08-28")], 21)
+        self.assertEqual(charts["lookahead_total"][charts["dates"].index("2026-11-30")], 1)
 
     def test_rundown_balances_reconcile_with_the_previous_daily_bucket(self):
         charts = fabrication_rundown()["charts"]
@@ -52,8 +59,8 @@ class FabricationRundownSnapshotTests(SimpleTestCase):
         self.assertEqual(charts["baseline_rundown"][finish_index], 0)
         self.assertTrue(all(value is None for value in charts["baseline_rundown"][finish_index + 1:]))
         self.assertEqual(payload["kpis"]["baseline_finish_label"], "26 Nov 26")
-        self.assertEqual(payload["kpis"]["lookahead_finish_label"], "11 Dec 26")
-        self.assertEqual(payload["kpis"]["finish_variance_days"], 15)
+        self.assertEqual(payload["kpis"]["lookahead_finish_label"], "15 Dec 26")
+        self.assertEqual(payload["kpis"]["finish_variance_days"], 19)
 
     def test_safe_loader_degrades_without_breaking_s03(self):
         missing = Path("definitely-missing-fabrication-rundown.json")

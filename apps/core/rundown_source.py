@@ -1,8 +1,8 @@
 """Versioned Piping ISO rundown snapshot used below S03 Fabrication.
 
-The source workbook is an exported DATAFY material-requisition report.  Only
-the cached values from ``Runddown!T1:X75`` are kept in the repository, so the
-dashboard does not depend on a user's Downloads folder or on Excel at runtime.
+The source workbook is an exported DATAFY material-requisition report.  A
+reconciled snapshot of the ``Runddown`` schedule is kept in the repository, so
+the dashboard does not depend on a user's Downloads folder or Excel at runtime.
 """
 from __future__ import annotations
 
