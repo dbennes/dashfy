@@ -1329,6 +1329,11 @@
           <summary id="fabSkylineCoverageSummary"></summary>
           <ul id="fabSkylineCoverageLines"></ul>
         </details>
+        <details class="fab-skyline-coverage" id="fabSkylineUndatedCompletions" hidden>
+          <summary id="fabSkylineUndatedSummary"></summary>
+          <p>These lines are reported 100% complete, but no actual finish date is recorded. They are excluded from the lower skyline and dated completion totals.</p>
+          <ul id="fabSkylineUndatedLines"></ul>
+        </details>
         {% if skyline.available %}
         <div class="fab-skyline-material-legend" aria-label="Wooden box material indicators">
           <span class="fab-skyline-category-key"><b>Box lights</b><span><em>1</em> Supports</span><span><em>2</em> Bolts &amp; gaskets</span><span><em>3</em> Valves</span><i class="bi bi-info-circle" tabindex="0" role="img" aria-label="Lights are read from left to right. Hover or select a box for its material status; select a spool total for period details." title="Lights are read from left to right. Hover or select a box for its material status; select a spool total for period details."></i></span>
@@ -1351,7 +1356,7 @@
             </div>
             <div class="fab-skyline-viewport" role="group" aria-label="Fabrication skyline with one shared schedule axis for baseline forecast and independently dated lookahead work" aria-describedby="fabSkylineSummary">
               <div class="fab-skyline-matrix" id="fabSkylinePlot"></div>
-              <p class="fab-skyline-no-actual" id="fabSkylineNoActual" hidden>No fabrication progress is available for the scheduled lines.</p>
+              <p class="fab-skyline-no-actual" id="fabSkylineNoActual" hidden>No completed lines have a confirmed actual finish date.</p>
             </div>
             <p class="visually-hidden" id="fabSkylineSummary">
               Skyline for {{ skyline.kpis.line_count|default:0 }} piping lines. The single center axis is shared by both scenarios and uses schedule periods.
@@ -4724,7 +4729,7 @@
       boxSchedule.replaceChildren();
       appendBoxText(boxSchedule, "span", "fab-skyline-box-caption", "Box fill · " + (scheduleKey === "aveon" ? "FABRICATION" : "ROS") + " schedule");
       boxSchedule.appendChild(seriesCell(scenarioKey, segment));
-      var dateCaption = scheduleKey === "aveon" ? "Planned finish " : (scenarioKey === "forecast" ? "Baseline " : "Lookahead ");
+      var dateCaption = scheduleKey === "aveon" ? (scenarioKey === "forecast" ? "Planned finish " : "Actual finish ") : (scenarioKey === "forecast" ? "Baseline " : "Lookahead ");
       appendBoxText(boxSchedule, "span", "", spoolLabel(segment.spools) + " in this period · " + dateCaption + (segmentDatesLabel(segment) || longDate.format(dateObject(segmentDate(segment)))));
       if (scheduleKey === "aveon") {
         if (segment.date_source) appendBoxText(boxSchedule, "span", "", segment.date_source);
@@ -4732,8 +4737,7 @@
         fabricationEvidenceLines(segment).forEach(function (line) { appendBoxText(boxSchedule, "span", "", line); });
         if (segment.progress_source) appendBoxText(boxSchedule, "span", "", "Progress source · " + segment.progress_source);
         if (segment.progress_source_filename) appendBoxText(boxSchedule, "span", "", "Progress report · " + segment.progress_source_filename);
-        if (scenarioKey === "lookahead") appendBoxText(boxSchedule, "span", "", "This box shares the planned finish date of the box above. Its color shows the latest DATAFY progress; report and completion dates do not move it.");
-        if (scenarioKey === "lookahead" && segment.status === "upcoming") appendBoxText(boxSchedule, "span", "", "0% or no fabrication progress is reported. The planned date does not indicate fabricated spools.");
+        if (scenarioKey === "lookahead") appendBoxText(boxSchedule, "span", "", "This completed line is placed at its confirmed actual finish date. Report dates and planned dates are separate evidence.");
         if (segment.progress_conflict_note) appendBoxText(boxSchedule, "span", "", segment.progress_conflict_note);
         if (Array.isArray(segment.fabrication_progress) && segment.fabrication_progress.length > 1) segment.fabrication_progress.forEach(function (progress) {
           appendBoxText(boxSchedule, "span", "", (progress.package_code || "Fabrication package") + ": " + fabricationPercentLabel(progress.pct) + " · " + (progress.source || "") + (progress.as_of_date ? " · " + progress.as_of_date : ""));
@@ -4869,9 +4873,9 @@
       trigger.setAttribute("aria-expanded", "true");
       modalKicker.textContent = scenario.label + " · schedule period ending";
       modalTitle.textContent = longDate.format(dateObject(dateBucket.date));
-      if (modalDateHeading) modalDateHeading.textContent = scheduleKey === "aveon" ? "Planned fabrication finish" : (scenarioKey === "forecast" ? "Baseline date" : "Lookahead date(s)");
+      if (modalDateHeading) modalDateHeading.textContent = scheduleKey === "aveon" ? (scenarioKey === "forecast" ? "Planned fabrication finish" : "Actual fabrication finish") : (scenarioKey === "forecast" ? "Baseline date" : "Lookahead date(s)");
       if (modalSpoolHeading) modalSpoolHeading.textContent = "Spools";
-      modalMeta.textContent = entries.length.toLocaleString("en-US") + " line" + (entries.length === 1 ? "" : "s") + " · " + (scenarioKey === "forecast" ? spoolLabel(total) : scheduleKey === "aveon" ? spoolLabel(total) + " in line scope · " + spoolLabel(performedTotal) + " in completed lines" : performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed");
+      modalMeta.textContent = entries.length.toLocaleString("en-US") + " line" + (entries.length === 1 ? "" : "s") + " · " + (scenarioKey === "forecast" ? spoolLabel(total) : scheduleKey === "aveon" ? spoolLabel(total) + " on lines with confirmed actual finish" : performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed");
       modalBody.replaceChildren();
       orderedSegments(entries, scenarioKey).forEach(function (segment) {
         var row = document.createElement("tr");
@@ -4880,7 +4884,7 @@
         var dateCell = document.createElement("td");
         dateCell.textContent = (segment.dates || []).map(function (value) { return shortDate.format(dateObject(value)); }).join(" · ") || "—";
         if (scheduleKey === "aveon") {
-          dateCell.title = "Planned fabrication finish for both skyline bands." + (segment.date_source ? " " + segment.date_source : "");
+          dateCell.title = (scenarioKey === "forecast" ? "Planned fabrication finish." : "Confirmed actual fabrication finish.") + (segment.date_source ? " " + segment.date_source : "");
         }
         var stateCell = document.createElement("td");
         stateCell.appendChild(seriesCell(scenarioKey, segment));
@@ -4922,7 +4926,7 @@
       totalUnit.textContent = total === 1 ? "spool" : "spools";
       totalNode.appendChild(totalValue);
       totalNode.appendChild(totalUnit);
-      var totalDescription = scenarioKey === "forecast" ? scenario.label + " period total: " + spoolLabel(total) : scheduleKey === "aveon" ? "Reported progress: " + spoolLabel(total) + " in line scope · " + spoolLabel(performedTotal) + " in completed lines" : "Lookahead period progress: " + performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed";
+      var totalDescription = scenarioKey === "forecast" ? scenario.label + " period total: " + spoolLabel(total) : scheduleKey === "aveon" ? "Confirmed actual finish: " + spoolLabel(total) + " on completed lines" : "Lookahead period progress: " + performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed";
       totalNode.setAttribute("aria-label", totalDescription);
       totalNode.title = totalDescription;
 
@@ -4932,7 +4936,7 @@
         stack = document.createElement("div");
         stack.className = "fab-skyline-stack";
         stack.setAttribute("role", "group");
-        var periodLabel = scenario.label + ", schedule period ending " + longDate.format(dateObject(dateBucket.date)) + ": " + entries.length + " lines and " + (scenarioKey === "forecast" ? spoolLabel(total) : scheduleKey === "aveon" ? spoolLabel(total) + " in line scope" : performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed");
+        var periodLabel = scenario.label + ", schedule period ending " + longDate.format(dateObject(dateBucket.date)) + ": " + entries.length + " lines and " + (scenarioKey === "forecast" ? spoolLabel(total) : scheduleKey === "aveon" ? spoolLabel(total) + " with confirmed actual finish" : performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed");
         stack.setAttribute("aria-label", periodLabel);
         totalNode.setAttribute("aria-label", periodLabel + ". Open period details.");
         totalNode.setAttribute("aria-haspopup", "dialog");
@@ -5013,28 +5017,26 @@
       var ready = currentSchedule.available && dates.length > 0;
       SCENARIOS.forecast.label = isAveon ? "Planned finish" : "Forecast";
       SCENARIOS.forecast.detailLabel = isAveon ? "Planned fabrication finish" : "Baseline forecast";
-      SCENARIOS.lookahead.label = isAveon ? "Reported progress" : "Actual / lookahead";
-      SCENARIOS.lookahead.detailLabel = isAveon ? "Reported fabrication progress" : "60-day lookahead";
+      SCENARIOS.lookahead.label = isAveon ? "Actual finish" : "Actual / lookahead";
+      SCENARIOS.lookahead.detailLabel = isAveon ? "Actual fabrication finish" : "60-day lookahead";
       STATUSES.forecast.label = isAveon ? "Planned fabrication finish" : "Baseline forecast";
       STATUSES.on_time.label = isAveon ? "On plan" : "Completed on plan";
       STATUSES.late.label = "Delayed";
       STATUSES.upcoming.label = isAveon ? "Not started" : "Planned";
       root.dataset.scheduleSource = key;
       root.querySelectorAll("[data-skyline-schedule]").forEach(function (button) { button.setAttribute("aria-pressed", String(button.dataset.skylineSchedule === key)); });
-      document.getElementById("fabSkylineScheduleCaption").textContent = isAveon ? "FABRICATION · Both bands use planned finish dates; colors show DATAFY progress" : "ROS · Baseline forecast and 60-day lookahead dates";
+      document.getElementById("fabSkylineScheduleCaption").textContent = isAveon ? "FABRICATION · Planned finish above; completed lines at their actual finish below" : "ROS · Baseline forecast and 60-day lookahead dates";
       document.getElementById("fabSkylineLineCount").textContent = Number(kpis.line_count || 0).toLocaleString("en-US");
       document.getElementById("fabSkylineSpoolCount").textContent = Number(kpis.scope_spools || 0).toLocaleString("en-US");
-      document.getElementById("fabSkylineCompletionSummary").textContent = isAveon ? (ready ? Number(kpis.reported_line_count || 0) + " lines reported · " + spoolLabel(kpis.performed_spools) + " in completed lines · " + spoolLabel(kpis.remaining_spools) + " remaining" + (kpis.progress_report_date ? " · Report " + kpis.progress_report_date : "") : "Fabrication schedule unavailable") : Number(kpis.performed_spools || 0) + " performed · " + Number(kpis.remaining_spools || 0) + " remaining";
+      document.getElementById("fabSkylineCompletionSummary").textContent = isAveon ? (ready ? Number(kpis.confirmed_actual_line_count || 0) + " lines with actual finish · " + spoolLabel(kpis.confirmed_actual_spools ?? kpis.performed_spools) + " on completed lines" : "Fabrication schedule unavailable") : Number(kpis.performed_spools || 0) + " performed · " + Number(kpis.remaining_spools || 0) + " remaining";
       var forecastLegend = document.getElementById("fabSkylineForecastLegend");
       forecastLegend.querySelector("span").textContent = SCENARIOS.forecast.label;
       forecastLegend.querySelector("b").textContent = Number(isAveon ? kpis.scheduled_line_count || 0 : kpis.line_count || 0) + " lines · " + spoolLabel(isAveon ? kpis.scheduled_spools : kpis.scope_spools);
       forecastLegend.title = isAveon ? source.date_rule || "Planned finish from the fabrication schedule." : "Forecast uses the ROS baseline schedule in Planilha1.";
       var statusTitles = isAveon ? {
-        on_time: "Reported 100% complete by the planned finish. The box remains at its planned finish; completion evidence appears in the details.",
-        completed: "Reported 100% complete; no planned finish is available for an on-plan or delayed comparison.",
-        late: "Reported 100% complete after the planned finish.",
-        partial: "DATAFY reports more than 0% and less than 100%. Color moves from red through yellow toward green; spool totals remain the full line scope.",
-        upcoming: "No fabrication progress is reported, or the reported value is 0%. Gray boxes share the planned finish date of the box above; that date does not prove fabrication."
+        on_time: "Actual finish is confirmed on or before the planned finish.",
+        completed: "Actual completion is confirmed; no planned finish is available for an on-plan or delayed comparison.",
+        late: "Actual finish is confirmed after the planned finish."
       } : {
         on_time: "Fully performed by the baseline date.",
         late: "A fully performed line whose final lookahead date exceeded its baseline.",
@@ -5043,7 +5045,7 @@
       };
       root.querySelectorAll("[data-skyline-status]").forEach(function (legend) {
         var statusKey = legend.dataset.skylineStatus;
-        legend.hidden = statusKey === "completed" && (!isAveon || !Number(kpis.completed_line_count || 0));
+        legend.hidden = (isAveon && (statusKey === "partial" || statusKey === "upcoming")) || (statusKey === "completed" && (!isAveon || !Number(kpis.completed_line_count || 0)));
         legend.querySelector("[data-status-label]").textContent = statusKey === "on_time" ? "On plan" : statusKey === "partial" ? "Partial scale" : STATUSES[statusKey].label;
         legend.querySelector("b").textContent = Number(kpis[statusKey + "_line_count"] || 0) + " lines · " + spoolLabel(kpis[statusKey + "_spools"]);
         legend.title = statusTitles[statusKey] || "";
@@ -5052,17 +5054,17 @@
       document.getElementById("fabSkylineActualBand").textContent = SCENARIOS.lookahead.label;
       document.getElementById("fabSkylineCutoffLabel").textContent = isAveon ? "As of" : "Cutoff";
       document.getElementById("fabSkylineNoActual").hidden = !isAveon || !ready || dates.some(function (bucket) { return bucket.lookahead && bucket.lookahead.length; });
-      document.getElementById("fabSkylineSummary").textContent = isAveon ? "Both skyline bands place each line at the same planned fabrication finish date and in the same order. The lower band's colors show the latest DATAFY reported progress: partial progress moves from red through yellow toward green, completed on-plan lines are green, delayed completion is red, and 0% or unreported lines are gray. Boxes retain each line's full spool scope; percentages do not calculate fabricated spool quantities. Report dates, first reported completion and explicit actual finish are separate evidence in the details and never change box placement. Lines without planned fabrication dates are listed separately." : rosAccessibleSummary;
-      viewport.setAttribute("aria-label", isAveon ? "Planned fabrication finish in both bands, with DATAFY reported progress colors below" : "ROS baseline forecast and independently dated lookahead work");
+      document.getElementById("fabSkylineSummary").textContent = isAveon ? "Planned fabrication finish appears above the axis. Only completed lines with a confirmed actual finish date appear below, in their actual completion period. Completion on plan is green and delayed completion is red; completed lines without a comparable plan are labeled Completed. Partial work, planned work and report dates do not create lower boxes. Lines reported 100% complete without an actual finish date are listed separately and excluded from dated completion totals." : rosAccessibleSummary;
+      viewport.setAttribute("aria-label", isAveon ? "Planned fabrication finish above and completed lines at confirmed actual finish dates below" : "ROS baseline forecast and independently dated lookahead work");
       var sourceLabel = document.getElementById("fabSkylineScheduleSource");
       sourceLabel.textContent = isAveon ? "FABRICATION · " + (source.workbook || source.source_label || "Fabrication schedule") + (source.snapshot_label ? " · imported " + source.snapshot_label : "") : "ROS · " + (source.workbook || "Planilha1") + " · " + (source.forecast_scope || "Planilha1") + " · snapshot " + (source.snapshot_label || "—");
       sourceLabel.title = sourceLabel.textContent + (source.date_rule ? " · " + source.date_rule : "");
-      document.getElementById("fabSkylineModalScheduleNote").textContent = isAveon ? "Both bands use the same planned fabrication finish dates and line order. Lower-box colors show the latest DATAFY progress. Report dates and completion evidence remain in the details and do not move boxes; a report date is not an execution date. Spool quantities are the full line scope; only 100% lines enter completed totals. Gray boxes have 0% or no reported progress. Lines without a planned finish are listed separately." : "Temporary completion proxy: ROS lookahead quantities before " + (source.as_of_label || "the cutoff") + " count as performed. Future lookahead quantities remain gray.";
+      document.getElementById("fabSkylineModalScheduleNote").textContent = isAveon ? "The upper band uses planned fabrication finish dates. The lower band includes only completed lines with confirmed actual finish dates. A progress report date, a planned date or a 100% value alone cannot supply that date. Reported completions missing an actual date appear in a separate list and do not enter dated completion totals. Spool quantities are the full scope of each completed line." : "Temporary completion proxy: ROS lookahead quantities before " + (source.as_of_label || "the cutoff") + " count as performed. Future lookahead quantities remain gray.";
       var coverage = document.getElementById("fabSkylineCoverage");
       var unmapped = isAveon && Array.isArray(data.unmapped) ? data.unmapped : [];
       coverage.hidden = !unmapped.length;
       coverage.open = false;
-      document.getElementById("fabSkylineCoverageSummary").textContent = unmapped.length + " lines · " + spoolLabel(kpis.unmapped_spools) + " without fabrication dates";
+      document.getElementById("fabSkylineCoverageSummary").textContent = unmapped.length + " lines · " + spoolLabel(kpis.unmapped_spools) + " without planned fabrication dates";
       var coverageLines = document.getElementById("fabSkylineCoverageLines");
       coverageLines.replaceChildren();
       unmapped.forEach(function (entry) {
@@ -5071,6 +5073,20 @@
         var evidence = fabricationEvidenceLines(entry);
         if (typeof reported === "number") evidence.unshift("Reported fabrication progress: " + fabricationPercentLabel(reported));
         if (entry.progress_source) evidence.push("Progress source: " + entry.progress_source);
+        if (evidence.length) appendBoxText(item, "span", "", " · " + evidence.join(" · "));
+      });
+      var undatedSection = document.getElementById("fabSkylineUndatedCompletions");
+      var undatedCompletions = isAveon && Array.isArray(data.undated_completions) ? data.undated_completions : [];
+      undatedSection.hidden = !undatedCompletions.length;
+      undatedSection.open = false;
+      document.getElementById("fabSkylineUndatedSummary").textContent = "Reported complete, actual date missing · " + Number(kpis.undated_completed_lines ?? undatedCompletions.length) + " lines · " + spoolLabel(kpis.undated_completed_spools ?? undatedCompletions.reduce(function (total, entry) { return total + Number(entry.spools || 0); }, 0));
+      var undatedLines = document.getElementById("fabSkylineUndatedLines");
+      undatedLines.replaceChildren();
+      undatedCompletions.forEach(function (entry) {
+        var item = appendBoxText(undatedLines, "li", "", displayLine(entry.line) + " · " + spoolLabel(entry.spools) + " · Reported 100% complete · Actual finish not recorded");
+        var evidence = fabricationEvidenceLines(entry);
+        if (entry.progress_source) evidence.push("Progress source: " + entry.progress_source);
+        if (entry.progress_source_filename) evidence.push("Progress report: " + entry.progress_source_filename);
         if (evidence.length) appendBoxText(item, "span", "", " · " + evidence.join(" · "));
       });
       viewport.hidden = !ready;
