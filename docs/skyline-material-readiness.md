@@ -74,7 +74,7 @@ and the underlying data always include every line. Expanding restores every box,
 the original ordering and full tower heights; date columns remain unchanged.
 The existing period modal continues to list the complete scope in either view.
 
-## ROS / AVEON dates
+## ROS / FABRICATION dates and progress
 
 **Export ROS / Import ROS** updates the manual ROS dates and spool quantities
 through a reviewed workbook. Both ROS Skyline and Piping rundown use the same
@@ -85,13 +85,46 @@ The schedule buttons switch locally between the current ROS snapshot and the
 imported AVEON fabrication schedule. They retain the compact/full choice, line
 scope, spool quantities and shared live material lights. Source-specific dates,
 labels, totals, coverage and details are refreshed together. Neither the ROS
-schedule nor its completion proxy can fill missing AVEON dates.
+schedule nor its completion proxy can fill missing fabrication dates or progress.
 
-AVEON planned finish is the latest planned finish across the complete applicable
-fabrication stages, including painting. The second band accepts only explicit,
-nonfuture actual finish dates for all linked packages. Weekly/P6 progress remains
-reported separately in details; a past planned date or 100% report cannot create
-an actual finish date.
+The FABRICATION planned finish is the latest planned finish across the complete
+applicable AVEON fabrication stages, including painting. The lower **Reported
+progress** band reads the same DATAFY package overall as the Fabrication table,
+including both ISO and PMS weekly formats. PMS overall values do not overwrite
+the older stage percentages or their PWHT applicability evidence.
+
+Each line appears once below the axis with its full ROS spool scope. More than
+0% and less than 100% is partial, using the existing red/yellow/green scale at
+the report date. Complete lines are green when their completion observation is
+on/before planned finish and red when later. With no comparable plan, a completed
+line is simply **Completed**. Zero or undated progress is gray at planned finish;
+a past planned date never establishes completion. Without a planned finish, a
+valid observation (including zero) remains visible at its report date.
+
+Use `FabricationProgressEntry` history, including exact `stages._overall_pct`,
+to retain the first complete report in the current uninterrupted completion
+series. A later 100% weekly update does not move the box; a correction below
+100% starts a new series. Future observations are excluded. Legacy entries
+without exact overall use their stored overall-after value. P6 fallback is
+labeled as an imported snapshot, not a work execution date.
+
+**Reported complete** is an observation date, distinct from **Actual finish**,
+which still requires explicit nonfuture dates for every linked package. No
+database date or source percentage is rewritten. A later below-100% observation
+supersedes an earlier actual finish; the original date remains in the evidence
+and does not reappear when a subsequent report reaches 100% again.
+A tolerance of 1e-9 percentage
+points handles Excel's `99.99999999999999` representation of 100%; 99.99% remains
+partial. Each package's original exact percentage is retained in the evidence.
+The UI does not round a still-partial value up to a displayed 100%.
+
+The number on a partial box is line scope, not a calculated number of finished
+spools. Completed totals include only the scope of fully completed lines. If a
+line has multiple packages, its displayed progress uses the Fabrication summary's
+arithmetic-average convention and exposes the individual percentages; all packages
+must be complete before the line counts as complete. The overall report curve
+percentage is never distributed among lines. ROS behavior and material-light
+evidence remain independent of these fabrication percentages.
 
 Match exact document line identity, with the explicit physical line in an
 unlinked AVEON package name as a bounded fallback. If WBS and drawing line labels
@@ -102,7 +135,7 @@ The current imported `AVEON Schedule 1.xlsx` provides dates for 163 lines / 602
 spools. Three lines / 5 spools remain listed without dates; the comparison scope
 stays 166 lines / 607 spools. Its AVEON WBS spool counts differ from this scope,
 so quantities are never distributed among unmatched activity/spool names.
-Source failure shows the AVEON error and leaves ROS available.
+Source failure shows the fabrication error and leaves ROS available.
 
 ## Box details
 
@@ -137,7 +170,7 @@ it must not display unverified positive statuses from a static fallback.
 Run the snapshot, live material and existing-home integration tests:
 
 ```powershell
-.\.venv\Scripts\python.exe manage.py test apps.core.tests.test_fabrication_skyline apps.core.tests.test_skyline_material_readiness apps.core.tests.test_skyline_live_materials apps.core.tests.test_skyline_aveon apps.core.tests.test_skyline_live_home
+.\.venv\Scripts\python.exe manage.py test apps.core.tests.test_fabrication_skyline apps.core.tests.test_skyline_material_readiness apps.core.tests.test_skyline_live_materials apps.core.tests.test_skyline_aveon apps.core.tests.test_skyline_reported_progress apps.core.tests.test_skyline_live_home apps.core.tests.test_fabrication_weekly_progress
 ```
 
 The home tests render the real view and template without creating users or writing

@@ -42,6 +42,7 @@ STAGE_KEYS = [stage[0] for stage in STAGES]
 STAGE_WEIGHTS = {key: weight for key, _short, _full, weight in STAGES}
 WEEKLY_PROGRESS_META_KEY = "_weekly_progress"
 WEEKLY_PROGRESS_SOURCE = "epc1_iso_weekly"
+WEEKLY_PROGRESS_PMS_SOURCE = "epc1_pms_weekly"
 WEEKLY_PROGRESS_SCHEMA = 1
 
 DISCIPLINE_LABELS = {
@@ -115,7 +116,12 @@ def stage_is_applicable(stages: dict, key: str) -> bool:
     """Um estagio existe quando o ultimo import do P6 o trouxe."""
     if key == "pwht" and _weekly_overall_value(stages) is not None:
         marker = stages.get(WEEKLY_PROGRESS_META_KEY)
-        if isinstance(marker, dict) and marker.get("pwht_required") is False:
+        requirement_key = (
+            "stage_pwht_required"
+            if marker.get("source") == WEEKLY_PROGRESS_PMS_SOURCE
+            else "pwht_required"
+        )
+        if marker.get(requirement_key) is False:
             return False
     stage = stages.get(key)
     return isinstance(stage, dict) and (bool(stage.get("acts")) or "pct" in stage)
@@ -132,12 +138,24 @@ def stage_weight(stages: dict, key: str) -> float:
 
 
 def _weekly_overall_value(stages: dict) -> Decimal | None:
+    """Read the same validated ISO/PMS package overall as DATAFY."""
     raw = stages.get(WEEKLY_PROGRESS_META_KEY)
     if not isinstance(raw, dict):
         return None
-    if raw.get("schema") != WEEKLY_PROGRESS_SCHEMA or raw.get("source") != WEEKLY_PROGRESS_SOURCE:
+    if raw.get("schema") != WEEKLY_PROGRESS_SCHEMA:
         return None
-    if not isinstance(raw.get("pwht_required"), bool):
+    source = raw.get("source")
+    if source == WEEKLY_PROGRESS_SOURCE:
+        if not isinstance(raw.get("pwht_required"), bool):
+            return None
+    elif source == WEEKLY_PROGRESS_PMS_SOURCE:
+        # PMS updates the overall only; stage values and their previous PWHT
+        # evidence retain their own source and observation date.
+        if raw.get("mode") != "overall_only" or raw.get("pwht_required") is not None:
+            return None
+        if raw.get("stage_pwht_required") is not None and not isinstance(raw["stage_pwht_required"], bool):
+            return None
+    else:
         return None
     try:
         date_cls.fromisoformat(str(raw.get("report_date") or ""))

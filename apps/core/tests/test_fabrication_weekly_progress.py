@@ -1,4 +1,5 @@
 from datetime import date
+from copy import deepcopy
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -386,3 +387,82 @@ class FabricationWeeklyProgressCompatibilityTests(SimpleTestCase):
         }
 
         self.assertEqual(overall_value(stages), Decimal("40"))
+
+    def test_pms_overall_uses_exact_package_value_without_overwriting_prior_stages(self):
+        stages = {
+            "welding": {
+                "pct": 40.125, "duration_weight": 10,
+                "plan_finish": "2026-09-30", "actual_finish": None,
+                "acts": [{"id": "W-1", "pct": 40.125}],
+            },
+            "_weekly_progress": {
+                "schema": 1, "source": "epc1_pms_weekly", "mode": "overall_only",
+                "report_date": "2026-09-11", "overall_pct": "33.7103783827178",
+                "source_filename": "EPC1 Progress - 11-Sep-26.xlsx",
+                "stage_source": "epc1_iso_weekly", "stage_report_date": "2026-08-21",
+                "stage_pwht_required": None,
+            },
+        }
+        original = deepcopy(stages)
+
+        self.assertEqual(overall_value(stages), Decimal("33.7103783827178"))
+        self.assertEqual(overall_pct(stages), 34)
+        self.assertEqual(stage_value(stages, "welding"), Decimal("40.125"))
+        self.assertTrue(stage_is_applicable(stages, "welding"))
+        self.assertEqual(stages, original)
+
+    def test_pms_pwht_uses_previous_stage_requirement_without_inventing_a_stage(self):
+        for requirement, expected in ((False, False), (True, True), (None, True)):
+            with self.subTest(requirement=requirement):
+                stages = {
+                    "pwht": {"pct": 20, "acts": [{"id": "PWHT-1", "pct": 20}]},
+                    "_weekly_progress": {
+                        "schema": 1, "source": "epc1_pms_weekly", "mode": "overall_only",
+                        "report_date": "2026-09-11", "overall_pct": "25.123456789",
+                        "stage_pwht_required": requirement,
+                    },
+                }
+                original = deepcopy(stages)
+                self.assertEqual(stage_is_applicable(stages, "pwht"), expected)
+                self.assertEqual(overall_value(stages), Decimal("25.123456789"))
+                self.assertEqual(stages, original)
+                del stages["pwht"]
+                self.assertFalse(stage_is_applicable(stages, "pwht"))
+
+    def test_invalid_pms_marker_falls_back_to_p6_without_hiding_pwht(self):
+        marker = {
+            "schema": 1, "source": "epc1_pms_weekly", "mode": "overall_only",
+            "report_date": "2026-09-11", "overall_pct": "99.99",
+            "stage_pwht_required": False,
+        }
+        for invalid in (
+            {"schema": 2}, {"mode": "stage_update"}, {"mode": None},
+            {"pwht_required": False}, {"pwht_required": True},
+            {"stage_pwht_required": "false"}, {"stage_pwht_required": 0},
+            {"report_date": "2026-09-11T10:00:00"}, {"report_date": "2026-02-30"},
+            {"overall_pct": "NaN"}, {"overall_pct": "Infinity"},
+            {"overall_pct": "100.0001"}, {"overall_pct": "-0.001"},
+            {"overall_pct": None},
+        ):
+            with self.subTest(invalid=invalid):
+                stages = {
+                    "welding": {"pct": 40, "duration_weight": 1},
+                    "pwht": {"pct": 60, "duration_weight": 1},
+                    "_weekly_progress": {**marker, **invalid},
+                }
+                self.assertEqual(overall_value(stages), Decimal("50"))
+                self.assertTrue(stage_is_applicable(stages, "pwht"))
+
+    def test_valid_pms_zero_and_complete_values_do_not_fall_back_to_p6(self):
+        for value in ("0", "100"):
+            with self.subTest(value=value):
+                stages = {
+                    "welding": {"pct": 40, "duration_weight": 1},
+                    "_weekly_progress": {
+                        "schema": 1, "source": "epc1_pms_weekly", "mode": "overall_only",
+                        "report_date": "2026-09-11", "overall_pct": value,
+                        "pwht_required": None,
+                    },
+                }
+                self.assertEqual(overall_value(stages), Decimal(value))
+                self.assertEqual(stage_value(stages, "welding"), Decimal("40"))

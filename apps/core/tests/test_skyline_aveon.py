@@ -67,12 +67,15 @@ class AveonSkylineTests(SimpleTestCase):
             "pwht_required": False, "overall_pct": "100",
         }
         payload = source.build_aveon_skyline(self.ros(), [package])
-        self.assertEqual(self.segments(payload, "lookahead"), [])
+        reported = self.segments(payload, "lookahead")[0]
+        self.assertEqual(reported["date_kind"], "reported_complete")
+        self.assertEqual(reported["date"], "2026-08-21")
+        self.assertEqual(reported["actual_finish"], "")
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
         segment = self.segments(payload, "forecast")[0]
         self.assertEqual(segment["fabrication_progress_pct"], 100)
         self.assertEqual(segment["progress_as_of_date"], "2026-08-21")
-        self.assertEqual(segment["progress_pct"], 0)
+        self.assertEqual(segment["progress_pct"], 100)
         self.assertFalse(segment["actual_date_confirmed"])
 
     def test_missing_package_keeps_quantity_in_explicit_unmapped_scope(self):
@@ -92,8 +95,9 @@ class AveonSkylineTests(SimpleTestCase):
     def test_missing_finish_on_a_scheduled_stage_does_not_hide_in_other_dates(self):
         stages = {"hydrotest": {"plan_finish": "2026-08-03"}, "painting": {"plan_finish": None, "acts": [{"id": "PAINT-1"}]}}
         payload = source.build_aveon_skyline(self.ros(), [self.package(stages=stages)])
-        self.assertFalse(payload["available"])
+        self.assertEqual(self.segments(payload, "forecast"), [])
         self.assertEqual(payload["kpis"]["scheduled_spools"], 0)
+        self.assertEqual(self.segments(payload, "lookahead")[0]["planned_finish"], "")
 
     def test_unlinked_package_name_uses_explicit_identity_with_quoted_specification(self):
         ros = self.ros()
@@ -144,14 +148,18 @@ class AveonSkylineTests(SimpleTestCase):
         self.assertEqual(len(planned), 1)
         self.assertEqual(planned[0]["date"], "2026-08-20")
         self.assertEqual(planned[0]["spools"], 5)
-        self.assertIsNone(planned[0]["fabrication_progress_pct"])
+        self.assertEqual(planned[0]["fabrication_progress_pct"], 100)
         self.assertEqual(len(planned[0]["fabrication_progress"]), 2)
 
     def test_actual_finish_requires_every_package_and_nonfuture_dates(self):
         first = self.package(actual_finish=date(2026, 8, 4))
         second = self.package(2, actual_finish=date(2026, 9, 15))
         payload = source.build_aveon_skyline(self.ros(), [first, second])
-        self.assertEqual(self.segments(payload, "lookahead"), [])
+        reported = self.segments(payload, "lookahead")[0]
+        self.assertFalse(reported["actual_date_confirmed"])
+        self.assertEqual(reported["actual_finish"], "")
+        self.assertEqual(reported["date_kind"], "reported_complete")
+        self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
         second["actual_finish"] = date(2026, 8, 6)
         payload = source.build_aveon_skyline(self.ros(), [first, second])
         actual = self.segments(payload, "lookahead")[0]
