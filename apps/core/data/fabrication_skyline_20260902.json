@@ -2,15 +2,15 @@
   "schema": 3,
   "source": {
     "workbook": "Cópia de datafy-material-requisition-20260902-0954 para curva Piping 02.09.26 (003) atualizado 22h.xlsx",
-    "worksheet": "Planilha1 / Runddown",
-    "range": "A1:E176 / F5:G180",
+    "worksheet": "Planilha1",
+    "range": "A1:E176",
     "forecast_scope": "Planilha1!A1:E176",
-    "lookahead_scope": "Runddown!F5:G180",
+    "lookahead_scope": "Planilha1!A1:E176",
     "snapshot_date": "2026-09-02",
     "revision_timestamp": "2026-09-03T21:07:18",
     "workbook_sha256": "FA5D662EAD24A555985488130F3528F7F9AB5A666FDF919D7A65A5C6CBBEE9BD",
-    "normalization": "Line, baseline, 60-day lookahead and Total come from Planilha1. Runddown F:G is an exact ordinal checksum after stably sorting Planilha1 by 60-day-lookahead date and original row order. Continuation rows inherit blank baseline values. Display labels shorten LINE N° without changing identity.",
-    "status_rule": "Dates on or after the application cutoff are upcoming. Past rows on a line that still has upcoming rows are partial. A fully past line is late when any lookahead date exceeds its baseline; otherwise it is on time."
+    "normalization": "Line, baseline, 60-day lookahead and Total come only from Planilha1. Continuation rows inherit their line baseline. Forecast lines are grouped by their baseline schedule week; actual and planned quantities are grouped independently by their own 60-day-lookahead week. Exact source dates remain available in the detail view. Display labels shorten LINE N° without changing identity.",
+    "status_rule": "The shared axis uses Friday schedule periods. Baseline quantities appear above in their forecast period; 60-day-lookahead quantities appear below in their own period. Lookahead dates before the application cutoff count as performed. Past quantities on a partially performed line use a red-yellow-green completion scale. A fully performed line is late when any lookahead date exceeds its baseline, otherwise it is on time. Dates on or after the cutoff remain gray as planned."
   },
   "columns": [
     "line",

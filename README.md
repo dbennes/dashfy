@@ -17,6 +17,21 @@ engenharia, materiais, suprimentos, JobCards, campo e logistica.
 | Exports   | Servico generico CSV/XLSX/PDF/JSON + historico de exportacoes               |
 | Filters   | Salvamento de filtros e dashboards favoritos por usuario                    |
 
+## Skyline e disponibilidade de materiais
+
+O Skyline existente em **Cockpit → Fabrication** usa a integração DATAFY para
+calcular os indicadores de suportes, parafusos/juntas e válvulas por linha.
+Os controles **ROS / AVEON** alternam entre as datas ROS e o cronograma de
+fabricação importado da AVEON, mantendo o mesmo escopo e os indicadores.
+Reutilize os registros de fabricação, escopo dos desenhos, alocações e entregas
+disponíveis no projeto antes de solicitar uma nova fonte de dados ao usuário.
+As regras e os testes estão em [Skyline material readiness](docs/skyline-material-readiness.md).
+
+O **Rundown** possui o seletor **Discipline** na parte superior do próprio
+gráfico. **Piping** mantém o ROS em spools; **Structural** usa as datas planejadas
+dos pacotes de fabricação já importados no DATAFY. A troca atualiza curva,
+indicadores, unidades e proveniência. Consulte [Rundown by discipline](docs/rundown-disciplines.md).
+
 ## Stack
 
 - Python 3.11+
