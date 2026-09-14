@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import re
 from collections import Counter
 from datetime import date, datetime
@@ -11,7 +12,7 @@ from django.core.cache import cache
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -31,6 +32,7 @@ from apps.core.p6_import import import_p6_curves_workbook
 from apps.core.supply_snapshot_filters import normalized_supply_snapshot_filters
 from apps.exports.models import ExportLog
 from apps.core import real_sources
+from apps.core import ros_workbook
 
 from .models import Announcement, DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport
 
@@ -414,9 +416,17 @@ def home_view(request):
     # DATAFY/SPDM (pacotes P6, progresso datado e cobertura de PO por item,
     # com o mesmo motor de status da S02).
     fabrication = fabrication_source.fabrication_progress_safe()
-    # Snapshot versionado do grafico de rundown. A fonte e independente do
-    # PostgreSQL de fabricacao para uma falha nao derrubar o restante da S03.
-    rundown = rundown_source.fabrication_rundown_safe()
+    # Read a single accepted ROS revision for both charts. A database failure
+    # must not silently replace an imported schedule with the original file.
+    try:
+        ros_schedule = ros_workbook.load_current_schedule()
+    except (DatabaseError, ValueError, OSError):
+        logging.getLogger(__name__).exception("Unable to read the current ROS schedule")
+        ros_schedule = None
+    rundown = (
+        rundown_source.fabrication_rundown_safe(snapshot=ros_schedule["rundown"])
+        if ros_schedule else rundown_source._empty_payload("The current ROS schedule is unavailable.")
+    )
     # Each discipline keeps its own source dates, scope and unit.
     rundown_disciplines = {
         discipline: {key: payload.get(key) for key in ("available", "error", "source", "kpis", "charts")}
@@ -424,7 +434,10 @@ def home_view(request):
     }
     # A skyline ROS combina baseline e lookahead da Planilha1 e
     # falha de forma independente para preservar a Fabricacao e a curva.
-    skyline = skyline_source.fabrication_skyline_safe()
+    skyline = (
+        skyline_source.fabrication_skyline_safe(snapshot=ros_schedule["skyline"])
+        if ros_schedule else skyline_source._empty_payload("The current ROS schedule is unavailable.")
+    )
     skyline_source.attach_live_material_readiness(skyline)
     aveon_skyline = skyline_aveon_source.aveon_skyline_safe(skyline)
     # Both date views use the same live material evidence and physical scope.
@@ -450,6 +463,7 @@ def home_view(request):
         "rundown_disciplines": rundown_disciplines,
         "skyline": skyline,
         "skyline_schedules": skyline_schedules,
+        "ros_schedule": ros_schedule,
         "tracking": tracking,
         "show_tracking": show_tracking,
         "DATAFY_BASE_URL": settings.DATAFY_BASE_URL,

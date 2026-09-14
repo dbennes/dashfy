@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Update ROS · {{ APP_NAME }}{% endblock %}
+{% block crumb_current %}UPDATE ROS{% endblock %}
+{% block tickers %}{% endblock %}
+{% block extra_css %}
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260914-s03-ros-v9" rel="stylesheet">
+{% endblock %}
+{% block content %}
+<section id="s03" class="fab-ros-page" aria-labelledby="rosTitle">
+  <article class="fab-rundown-card">
+    <header class="fab-rundown-head">
+      <div class="fab-rundown-title">
+        <span class="fab-rundown-kicker">Fabrication · Manual schedule</span>
+        <h3 id="rosTitle">Update ROS</h3>
+        <p>Download the current workbook, edit the highlighted cells, then upload it to review the changes.</p>
+      </div>
+      <div class="fab-ros-actions">
+        <a class="ob-btn" href="{% url 'core:home' %}#s03"><i class="bi bi-arrow-left" aria-hidden="true"></i>Back to fabrication</a>
+        <a class="ob-btn ob-btn-blue" href="{% url 'core:export_ros' %}"><i class="bi bi-download" aria-hidden="true"></i>Export ROS</a>
+      </div>
+    </header>
+    <div class="fab-ros-body">
+      <div class="fab-ros-source">
+        <span><b>Editable</b> Baseline date, lookahead date, spools and data date.</span>
+        <span><b>Updates</b> ROS Skyline and Piping rundown. Spool quantities also define the AVEON view scope.</span>
+        <span><b>Connected data</b> Update AVEON dates, fabrication progress and material status in DATAFY.</span>
+      </div>
+      {% if current %}
+      <p class="fab-ros-current">Current ROS · {{ line_count }} lines · {{ scope_spools }} spools · data date {{ current.skyline.source.snapshot_date }}{% if current.batch %} · imported {{ current.batch.created_at|date:"d M Y H:i" }} by {{ current.batch.imported_by|default:"—" }}{% endif %}</p>
+      {% endif %}
+      {% if error %}<p class="fab-ros-alert is-error" role="alert">{{ error }}</p>{% endif %}
+      {% if unchanged %}<p class="fab-ros-alert" role="status">The workbook matches the current ROS schedule. No changes were needed.</p>{% endif %}
+      {% if preview %}
+      <div class="fab-ros-preview">
+        <h4>Review changes</h4>
+        <p>{{ preview_filename }} · {{ preview.changed_rows }} schedule rows changed · {{ scope_spools }} → {{ preview_scope }} spools · data date {{ preview.snapshot_date }}</p>
+        <div class="fab-ros-table-wrap" tabindex="0" role="region" aria-label="ROS changes">
+          <table class="fab-ros-table">
+            <thead><tr><th scope="col">Row</th><th scope="col">Line</th><th scope="col">Field</th><th scope="col">Current</th><th scope="col">Updated</th></tr></thead>
+            <tbody>{% for change in preview.changes %}
+              <tr><td>{{ change.row_id|default:"—" }}</td><td>{{ change.line|default:"Schedule" }}</td><td>{{ change.field }}</td><td>{{ change.before }}</td><td>{{ change.after }}</td></tr>
+            {% endfor %}</tbody>
+          </table>
+        </div>
+        <form method="post" class="fab-ros-actions">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="apply">
+          <input type="hidden" name="preview_token" value="{{ preview_token }}">
+          <button class="ob-btn ob-btn-blue" type="submit"><i class="bi bi-check2" aria-hidden="true"></i>Apply changes</button>
+          <a class="ob-btn" href="{% url 'core:import_ros' %}">Cancel</a>
+        </form>
+      </div>
+      {% elif current %}
+      <form method="post" enctype="multipart/form-data" class="fab-ros-upload">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="preview">
+        <label for="rosFile">Updated ROS workbook</label>
+        <div class="fab-ros-actions">
+          <span class="fab-ros-file-control">
+            <span class="ob-btn" aria-hidden="true">Choose file</span>
+            <input id="rosFile" name="ros_file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required aria-describedby="rosFileHint rosFileName">
+          </span>
+          <span id="rosFileName" class="fab-ros-file-name" aria-live="polite">No file selected</span>
+          <button class="ob-btn ob-btn-blue" type="submit"><i class="bi bi-upload" aria-hidden="true"></i>Preview changes</button>
+        </div>
+        <small id="rosFileHint">Use the latest export. Keep all row IDs and line names. The system checks dates, quantities and shared line baselines before applying an update.</small>
+      </form>
+      {% endif %}
+    </div>
+  </article>
+  <article class="fab-rundown-card">
+    <header class="fab-rundown-head"><div class="fab-rundown-title"><h3>Import history</h3><p>Latest 10 accepted updates.</p></div></header>
+    <div class="fab-ros-table-wrap" tabindex="0" role="region" aria-label="ROS import history">
+      <table class="fab-ros-table">
+        <thead><tr><th scope="col">Imported</th><th scope="col">By</th><th scope="col">Workbook</th><th scope="col">Data date</th></tr></thead>
+        <tbody>{% for batch in history %}
+          <tr><td>{{ batch.created_at|date:"d M Y H:i" }}</td><td>{{ batch.imported_by|default:"—" }}</td><td>{{ batch.original_filename }}</td><td>{{ batch.snapshot_date|date:"d M Y" }}</td></tr>
+        {% empty %}<tr><td colspan="4">{% if current %}No ROS updates imported yet. The original schedule is active.{% else %}Import history is unavailable.{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </article>
+</section>
+{% endblock %}
+{% block extra_js %}
+<script>
+(() => {
+  const input = document.getElementById("rosFile");
+  const name = document.getElementById("rosFileName");
+  if (input && name) input.addEventListener("change", () => {
+    name.textContent = input.files.length ? input.files[0].name : "No file selected";
+  });
+})();
+</script>
+{% endblock %}

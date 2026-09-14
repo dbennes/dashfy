@@ -275,8 +275,8 @@ def _date_segments(
     return dates
 
 
-def fabrication_skyline(*, as_of_date: date | None = None) -> dict[str, Any]:
-    raw = json.loads(SKYLINE_DATA_PATH.read_text(encoding="utf-8"))
+def fabrication_skyline(*, as_of_date: date | None = None, snapshot: dict | None = None) -> dict[str, Any]:
+    raw = snapshot if snapshot is not None else json.loads(SKYLINE_DATA_PATH.read_text(encoding="utf-8"))
     source, rows = _validated_snapshot(raw)
     as_of_date = as_of_date or timezone.localdate()
     try:
@@ -391,10 +391,10 @@ def attach_live_material_readiness(payload: dict[str, Any]) -> None:
     payload["charts_json"] = json.dumps(charts, separators=(",", ":"))
 
 
-def fabrication_skyline_safe() -> dict[str, Any]:
+def fabrication_skyline_safe(*, snapshot: dict | None = None) -> dict[str, Any]:
     """Keep a malformed or missing skyline snapshot from breaking S03."""
     try:
-        return fabrication_skyline()
+        return fabrication_skyline(snapshot=snapshot)
     except Exception:  # pragma: no cover - defensive runtime fallback
         logger.exception("Unable to load the fabrication skyline snapshot")
         return _empty_payload("the source snapshot could not be read.")

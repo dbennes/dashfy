@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -322,3 +324,31 @@ class DatafySupplySnapshot(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.source_database} suprimentos ({self.created_at:%d/%m/%Y %H:%M})"
+
+
+class RosScheduleImport(TimestampedModel):
+    """Accepted, append-only ROS schedules shared by Skyline and Piping rundown."""
+
+    revision = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    base_revision = models.CharField(max_length=64, unique=True)
+    original_filename = models.CharField(max_length=255)
+    file_size = models.PositiveIntegerField(default=0)
+    file_hash = models.CharField(max_length=64)
+    imported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ros_schedule_imports",
+    )
+    snapshot_date = models.DateField()
+    payload = models.JSONField(default=dict)
+    metadata = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-pk"]
+        verbose_name = "ROS schedule import"
+        verbose_name_plural = "ROS schedule imports"
+
+    def __str__(self) -> str:
+        return f"{self.original_filename} ({self.snapshot_date:%d %b %Y})"

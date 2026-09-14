@@ -14,6 +14,14 @@ from apps.core.views import home_view
 @override_settings(DASHFY_SHOW_TRACKING=False)
 class RundownLiveHomeTests(SimpleTestCase):
     def setUp(self):
+        self.enterContext(patch(
+            "apps.core.views.ros_workbook.load_current_schedule",
+            return_value={
+                "skyline": json.loads(skyline_source.SKYLINE_DATA_PATH.read_text(encoding="utf-8")),
+                "rundown": json.loads(rundown_source.RUNDOWN_DATA_PATH.read_text(encoding="utf-8")),
+                "batch": None,
+            },
+        ))
         self.piping = rundown_source.fabrication_rundown()
         self.disciplines = {
             "piping": deepcopy(self.piping),

@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
-<link href="{% static 'css/fabrication-s03.css' %}?v=20260914-s03-disciplines-v8" rel="stylesheet">
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260914-s03-ros-v9" rel="stylesheet">
 {% endblock %}
 
 {% block tickers %}
@@ -1306,6 +1306,10 @@
             <p id="fabSkylineScheduleCaption">ROS · Baseline forecast and 60-day lookahead dates</p>
           </div>
           <div class="fab-skyline-head-actions">
+            <div class="fab-ros-actions" role="group" aria-label="ROS workbook">
+              <a class="ob-btn" href="{% url 'core:export_ros' %}" title="Download editable ROS dates and spool quantities"><i class="bi bi-download" aria-hidden="true"></i>Export ROS</a>
+              {% if user.is_admin %}<a class="ob-btn" href="{% url 'core:import_ros' %}" title="Review and import the updated ROS workbook"><i class="bi bi-upload" aria-hidden="true"></i>Import ROS</a>{% endif %}
+            </div>
             <div class="fab-skyline-schedule-control" role="group" aria-label="Skyline schedule source">
               <span>Schedule</span>
               <div class="fab-skyline-schedule-buttons">

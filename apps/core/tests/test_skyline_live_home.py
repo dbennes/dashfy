@@ -18,6 +18,14 @@ class SkylineLiveHomeTests(SimpleTestCase):
     cutoff = date(2026, 9, 14)
 
     def setUp(self):
+        self.enterContext(patch(
+            "apps.core.views.ros_workbook.load_current_schedule",
+            return_value={
+                "skyline": json.loads(skyline_source.SKYLINE_DATA_PATH.read_text(encoding="utf-8")),
+                "rundown": json.loads(rundown_source.RUNDOWN_DATA_PATH.read_text(encoding="utf-8")),
+                "batch": None,
+            },
+        ))
         # Keep the real versioned schedule; the live map is deliberately absent
         # from it, so this test catches a missing view-to-integration connection.
         self.schedule = skyline_source.fabrication_skyline(as_of_date=self.cutoff)

@@ -137,8 +137,8 @@ def _first_zero_date(dates: list[date], values: list[int | float | None]) -> dat
     return next((point_date for point_date, value in zip(dates, values) if value == 0), None)
 
 
-def fabrication_rundown() -> dict[str, Any]:
-    raw = json.loads(RUNDOWN_DATA_PATH.read_text(encoding="utf-8"))
+def fabrication_rundown(*, snapshot: dict | None = None) -> dict[str, Any]:
+    raw = snapshot if snapshot is not None else json.loads(RUNDOWN_DATA_PATH.read_text(encoding="utf-8"))
     snapshot, parsed_dates = _validated_snapshot(raw)
     charts = snapshot["charts"]
     source = dict(snapshot["source"])
@@ -169,10 +169,10 @@ def fabrication_rundown() -> dict[str, Any]:
     }
 
 
-def fabrication_rundown_safe() -> dict[str, Any]:
+def fabrication_rundown_safe(*, snapshot: dict | None = None) -> dict[str, Any]:
     """Keep a malformed or missing snapshot from breaking the cockpit."""
     try:
-        return fabrication_rundown()
+        return fabrication_rundown(snapshot=snapshot)
     except Exception:  # pragma: no cover - defensive runtime fallback
         logger.exception("Unable to load the fabrication rundown snapshot")
         return _empty_payload("the source snapshot could not be read.")

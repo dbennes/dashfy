@@ -10,11 +10,13 @@ page. The Skyline and its ROS / AVEON selector remain independent.
 
 | Discipline | Source | Unit | Series |
 | --- | --- | --- | --- |
-| Piping | Existing reconciled ROS workbook snapshot, `Runddown!T1:X75` | Spools | Baseline and 60-day lookahead daily releases and remaining balances |
+| Piping | Last accepted ROS workbook; original reconciled snapshot until the first import | Spools | Baseline and 60-day lookahead daily releases and remaining balances |
 | Structural | Active structural fabrication packages and their linked schedule imports in DATAFY | WBS packages | Planned fabrication completions and remaining balance |
 
 `rundown_discipline_source.rundown_disciplines_safe(piping_payload)` preserves
-the original Piping arrays and KPIs. Structural counts distinct active package
+the supplied Piping arrays and KPIs. The Skyline toolbar provides the
+[ROS workbook update workflow](ros-workbook-updates.md) for both Piping views.
+Structural counts distinct active package
 identities, including packages without a linked drawing. It uses the imported
 planned fabrication finish, including the final fabrication stage. A schedule
 is labeled AVEON only when its linked source workbooks establish that origin.

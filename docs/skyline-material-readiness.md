@@ -76,6 +76,11 @@ The existing period modal continues to list the complete scope in either view.
 
 ## ROS / AVEON dates
 
+**Export ROS / Import ROS** updates the manual ROS dates and spool quantities
+through a reviewed workbook. Both ROS Skyline and Piping rundown use the same
+accepted revision; live material evidence remains sourced from DATAFY. See
+[Updating manual ROS data](ros-workbook-updates.md).
+
 The schedule buttons switch locally between the current ROS snapshot and the
 imported AVEON fabrication schedule. They retain the compact/full choice, line
 scope, spool quantities and shared live material lights. Source-specific dates,

@@ -32,6 +32,10 @@ gráfico. **Piping** mantém o ROS em spools; **Structural** usa as datas planej
 dos pacotes de fabricação já importados no DATAFY. A troca atualiza curva,
 indicadores, unidades e proveniência. Consulte [Rundown by discipline](docs/rundown-disciplines.md).
 
+**Export ROS / Import ROS** permite baixar a base manual, editar datas e
+quantidades, conferir as diferenças e atualizar Skyline e Rundown juntos.
+Consulte [Updating manual ROS data](docs/ros-workbook-updates.md).
+
 ## Stack
 
 - Python 3.11+
