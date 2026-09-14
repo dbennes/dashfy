@@ -2,9 +2,9 @@
 
 The AVEON WBS spool counts differ from the ROS scope. Consequently a line's
 original quantity is placed at its full fabrication finish, including painting;
-it is never apportioned among unmatched P6 spool names. The lower band uses
-dated DATAFY fabrication progress, with reported completion distinguished from
-an explicit actual finish date.
+it is never apportioned among unmatched P6 spool names. Both bands use the same
+planned finish position. DATAFY fabrication progress sets the lower box color;
+report and actual completion dates remain separate supporting evidence.
 """
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ def _base_payload(ros_payload: dict, scope: dict[str, int], as_of: date) -> dict
         "as_of_date": as_of.isoformat(), "as_of_label": as_of.strftime("%d %b %y"),
         "forecast_label": "Planned fabrication finish",
         "lookahead_label": "Reported fabrication progress",
-        "date_rule": "Planned finish includes all fabrication stages and painting. The lower band uses DATAFY fabrication progress: partial at its report date, completed at its first complete report or explicit actual finish, and not started at planned finish (or report date when no plan exists).",
+        "date_rule": "Both bands use the same planned fabrication finish, including painting. DATAFY fabrication progress sets the lower box colors. Report and completion dates are shown separately in the details and do not move a box.",
         "scope_rule": "Same line and spool scope as ROS; quantities are not inferred from AVEON WBS spool names.",
         "actual_date_note": "Report dates show when fabrication progress was recorded. They are not inferred actual finish dates. Spool quantities are line scope, not percentage-based completed quantities.",
         "material_readiness_label": ros_payload.get("source", {}).get("material_readiness_label", ""),
@@ -190,7 +190,7 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
         if planned is None:
             payload["charts"]["unmapped"].append({
                 "line": line, "spools": spools,
-                "reason": "Fabrication stages have no complete planned finish date; any reported progress is shown below.",
+                "reason": "Fabrication stages have no complete planned finish date; the line cannot be positioned in either band.",
             })
         confirmed = [_date(package.get("actual_finish")) for package in linked]
         actual = max(confirmed) if all(value is not None and value <= as_of for value in confirmed) else None
@@ -212,14 +212,13 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
         complete_date = actual or (_date(max(item["completed_date"] for item in progress)) if complete else None)
         if complete:
             status = ("on_time" if complete_date <= planned else "late") if planned else "completed"
-            lower_date = complete_date
-            date_kind = "actual" if actual else "reported_complete"
+            progress_date_kind = "actual" if actual else "reported_complete"
         elif reported_pct is not None and reported_pct > 0:
-            status, lower_date, date_kind = "partial", _date(report_date), "progress"
+            status, progress_date_kind = "partial", "progress"
         else:
             status = "upcoming"
-            lower_date = planned or _date(report_date)
-            date_kind = "planned" if planned else "progress"
+            progress_date_kind = "progress" if report_date else "planned"
+        lower_date = planned
         progress_source = (progress_single.get("source") or "DATAFY fabrication progress unavailable") if len(progress) == 1 else "DATAFY fabrication packages (arithmetic average)"
         evidence = {
             "line": line, "spools": spools, "line_spools": spools,
@@ -237,6 +236,7 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
             "progress_source": progress_source,
             "progress_source_filename": progress_single.get("source_filename", ""),
             "progress_as_of_date": report_date,
+            "progress_date_kind": progress_date_kind,
             "fabrication_progress": progress,
             "progress_history": [dict(observation, package_id=item["package_id"], package_code=item["package_code"])
                                  for item in progress for observation in item["history"]],
@@ -250,6 +250,14 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
                 + (" Multiple packages use the same arithmetic-average convention as the Fabrication summary; all packages must be complete to finish the line." if len(progress) > 1 else ""),
         }
         evidence["schedule_note"] = evidence["line_mapping_note"]
+        if planned is None:
+            payload["charts"]["unmapped"][-1].update({
+                "fabrication_progress_pct": evidence["fabrication_progress_pct"],
+                "progress_as_of_date": report_date, "status": status,
+                "actual_finish": evidence["actual_finish"],
+                "reported_completion_date": evidence["reported_completion_date"],
+                "progress_source": progress_source,
+            })
         if planned:
             forecast = dict(evidence, date=planned.isoformat(), dates=[planned.isoformat()],
                             date_kind="planned", status="upcoming", performed_spools=0, remaining_spools=spools)
@@ -262,18 +270,16 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
         if lower_date:
             actual_bucket = bucket_for(lower_date)
             actual_bucket["lookahead"].append(dict(
-                evidence, date=lower_date.isoformat(), dates=[lower_date.isoformat()], date_kind=date_kind,
-                date_source=("DATAFY explicit actual fabrication finish" if actual else
-                             "Planned finish — no positive fabrication progress reported" if date_kind == "planned" else
-                             "First complete DATAFY fabrication report" if date_kind == "reported_complete" else progress_source),
+                evidence, date=lower_date.isoformat(), dates=[lower_date.isoformat()], date_kind="planned",
+                date_source="Planned fabrication finish, aligned with the upper band; color follows DATAFY progress",
                 status=status, performed_spools=spools if complete else 0, remaining_spools=0 if complete else spools,
             ))
             actual_bucket["lookahead_total"] += spools
             actual_bucket["performed_total"] += spools if complete else 0
             actual_bucket["remaining_total"] += 0 if complete else spools
-            payload["charts"]["status_totals"][status] += spools
-            status_lines[status].add(line)
             actual_dates.append(lower_date)
+        payload["charts"]["status_totals"][status] += spools
+        status_lines[status].add(line)
         if known_progress:
             payload["kpis"]["reported_line_count"] += 1
             payload["kpis"]["reported_spools"] += spools

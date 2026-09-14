@@ -93,17 +93,26 @@ progress** band reads the same DATAFY package overall as the Fabrication table,
 including both ISO and PMS weekly formats. PMS overall values do not overwrite
 the older stage percentages or their PWHT applicability evidence.
 
-Each line appears once below the axis with its full ROS spool scope. More than
-0% and less than 100% is partial, using the existing red/yellow/green scale at
-the report date. Complete lines are green when their completion observation is
-on/before planned finish and red when later. With no comparable plan, a completed
-line is simply **Completed**. Zero or undated progress is gray at planned finish;
-a past planned date never establishes completion. Without a planned finish, a
-valid observation (including zero) remains visible at its report date.
+Each line appears once in each band, at the **same planned fabrication finish**,
+with the same full ROS spool scope. The upper box shows the plan; the lower box
+shows the current fabrication status for that plan. A new report, increased
+percentage or actual finish changes the evidence and colors, never the box's
+schedule position. Both bands retain the same line ordering and compact scope.
+
+More than 0% and less than 100% is partial, using the existing red/yellow/green
+scale. Complete lines are green when their completion observation is on/before
+planned finish and red when later. Zero or unavailable progress is gray. Report
+and completion dates are shown separately in details; where the completion date
+is a report date, the comparison describes reported completion, not an inferred
+execution day. A past planned date never establishes completion.
+
+Without a planned finish, neither band can position the line. The coverage list
+retains its reported percentage and date, including zero. A completed undated
+line is simply **Completed**, without claiming on-plan or delayed execution.
 
 Use `FabricationProgressEntry` history, including exact `stages._overall_pct`,
 to retain the first complete report in the current uninterrupted completion
-series. A later 100% weekly update does not move the box; a correction below
+series for the completion evidence and deadline comparison. A correction below
 100% starts a new series. Future observations are excluded. Legacy entries
 without exact overall use their stored overall-after value. P6 fallback is
 labeled as an imported snapshot, not a work execution date.

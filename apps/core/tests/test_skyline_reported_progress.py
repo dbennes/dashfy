@@ -71,14 +71,35 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.assertEqual(len(segments), 1)
         self.assertEqual(segments[0]["line"], self.line)
         self.assertEqual(segments[0]["spools"], 5)
+        planned = segments[0]["planned_finish"]
+        for band in ("forecast", "lookahead"):
+            rows = self.segments(payload, band)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["date"], planned)
+            self.assertEqual(rows[0]["dates"], [planned])
+            self.assertEqual(rows[0]["date_kind"], "planned")
+        self.assertEqual(
+            [bucket["date"] for bucket in payload["charts"]["dates"] if bucket["forecast"]],
+            [bucket["date"] for bucket in payload["charts"]["dates"] if bucket["lookahead"]],
+        )
         return segments[0]
+
+    def unmapped(self, payload):
+        self.assertFalse(payload["available"])
+        self.assertEqual(payload["charts"]["dates"], [])
+        self.assertEqual(len(payload["charts"]["unmapped"]), 1)
+        row = payload["charts"]["unmapped"][0]
+        self.assertEqual(row["line"], self.line)
+        self.assertEqual(row["spools"], 5)
+        self.assertTrue(row["reason"])
+        return row
 
     def test_pms_overall_overrides_older_completed_stage_values(self):
         payload = source.build_aveon_skyline(self.ros(), [self.package()])
         lower = self.lower(payload)
         self.assertEqual(lower["status"], "partial")
-        self.assertEqual(lower["date_kind"], "progress")
-        self.assertEqual(lower["date"], "2026-09-11")
+        self.assertEqual(lower["progress_date_kind"], "progress")
+        self.assertEqual(lower["date"], "2026-09-10")
         self.assertEqual(lower["progress_as_of_date"], "2026-09-11")
         self.assertEqual(lower["progress_pct"], 33.7103783827178)
         self.assertEqual(lower["fabrication_progress_pct"], 33.7103783827178)
@@ -93,7 +114,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         lower = self.lower(payload)
         self.assertEqual(lower["status"], "partial")
         self.assertEqual(lower["progress_pct"], 17.16531969256482)
-        self.assertEqual(lower["date"], "2026-09-11")
+        self.assertEqual(lower["progress_as_of_date"], "2026-09-11")
 
     def test_partial_progress_keeps_integer_scope_in_both_bands(self):
         payload = source.build_aveon_skyline(self.ros(), [self.package(pct="25")])
@@ -109,17 +130,17 @@ class SkylineReportedProgressTests(SimpleTestCase):
         payload = source.build_aveon_skyline(self.ros(), [self.package(pct="0")])
         lower = self.lower(payload)
         self.assertEqual(lower["status"], "upcoming")
-        self.assertEqual(lower["date_kind"], "planned")
+        self.assertEqual(lower["progress_date_kind"], "progress")
         self.assertEqual(lower["date"], "2026-09-10")
         self.assertEqual(lower["progress_pct"], 0)
         self.assertFalse(lower["actual_date_confirmed"])
 
-    def test_reported_completion_uses_report_date_without_fabricating_actual_finish(self):
+    def test_reported_completion_preserves_report_date_without_fabricating_actual_finish(self):
         payload = source.build_aveon_skyline(self.ros(), [self.package(pct="100")])
         lower = self.lower(payload)
         self.assertEqual(lower["status"], "late")
-        self.assertEqual(lower["date_kind"], "reported_complete")
-        self.assertEqual(lower["date"], "2026-09-11")
+        self.assertEqual(lower["progress_date_kind"], "reported_complete")
+        self.assertEqual(lower["reported_completion_date"], "2026-09-11")
         self.assertEqual(lower["progress_pct"], 100)
         self.assertFalse(lower["actual_date_confirmed"])
         self.assertFalse(lower["actual_finish"])
@@ -144,9 +165,9 @@ class SkylineReportedProgressTests(SimpleTestCase):
             self.ros(), [self.package(pct="100")], progress_entries=history,
         )
         lower = self.lower(payload)
-        self.assertEqual(lower["date"], "2026-09-04")
+        self.assertEqual(lower["reported_completion_date"], "2026-09-04")
         self.assertEqual(lower["status"], "on_time")
-        self.assertEqual(lower["date_kind"], "reported_complete")
+        self.assertEqual(lower["progress_date_kind"], "reported_complete")
         self.assertEqual(lower["progress_as_of_date"], "2026-09-11")
         self.assertIsInstance(lower["progress_history"], list)
         self.assertTrue(lower["progress_history"])
@@ -161,7 +182,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(pct="100")], progress_entries=history,
         )
-        self.assertEqual(self.lower(payload)["date"], "2026-09-11")
+        self.assertEqual(self.lower(payload)["reported_completion_date"], "2026-09-11")
         self.assertEqual(self.lower(payload)["status"], "late")
 
     def test_current_partial_report_does_not_reuse_an_old_completion(self):
@@ -171,8 +192,8 @@ class SkylineReportedProgressTests(SimpleTestCase):
         )
         lower = self.lower(payload)
         self.assertEqual(lower["status"], "partial")
-        self.assertEqual(lower["date_kind"], "progress")
-        self.assertEqual(lower["date"], "2026-09-11")
+        self.assertEqual(lower["progress_date_kind"], "progress")
+        self.assertEqual(lower["progress_as_of_date"], "2026-09-11")
         self.assertEqual(lower["progress_pct"], 40)
 
     def test_history_uses_exact_reported_percentage_before_rounded_overall_after(self):
@@ -180,7 +201,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(pct="100")], progress_entries=history,
         )
-        self.assertEqual(self.lower(payload)["date"], "2026-09-11")
+        self.assertEqual(self.lower(payload)["reported_completion_date"], "2026-09-11")
         self.assertEqual(self.lower(payload)["status"], "late")
 
     def test_future_weekly_marker_falls_back_to_latest_nonfuture_report(self):
@@ -195,7 +216,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         lower = self.lower(payload)
         self.assertEqual(lower["progress_pct"], 40)
         self.assertEqual(lower["status"], "partial")
-        self.assertEqual(lower["date"], "2026-09-11")
+        self.assertEqual(lower["date"], "2026-09-10")
         self.assertEqual(lower["progress_as_of_date"], "2026-09-11")
         self.assertFalse(lower["actual_finish"])
 
@@ -204,8 +225,8 @@ class SkylineReportedProgressTests(SimpleTestCase):
             self.ros(), [self.package(pct="100", reported="2026-09-18")],
         )
         lower = self.lower(payload)
-        self.assertNotEqual(lower["date"], "2026-09-18")
-        self.assertNotEqual(lower["date_kind"], "reported_complete")
+        self.assertNotEqual(lower["progress_as_of_date"], "2026-09-18")
+        self.assertNotEqual(lower["progress_date_kind"], "reported_complete")
         self.assertFalse(lower["actual_date_confirmed"])
         self.assertFalse(lower["actual_finish"])
 
@@ -236,8 +257,8 @@ class SkylineReportedProgressTests(SimpleTestCase):
         lower = self.lower(payload)
         self.assertEqual(lower["progress_pct"], 100)
         self.assertEqual(lower["status"], "late")
-        self.assertEqual(lower["date"], "2026-09-11")
-        self.assertEqual(lower["date_kind"], "reported_complete")
+        self.assertEqual(lower["reported_completion_date"], "2026-09-11")
+        self.assertEqual(lower["progress_date_kind"], "reported_complete")
         self.assertFalse(lower["actual_date_confirmed"])
 
     def test_completion_tolerance_does_not_round_99_point_99_up_to_complete(self):
@@ -249,15 +270,15 @@ class SkylineReportedProgressTests(SimpleTestCase):
                 payload = source.build_aveon_skyline(self.ros(), [self.package(pct=pct)])
                 lower = self.lower(payload)
                 self.assertEqual(lower["status"], status)
-                self.assertEqual(lower["date_kind"], date_kind)
+                self.assertEqual(lower["progress_date_kind"], date_kind)
 
     def test_explicit_nonfuture_actual_finish_retains_its_confirmed_date(self):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(pct="100", actual_finish=date(2026, 9, 3))],
         )
         lower = self.lower(payload)
-        self.assertEqual(lower["date_kind"], "actual")
-        self.assertEqual(lower["date"], "2026-09-03")
+        self.assertEqual(lower["progress_date_kind"], "actual")
+        self.assertEqual(lower["date"], "2026-09-10")
         self.assertEqual(lower["status"], "on_time")
         self.assertTrue(lower["actual_date_confirmed"])
         self.assertEqual(lower["actual_finish"], "2026-09-03")
@@ -271,7 +292,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         payload = source.build_aveon_skyline(self.ros(), [package])
         lower = self.lower(payload)
         self.assertEqual(lower["date"], "2026-09-10")
-        self.assertEqual(lower["date_kind"], "planned")
+        self.assertEqual(lower["progress_date_kind"], "planned")
         self.assertEqual(lower["status"], "upcoming")
         self.assertFalse(lower["actual_date_confirmed"])
         self.assertFalse(lower["actual_finish"])
@@ -311,59 +332,50 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.assertNotIn("%%s", history_query)
         self.assertEqual(history_params, (date(2026, 9, 14),))
         lower = self.lower(payload)
-        self.assertEqual(lower["date"], "2026-09-04")
+        self.assertEqual(lower["reported_completion_date"], "2026-09-04")
         self.assertEqual(lower["progress_as_of_date"], "2026-09-11")
-        self.assertEqual(lower["date_kind"], "reported_complete")
+        self.assertEqual(lower["progress_date_kind"], "reported_complete")
         self.assertEqual(lower["status"], "on_time")
 
-    def test_partial_report_remains_visible_when_planned_finish_is_missing(self):
+    def test_partial_report_without_plan_is_kept_in_unmapped_evidence(self):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(planned=None, pct="25")],
         )
-        self.assertTrue(payload["available"])
-        self.assertEqual(self.segments(payload, "forecast"), [])
-        lower = self.lower(payload)
-        self.assertEqual(lower["date"], "2026-09-11")
-        self.assertEqual(lower["progress_pct"], 25)
-        self.assertEqual(lower["status"], "partial")
-        self.assertEqual(lower["date_kind"], "progress")
-        self.assertFalse(lower["planned_finish"])
+        evidence = self.unmapped(payload)
+        self.assertEqual(evidence["progress_as_of_date"], "2026-09-11")
+        self.assertEqual(evidence["fabrication_progress_pct"], 25)
+        self.assertFalse(evidence["actual_finish"])
+        self.assertFalse(evidence["reported_completion_date"])
 
-    def test_completed_report_without_plan_does_not_claim_on_time_or_late(self):
+    def test_completed_report_without_plan_preserves_completion_as_unmapped_evidence(self):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(planned=None, pct="100")],
         )
-        self.assertTrue(payload["available"])
-        self.assertEqual(self.segments(payload, "forecast"), [])
-        lower = self.lower(payload)
-        self.assertEqual(lower["date"], "2026-09-11")
-        self.assertEqual(lower["progress_pct"], 100)
-        self.assertEqual(lower["status"], "completed")
-        self.assertEqual(lower["date_kind"], "reported_complete")
-        self.assertFalse(lower["actual_date_confirmed"])
-        self.assertFalse(lower["actual_finish"])
+        evidence = self.unmapped(payload)
+        self.assertEqual(evidence["progress_as_of_date"], "2026-09-11")
+        self.assertEqual(evidence["fabrication_progress_pct"], 100)
+        self.assertEqual(evidence["reported_completion_date"], "2026-09-11")
+        self.assertFalse(evidence["actual_finish"])
 
-    def test_zero_report_without_planned_finish_stays_visible_at_report_date(self):
+    def test_zero_report_without_planned_finish_is_kept_in_unmapped_evidence(self):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(planned=None, pct="0")],
         )
-        self.assertTrue(payload["available"])
-        self.assertEqual(self.segments(payload, "forecast"), [])
-        lower = self.lower(payload)
-        self.assertEqual(lower["date"], "2026-09-11")
-        self.assertEqual(lower["progress_pct"], 0)
-        self.assertEqual(lower["status"], "upcoming")
-        self.assertEqual(lower["date_kind"], "progress")
+        evidence = self.unmapped(payload)
+        self.assertEqual(evidence["progress_as_of_date"], "2026-09-11")
+        self.assertEqual(evidence["fabrication_progress_pct"], 0)
+        self.assertFalse(evidence["actual_finish"])
+        self.assertFalse(evidence["reported_completion_date"])
 
     def test_newer_partial_report_supersedes_an_older_explicit_actual_finish(self):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(pct="40", actual_finish=date(2026, 9, 3))],
         )
         lower = self.lower(payload)
-        self.assertEqual(lower["date"], "2026-09-11")
+        self.assertEqual(lower["progress_as_of_date"], "2026-09-11")
         self.assertEqual(lower["progress_pct"], 40)
         self.assertEqual(lower["status"], "partial")
-        self.assertEqual(lower["date_kind"], "progress")
+        self.assertEqual(lower["progress_date_kind"], "progress")
         self.assertFalse(lower["actual_date_confirmed"])
         self.assertFalse(lower["actual_finish"])
         self.assertEqual(lower["performed_spools"], 0)
@@ -381,9 +393,37 @@ class SkylineReportedProgressTests(SimpleTestCase):
             progress_entries=history,
         )
         lower = self.lower(payload)
-        self.assertEqual(lower["date"], "2026-09-11")
-        self.assertEqual(lower["date_kind"], "reported_complete")
+        self.assertEqual(lower["reported_completion_date"], "2026-09-11")
+        self.assertEqual(lower["progress_date_kind"], "reported_complete")
         self.assertEqual(lower["status"], "late")
         self.assertFalse(lower["actual_date_confirmed"])
         self.assertFalse(lower["actual_finish"])
         self.assertEqual(lower["source_actual_finish"], "2026-09-03")
+
+    def test_weekly_progress_updates_preserve_planned_column_and_weekly_scope_totals(self):
+        before = source.build_aveon_skyline(
+            self.ros(), [self.package(pct="25", reported="2026-09-04", planned="2026-10-01")],
+        )
+        after = source.build_aveon_skyline(
+            self.ros(), [self.package(pct="100", reported="2026-09-11", planned="2026-10-01")],
+            progress_entries=[
+                self.entry(1, "2026-09-04", "25"),
+                self.entry(2, "2026-09-11", "100"),
+            ],
+        )
+        first = self.lower(before)
+        latest = self.lower(after)
+        self.assertEqual(first["date"], "2026-10-01")
+        self.assertEqual(latest["date"], first["date"])
+        self.assertEqual(first["progress_pct"], 25)
+        self.assertEqual(latest["progress_pct"], 100)
+        self.assertEqual(first["status"], "partial")
+        self.assertEqual(latest["status"], "on_time")
+        self.assertEqual(first["progress_as_of_date"], "2026-09-04")
+        self.assertEqual(latest["progress_as_of_date"], "2026-09-11")
+        self.assertEqual(latest["reported_completion_date"], "2026-09-11")
+        for payload in (before, after):
+            self.assertEqual([
+                (bucket["date"], bucket["forecast_total"], bucket["lookahead_total"])
+                for bucket in payload["charts"]["dates"]
+            ], [("2026-10-02", 5, 5)])

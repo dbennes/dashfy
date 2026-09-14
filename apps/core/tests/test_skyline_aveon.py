@@ -53,6 +53,16 @@ class AveonSkylineTests(SimpleTestCase):
         self.assertTrue(payload["available"])
         self.assertEqual({row["date"] for row in planned}, {"2026-08-03"})
         self.assertEqual(sum(row["spools"] for row in planned), 8)
+        reported = self.segments(payload, "lookahead")
+        self.assertEqual(
+            [(row["line"], row["date"], row["spools"]) for row in reported],
+            [(row["line"], row["date"], row["spools"]) for row in planned],
+        )
+        for row in planned + reported:
+            self.assertEqual(row["date_kind"], "planned")
+            self.assertEqual(row["dates"], ["2026-08-03"])
+        for bucket in payload["charts"]["dates"]:
+            self.assertEqual(bucket["forecast_total"], bucket["lookahead_total"])
         self.assertEqual(payload["kpis"]["scope_spools"], 8)
         self.assertEqual(payload["kpis"]["scheduled_spools"], 8)
         self.assertEqual(payload["charts"]["material_readiness"], ros["charts"]["material_readiness"])
@@ -68,8 +78,10 @@ class AveonSkylineTests(SimpleTestCase):
         }
         payload = source.build_aveon_skyline(self.ros(), [package])
         reported = self.segments(payload, "lookahead")[0]
-        self.assertEqual(reported["date_kind"], "reported_complete")
-        self.assertEqual(reported["date"], "2026-08-21")
+        self.assertEqual(reported["date_kind"], "planned")
+        self.assertEqual(reported["date"], "2026-08-03")
+        self.assertEqual(reported["progress_date_kind"], "reported_complete")
+        self.assertEqual(reported["reported_completion_date"], "2026-08-21")
         self.assertEqual(reported["actual_finish"], "")
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
         segment = self.segments(payload, "forecast")[0]
@@ -97,7 +109,12 @@ class AveonSkylineTests(SimpleTestCase):
         payload = source.build_aveon_skyline(self.ros(), [self.package(stages=stages)])
         self.assertEqual(self.segments(payload, "forecast"), [])
         self.assertEqual(payload["kpis"]["scheduled_spools"], 0)
-        self.assertEqual(self.segments(payload, "lookahead")[0]["planned_finish"], "")
+        self.assertEqual(self.segments(payload, "lookahead"), [])
+        self.assertFalse(payload["available"])
+        self.assertEqual(payload["kpis"]["unmapped_spools"], 8)
+        evidence = next(row for row in payload["charts"]["unmapped"] if row["line"] == self.line)
+        self.assertIn("fabrication_progress_pct", evidence)
+        self.assertEqual(evidence["progress_as_of_date"], "2026-08-21")
 
     def test_unlinked_package_name_uses_explicit_identity_with_quoted_specification(self):
         ros = self.ros()
@@ -158,12 +175,17 @@ class AveonSkylineTests(SimpleTestCase):
         reported = self.segments(payload, "lookahead")[0]
         self.assertFalse(reported["actual_date_confirmed"])
         self.assertEqual(reported["actual_finish"], "")
-        self.assertEqual(reported["date_kind"], "reported_complete")
+        self.assertEqual(reported["date_kind"], "planned")
+        self.assertEqual(reported["date"], "2026-08-03")
+        self.assertEqual(reported["progress_date_kind"], "reported_complete")
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
         second["actual_finish"] = date(2026, 8, 6)
         payload = source.build_aveon_skyline(self.ros(), [first, second])
         actual = self.segments(payload, "lookahead")[0]
-        self.assertEqual(actual["date"], "2026-08-06")
+        self.assertEqual(actual["date"], "2026-08-03")
+        self.assertEqual(actual["date_kind"], "planned")
+        self.assertEqual(actual["progress_date_kind"], "actual")
+        self.assertEqual(actual["actual_finish"], "2026-08-06")
         self.assertEqual(actual["status"], "late")
         self.assertEqual(actual["spools"], 5)
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 5)
