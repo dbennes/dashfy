@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
-<link href="{% static 'css/fabrication-s03.css' %}?v=20260914-s03-ros-v9" rel="stylesheet">
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260914-s03-fabrication-v10" rel="stylesheet">
 {% endblock %}
 
 {% block tickers %}
@@ -1314,7 +1314,7 @@
               <span>Schedule</span>
               <div class="fab-skyline-schedule-buttons">
                 <button class="ob-btn" type="button" data-skyline-schedule="ros" aria-pressed="true" aria-controls="fabSkylinePlot">ROS</button>
-                <button class="ob-btn" type="button" data-skyline-schedule="aveon" aria-pressed="false" aria-controls="fabSkylinePlot">AVEON</button>
+                <button class="ob-btn" type="button" data-skyline-schedule="aveon" aria-pressed="false" aria-controls="fabSkylinePlot">FABRICATION</button>
               </div>
             </div>
             {% if skyline.available %}<button class="ob-btn ob-btn-blue fab-skyline-view-toggle" id="fabSkylineViewToggle" type="button" aria-expanded="false" aria-controls="fabSkylinePlot"><i class="bi bi-arrows-angle-expand" aria-hidden="true"></i><span>Show all</span></button>{% endif %}
@@ -1351,7 +1351,7 @@
             </div>
             <div class="fab-skyline-viewport" role="group" aria-label="Fabrication skyline with one shared schedule axis for baseline forecast and independently dated lookahead work" aria-describedby="fabSkylineSummary">
               <div class="fab-skyline-matrix" id="fabSkylinePlot"></div>
-              <p class="fab-skyline-no-actual" id="fabSkylineNoActual" hidden>No confirmed actual fabrication finish dates in the AVEON schedule.</p>
+              <p class="fab-skyline-no-actual" id="fabSkylineNoActual" hidden>No confirmed actual finish dates in the fabrication schedule.</p>
             </div>
             <p class="visually-hidden" id="fabSkylineSummary">
               Skyline for {{ skyline.kpis.line_count|default:0 }} piping lines. The single center axis is shared by both scenarios and uses schedule periods.
@@ -4986,14 +4986,14 @@
       STATUSES.late.label = isAveon ? "Completed late" : "Delayed";
       root.dataset.scheduleSource = key;
       root.querySelectorAll("[data-skyline-schedule]").forEach(function (button) { button.setAttribute("aria-pressed", String(button.dataset.skylineSchedule === key)); });
-      document.getElementById("fabSkylineScheduleCaption").textContent = isAveon ? "AVEON · Planned fabrication finish and confirmed actual finish dates" : "ROS · Baseline forecast and 60-day lookahead dates";
+      document.getElementById("fabSkylineScheduleCaption").textContent = isAveon ? "FABRICATION · Planned fabrication finish and confirmed actual finish dates" : "ROS · Baseline forecast and 60-day lookahead dates";
       document.getElementById("fabSkylineLineCount").textContent = Number(kpis.line_count || 0).toLocaleString("en-US");
       document.getElementById("fabSkylineSpoolCount").textContent = Number(kpis.scope_spools || 0).toLocaleString("en-US");
-      document.getElementById("fabSkylineCompletionSummary").textContent = isAveon ? (ready ? Number(kpis.scheduled_line_count || 0) + " lines with dates · " + spoolLabel(kpis.scheduled_spools) + " scheduled" : "AVEON schedule unavailable") : Number(kpis.performed_spools || 0) + " performed · " + Number(kpis.remaining_spools || 0) + " remaining";
+      document.getElementById("fabSkylineCompletionSummary").textContent = isAveon ? (ready ? Number(kpis.scheduled_line_count || 0) + " lines with dates · " + spoolLabel(kpis.scheduled_spools) + " scheduled" : "Fabrication schedule unavailable") : Number(kpis.performed_spools || 0) + " performed · " + Number(kpis.remaining_spools || 0) + " remaining";
       var forecastLegend = document.getElementById("fabSkylineForecastLegend");
       forecastLegend.querySelector("span").textContent = SCENARIOS.forecast.label;
       forecastLegend.querySelector("b").textContent = Number(isAveon ? kpis.scheduled_line_count || 0 : kpis.line_count || 0) + " lines · " + spoolLabel(isAveon ? kpis.scheduled_spools : kpis.scope_spools);
-      forecastLegend.title = isAveon ? source.date_rule || "Planned fabrication finish from the AVEON schedule." : "Forecast uses the ROS baseline schedule in Planilha1.";
+      forecastLegend.title = isAveon ? source.date_rule || "Planned finish from the fabrication schedule." : "Forecast uses the ROS baseline schedule in Planilha1.";
       root.querySelectorAll("[data-skyline-ros-only]").forEach(function (legend) { legend.hidden = isAveon; });
       var actualLegend = document.getElementById("fabSkylineActualLegend");
       actualLegend.hidden = !isAveon;
@@ -5002,17 +5002,17 @@
       document.getElementById("fabSkylineActualBand").textContent = SCENARIOS.lookahead.label;
       document.getElementById("fabSkylineCutoffLabel").textContent = isAveon ? "As of" : "Cutoff";
       document.getElementById("fabSkylineNoActual").hidden = !isAveon || !ready || dates.some(function (bucket) { return bucket.lookahead && bucket.lookahead.length; });
-      document.getElementById("fabSkylineSummary").textContent = isAveon ? "AVEON planned fabrication finish above the axis; confirmed actual finish below. Planned dates in the past do not prove completion. Spool quantities retain the ROS line scope. Unmatched lines are listed separately." : rosAccessibleSummary;
-      viewport.setAttribute("aria-label", isAveon ? "AVEON planned and actual fabrication finish dates" : "ROS baseline forecast and independently dated lookahead work");
+      document.getElementById("fabSkylineSummary").textContent = isAveon ? "Planned fabrication finish above the axis; confirmed actual finish below. Planned dates in the past do not prove completion. Spool quantities retain the ROS line scope. Unmatched lines are listed separately." : rosAccessibleSummary;
+      viewport.setAttribute("aria-label", isAveon ? "Planned and actual fabrication finish dates" : "ROS baseline forecast and independently dated lookahead work");
       var sourceLabel = document.getElementById("fabSkylineScheduleSource");
-      sourceLabel.textContent = isAveon ? "AVEON · " + (source.workbook || source.source_label || "Fabrication schedule") + (source.snapshot_label ? " · imported " + source.snapshot_label : "") : "ROS · " + (source.workbook || "Planilha1") + " · " + (source.forecast_scope || "Planilha1") + " · snapshot " + (source.snapshot_label || "—");
+      sourceLabel.textContent = isAveon ? "FABRICATION · " + (source.workbook || source.source_label || "Fabrication schedule") + (source.snapshot_label ? " · imported " + source.snapshot_label : "") : "ROS · " + (source.workbook || "Planilha1") + " · " + (source.forecast_scope || "Planilha1") + " · snapshot " + (source.snapshot_label || "—");
       sourceLabel.title = sourceLabel.textContent + (source.date_rule ? " · " + source.date_rule : "");
-      document.getElementById("fabSkylineModalScheduleNote").textContent = isAveon ? (source.date_rule || "AVEON planned fabrication finish dates; actual finish requires explicit completion evidence.") + " Spool quantities use the same ROS line scope. Reported progress does not establish an actual finish date." : "Temporary completion proxy: ROS lookahead quantities before " + (source.as_of_label || "the cutoff") + " count as performed. Future lookahead quantities remain gray.";
+      document.getElementById("fabSkylineModalScheduleNote").textContent = isAveon ? (source.date_rule || "Planned fabrication finish dates; actual finish requires explicit completion evidence.") + " Spool quantities use the same ROS line scope. Reported progress does not establish an actual finish date." : "Temporary completion proxy: ROS lookahead quantities before " + (source.as_of_label || "the cutoff") + " count as performed. Future lookahead quantities remain gray.";
       var coverage = document.getElementById("fabSkylineCoverage");
       var unmapped = isAveon && Array.isArray(data.unmapped) ? data.unmapped : [];
       coverage.hidden = !unmapped.length;
       coverage.open = false;
-      document.getElementById("fabSkylineCoverageSummary").textContent = unmapped.length + " lines · " + spoolLabel(kpis.unmapped_spools) + " without AVEON dates";
+      document.getElementById("fabSkylineCoverageSummary").textContent = unmapped.length + " lines · " + spoolLabel(kpis.unmapped_spools) + " without fabrication dates";
       var coverageLines = document.getElementById("fabSkylineCoverageLines");
       coverageLines.replaceChildren();
       unmapped.forEach(function (entry) { appendBoxText(coverageLines, "li", "", displayLine(entry.line) + " · " + spoolLabel(entry.spools) + " · " + entry.reason); });

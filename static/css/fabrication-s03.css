@@ -509,8 +509,8 @@
 .cockpit-v3 #s03 .fab-skyline-summary b { margin-right: 3px; color: var(--fb-fg); font-family: var(--fb-font-mono); }
 .cockpit-v3 #s03 .fab-skyline-schedule-control { display: flex; align-items: center; gap: 8px; }
 .cockpit-v3 #s03 .fab-skyline-schedule-control > span { color: var(--fb-fg-subtle); font-size: 10px; }
-.cockpit-v3 #s03 .fab-skyline-schedule-buttons { display: inline-flex; gap: 2px; }
-.cockpit-v3 #s03 .fab-skyline-schedule-buttons button { width: 62px; justify-content: center; }
+.cockpit-v3 #s03 .fab-skyline-schedule-buttons { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; }
+.cockpit-v3 #s03 .fab-skyline-schedule-buttons button { min-width: 62px; justify-content: center; }
 .cockpit-v3 #s03 .fab-skyline-schedule-buttons button[aria-pressed="true"] { border-color: var(--fb-info-border); background: var(--fb-info-bg); color: var(--fb-info); }
 .cockpit-v3 #s03 .fab-skyline-schedule-buttons button:focus-visible { outline: 2px solid var(--fb-info); outline-offset: 2px; }
 .cockpit-v3 #s03 .fab-skyline-coverage { margin: 0 16px 12px; padding: 7px 10px; border: 1px solid var(--fb-warning-border); border-radius: 4px; color: var(--fb-fg-muted); font-size: 10px; }
