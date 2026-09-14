@@ -84,7 +84,7 @@ accepted revision; live material evidence remains sourced from DATAFY. See
 The schedule buttons switch locally between the current ROS snapshot and the
 imported AVEON fabrication schedule. They retain the compact/full choice, line
 scope, spool quantities and shared live material lights. Source-specific dates,
-labels, totals, coverage and details are refreshed together. Neither the ROS
+labels, totals and details are refreshed together. Neither the ROS
 schedule nor its completion proxy can fill missing fabrication dates or progress.
 
 The FABRICATION upper band uses the latest planned finish across the complete
@@ -97,15 +97,15 @@ never create lower boxes.
 
 Actual finishes on or before the planned date are green; finishes after the
 planned date are red. A confirmed actual finish without a planned date still
-appears below, labeled **Completed**, without an on-time/late claim. Its missing
-planned date remains in the coverage list. Unstarted and partial lines appear
+appears below, labeled **Completed**, without an on-time/late claim. Unstarted and partial lines appear
 only in the planned band when a planned date is available.
 
 Progress evidence reads the same DATAFY package overall as the Fabrication
 table, including ISO and PMS weekly formats. PMS overall values do not overwrite
 older stage percentages or their PWHT applicability evidence. Lines reported
 100% without an actual finish receive an **estimated** completion date, marked
-with `~` on the lower box and identified in its details and an expandable list.
+with `~` on the lower box and identified in its details, including the reporting
+interval and estimate basis.
 The estimate interval starts the day after the last report below 100% and ends
 on the first 100% report of the current uninterrupted completion series. If no
 earlier observation exists, use the seven days ending at that first report.
@@ -159,7 +159,7 @@ disagree, a full exact and unique drawing-number link can resolve identity;
 show the source discrepancy in box details. Other conflicts remain undated.
 
 The current imported `AVEON Schedule 1.xlsx` provides dates for 163 lines / 602
-spools. Three lines / 5 spools remain listed without dates; the comparison scope
+spools. Three lines / 5 spools have no planned dates; the comparison scope
 stays 166 lines / 607 spools. Its AVEON WBS spool counts differ from this scope,
 so quantities are never distributed among unmatched activity/spool names.
 Source failure shows the fabrication error and leaves ROS available.
