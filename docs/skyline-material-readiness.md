@@ -88,11 +88,12 @@ labels, totals, coverage and details are refreshed together. Neither the ROS
 schedule nor its completion proxy can fill missing fabrication dates or progress.
 
 The FABRICATION upper band uses the latest planned finish across the complete
-applicable AVEON fabrication stages, including painting. The lower **Actual
-finish** band contains only completed lines, positioned at their confirmed
-actual finish. Each band groups dates into weeks ending Friday; box details
+applicable AVEON fabrication stages, including painting. The lower **Completed**
+band contains only completed lines, positioned at their confirmed actual finish
+or an explicitly marked estimate from weekly reporting history. Each band groups dates into weeks ending Friday; box details
 retain the exact date. A line's entire ROS spool scope moves together only when
-every linked fabrication package has a confirmed actual finish.
+every linked fabrication package is complete. Partial and unstarted packages
+never create lower boxes.
 
 Actual finishes on or before the planned date are green; finishes after the
 planned date are red. A confirmed actual finish without a planned date still
@@ -103,13 +104,20 @@ only in the planned band when a planned date is available.
 Progress evidence reads the same DATAFY package overall as the Fabrication
 table, including ISO and PMS weekly formats. PMS overall values do not overwrite
 older stage percentages or their PWHT applicability evidence. Lines reported
-100% without an actual finish appear in a separate expandable list. They never
-receive an inferred execution date or deadline color and are excluded from the
-actual band and its totals. No report, import or planned date fills that gap.
+100% without an actual finish receive an **estimated** completion date, marked
+with `~` on the lower box and identified in its details and an expandable list.
+The estimate interval starts the day after the last report below 100% and ends
+on the first 100% report of the current uninterrupted completion series. If no
+earlier observation exists, use the seven days ending at that first report.
+Use planned finish when it falls inside the interval; otherwise choose a stable
+pseudorandom day within it, seeded by package ID and first complete report date.
+No estimated date is later than its supporting report or the dashboard cutoff.
+Green/red compares the displayed completion date to plan; estimated comparisons
+are labeled **Estimated on plan / Estimated delayed**, never confirmed actual.
 
 Use `FabricationProgressEntry` history, including exact `stages._overall_pct`,
 to retain the first complete report in the current uninterrupted completion
-series for the reporting evidence only. A correction below
+series for the reporting evidence and estimated date interval. A correction below
 100% starts a new series. Future observations are excluded. Legacy entries
 without exact overall use their stored overall-after value. P6 fallback is
 labeled as an imported snapshot, not a work execution date.
@@ -126,11 +134,22 @@ points handles Excel's `99.99999999999999` representation of 100%; 99.99% remain
 partial. Each package's original exact percentage is retained in the evidence.
 The UI does not round a still-partial value up to a displayed 100%.
 
+DATAFY weekly imports persist the estimate record in
+`stages._weekly_progress.completion`, the corresponding manual override, and
+`FabricationProgressEntry.stages._completion`. Subsequent complete reports and
+P6 plan edits reuse that record. A correction below 100% starts a new episode;
+old entries remain available. `planned_finish_used` records the plan used for
+the estimate, not a claim about a historical baseline that was never saved.
+The portable standard-library algorithm is mirrored from DATAFY
+`fabrication/completion_dates.py` into `apps/core/skyline_completion_dates.py`;
+keep them identical. Confirmed actual dates take precedence over estimates.
+
 The number on a box is line scope, not a percentage-based count of finished
-spools. Actual totals include only completed lines with confirmed dates. If a
+spools. Completed totals include only complete lines and split actual versus
+estimated date counts. If a
 line has multiple packages, its displayed progress uses the Fabrication summary's
 arithmetic-average convention and exposes the individual percentages; all packages
-must have actual finishes before the line enters the actual band. The overall report curve
+must have completion evidence before the line enters the lower band. The overall report curve
 percentage is never distributed among lines. ROS behavior and material-light
 evidence remain independent of these fabrication percentages.
 

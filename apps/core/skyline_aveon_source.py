@@ -3,8 +3,8 @@
 The AVEON WBS spool counts differ from the ROS scope. Consequently a line's
 original quantity is placed at its full fabrication finish, including painting;
 it is never apportioned among unmatched P6 spool names. The upper band uses
-planned finishes; the lower band shows completed lines at confirmed actual
-finishes. Reported completion without an actual date remains separate evidence.
+planned finishes; the lower band shows completed lines at actual finishes or
+clearly identified estimates retained from their weekly completion history.
 """
 from __future__ import annotations
 
@@ -101,8 +101,8 @@ def _base_payload(ros_payload: dict, scope: dict[str, int], as_of: date) -> dict
         "workbook": "", "snapshot_date": "", "snapshot_label": "",
         "as_of_date": as_of.isoformat(), "as_of_label": as_of.strftime("%d %b %y"),
         "forecast_label": "Planned fabrication finish",
-        "lookahead_label": "Actual fabrication finish",
-        "date_rule": "The upper band uses planned fabrication finish, including painting. The lower band shows only completed lines at their confirmed actual finish, green on or before plan and red after plan. Report dates never substitute for actual finish dates.",
+        "lookahead_label": "Completed fabrication",
+        "date_rule": "The upper band uses planned fabrication finish, including painting. Completed lines appear below at actual finishes or marked estimates within their completion reporting period. Green is on or before plan; red is after plan. Estimated dates remain separate from actual finishes.",
         "scope_rule": "Same line and spool scope as ROS; quantities are not inferred from AVEON WBS spool names.",
         "actual_date_note": "Report dates show when fabrication progress was recorded. They are not inferred actual finish dates. Spool quantities are line scope, not percentage-based completed quantities.",
         "material_readiness_label": ros_payload.get("source", {}).get("material_readiness_label", ""),
@@ -113,6 +113,7 @@ def _base_payload(ros_payload: dict, scope: dict[str, int], as_of: date) -> dict
         scheduled_line_count=0, scheduled_spools=0,
         unmapped_line_count=0, unmapped_spools=0,
         confirmed_actual_line_count=0, confirmed_actual_spools=0,
+        estimated_completion_line_count=0, estimated_completion_spools=0,
         undated_completed_lines=0, undated_completed_spools=0,
         reported_completed_line_count=0, reported_completed_spools=0,
         reported_line_count=0, reported_spools=0, progress_report_date="",
@@ -122,6 +123,7 @@ def _base_payload(ros_payload: dict, scope: dict[str, int], as_of: date) -> dict
     )
     payload["charts"]["unmapped"] = []
     payload["charts"]["undated_completions"] = []
+    payload["charts"]["estimated_completions"] = []
     payload["charts"]["status_totals"]["completed"] = 0
     payload["charts"]["status_line_counts"]["completed"] = 0
     payload["charts"]["material_readiness"] = deepcopy(ros_payload.get("charts", {}).get("material_readiness", {}))
@@ -199,24 +201,33 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
         actual = max(confirmed) if all(value is not None for value in confirmed) else None
         progress = [package_progress(package, history_by_package[package["id"]], as_of) for package in linked]
         source_actual = actual
-        actual_superseded = actual is not None and any(
-            any(_date(observation["date"]) >= finish and not is_complete(observation["pct_exact"])
-                for observation in item["history"])
-            for finish, item in zip(confirmed, progress)
-        )
-        if actual_superseded:
-            actual = None
+        superseded = [finish is not None and any(
+            _date(observation["date"]) >= finish and not is_complete(observation["pct_exact"])
+            for observation in item["history"]
+        ) for finish, item in zip(confirmed, progress)]
+        actual_superseded = actual is not None and any(superseded)
+        confirmed = [None if stale else finish for finish, stale in zip(confirmed, superseded)]
+        actual = max(confirmed) if all(confirmed) else None
         progress_single = progress[0] if len(progress) == 1 else {}
         known_progress = all(item["pct_exact"] is not None for item in progress)
         reported_pct = (sum(Decimal(item["pct_exact"]) for item in progress) / len(progress)) if known_progress else None
         report_date = max((item["as_of_date"] for item in progress if item["as_of_date"]), default="")
         reported_complete = known_progress and all(is_complete(item["pct_exact"]) for item in progress)
-        complete = actual is not None
+        completion_records = [item.get("completion") or {} for item in progress]
+        completion_dates = [finish or _date(record.get("date")) for finish, record in zip(confirmed, completion_records)]
+        completion_date = max(completion_dates) if all(completion_dates) else None
+        estimated = completion_date is not None and actual is None
+        estimate_records = [record for finish, record in zip(confirmed, completion_records) if not finish and record]
+        completion_estimate = max(estimate_records, key=lambda record: record["date"]) if estimate_records else {}
+        if estimated and len(progress) > 1:
+            completion_estimate = dict(completion_estimate, date=completion_date.isoformat(),
+                                       method="latest_package_completion", packages=completion_records)
+        complete = completion_date is not None
         progress_pct = 100.0 if complete or reported_complete else float(reported_pct) if reported_pct is not None else None
         reported_completion = max((item["completed_date"] for item in progress), default="") if reported_complete else ""
-        if actual:
-            status = ("on_time" if actual <= planned else "late") if planned else "completed"
-            progress_date_kind = "actual"
+        if complete:
+            status = ("on_time" if completion_date <= planned else "late") if planned else "completed"
+            progress_date_kind = "estimated" if estimated else "actual"
         elif reported_complete:
             status, progress_date_kind = "undated", "reported_complete"
         elif reported_pct is not None and reported_pct > 0:
@@ -246,6 +257,9 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
             "progress_history": [dict(observation, package_id=item["package_id"], package_code=item["package_code"])
                                  for item in progress for observation in item["history"]],
             "actual_date_confirmed": actual is not None,
+            "completion_date": completion_date.isoformat() if completion_date else "",
+            "completion_date_kind": progress_date_kind if complete else "",
+            "completion_estimate": completion_estimate if estimated else {},
             "planned_finish": planned.isoformat() if planned else "",
             "actual_finish": actual.isoformat() if actual else "",
             "source_actual_finish": source_actual.isoformat() if source_actual else "",
@@ -272,18 +286,23 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
             planned_dates.append(planned)
             payload["kpis"]["scheduled_line_count"] += 1
             payload["kpis"]["scheduled_spools"] += spools
-        if actual:
-            actual_bucket = bucket_for(actual)
-            actual_bucket["lookahead"].append(dict(
-                evidence, date=actual.isoformat(), dates=[actual.isoformat()], date_kind="actual",
-                date_source="DATAFY confirmed actual fabrication finish (including painting)",
+        if complete:
+            actual_bucket = bucket_for(completion_date)
+            completed_segment = dict(
+                evidence, date=completion_date.isoformat(), dates=[completion_date.isoformat()], date_kind=progress_date_kind,
+                date_source="Estimated completion from DATAFY weekly history" if estimated else "DATAFY confirmed actual fabrication finish (including painting)",
                 status=status, performed_spools=spools, remaining_spools=0,
-            ))
+            )
+            actual_bucket["lookahead"].append(completed_segment)
             actual_bucket["lookahead_total"] += spools
             actual_bucket["performed_total"] += spools
-            actual_dates.append(actual)
+            actual_dates.append(completion_date)
             payload["charts"]["status_totals"][status] += spools
             status_lines[status].add(line)
+            if estimated:
+                payload["charts"]["estimated_completions"].append(dict(completed_segment))
+                payload["kpis"]["estimated_completion_line_count"] += 1
+                payload["kpis"]["estimated_completion_spools"] += spools
         elif reported_complete:
             payload["charts"]["undated_completions"].append(dict(
                 evidence, status="undated",
@@ -334,7 +353,7 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
         payload["source"].update(snapshot_date=imported.isoformat(), snapshot_label=imported.strftime("%d %b %y"))
     payload["source"]["progress_report_date"] = kpis["progress_report_date"]
     payload["available"] = bool(planned_dates or actual_dates)
-    payload["error"] = "" if payload["available"] else "No planned or confirmed actual fabrication finish dates are available for this scope."
+    payload["error"] = "" if payload["available"] else "No planned or completed fabrication dates are available for this scope."
     payload["charts_json"] = json.dumps(payload["charts"], separators=(",", ":"))
     return payload
 

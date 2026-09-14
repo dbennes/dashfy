@@ -5,6 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from . import fabrication_source as fabrication
+from .skyline_completion_dates import build_completion_record, fabrication_planned_finish
 
 
 def as_date(value):
@@ -104,12 +105,14 @@ def package_progress(package, entries, as_of):
     weekly = fabrication._weekly_overall_value(stages)
     observations = {}
 
-    def observe(observed, value, source, filename=''):
+    def observe(observed, value, source, filename='', completion=None):
         observed, value = as_date(observed), percent(value)
         if observed is not None and observed <= as_of and value is not None:
+            previous_completion = observations.get(observed, {}).get('completion')
             observations[observed] = {
                 'date': observed.isoformat(), 'pct': float(value), 'pct_exact': str(value),
                 'source': source, 'source_filename': filename,
+                'completion': completion or previous_completion or {},
             }
 
     # A P6 snapshot is an observation as of import, never an actual finish.
@@ -119,11 +122,12 @@ def package_progress(package, entries, as_of):
     for entry in sorted(entries, key=lambda row: (str(row.get('progress_date') or ''), row.get('id') or 0)):
         values = fabrication._as_dict(entry.get('stages'))
         value = values.get('_overall_pct') if '_overall_pct' in values else entry.get('overall_after')
-        observe(entry.get('progress_date'), value, 'DATAFY fabrication progress entry')
+        observe(entry.get('progress_date'), value, 'DATAFY fabrication progress entry',
+                values.get('_source_filename', ''), values.get('_completion'))
     if weekly is not None:
         source = ('EPC1 PMS weekly fabrication report' if marker.get('source') == fabrication.WEEKLY_PROGRESS_PMS_SOURCE
                   else 'EPC1 ISO weekly fabrication report')
-        observe(marker.get('report_date'), weekly, source, marker.get('source_filename') or '')
+        observe(marker.get('report_date'), weekly, source, marker.get('source_filename') or '', marker.get('completion'))
 
     history = [observations[key] for key in sorted(observations)]
     latest = history[-1] if history else {}
@@ -139,4 +143,5 @@ def package_progress(package, entries, as_of):
         'source': latest.get('source', ''), 'source_filename': latest.get('source_filename', ''),
         'as_of_date': latest.get('date', ''), 'completed_date': completed_date,
         'history': history,
+        'completion': build_completion_record(history, fabrication_planned_finish(stages), str(package['id']), as_of),
     }

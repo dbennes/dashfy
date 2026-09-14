@@ -53,14 +53,17 @@ class AveonSkylineTests(SimpleTestCase):
         self.assertTrue(payload["available"])
         self.assertEqual({row["date"] for row in planned}, {"2026-08-03"})
         self.assertEqual(sum(row["spools"] for row in planned), 8)
-        self.assertEqual(self.segments(payload, "lookahead"), [])
-        self.assertEqual(payload["kpis"]["performed_spools"], 0)
-        self.assertEqual(payload["kpis"]["undated_completed_spools"], 8)
+        estimates = self.segments(payload, "lookahead")
+        self.assertEqual(len(estimates), 2)
+        self.assertTrue(all(row["completion_date_kind"] == "estimated" for row in estimates))
+        self.assertTrue(all(not row["actual_finish"] for row in estimates))
+        self.assertEqual(payload["kpis"]["performed_spools"], 8)
+        self.assertEqual(payload["kpis"]["estimated_completion_spools"], 8)
+        self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
         for row in planned:
             self.assertEqual(row["date_kind"], "planned")
             self.assertEqual(row["dates"], ["2026-08-03"])
-        for bucket in payload["charts"]["dates"]:
-            self.assertEqual(bucket["lookahead_total"], 0)
+        self.assertEqual(sum(bucket["lookahead_total"] for bucket in payload["charts"]["dates"]), 8)
         self.assertEqual(payload["kpis"]["scope_spools"], 8)
         self.assertEqual(payload["kpis"]["scheduled_spools"], 8)
         self.assertEqual(payload["charts"]["material_readiness"], ros["charts"]["material_readiness"])
@@ -75,12 +78,14 @@ class AveonSkylineTests(SimpleTestCase):
             "pwht_required": False, "overall_pct": "100",
         }
         payload = source.build_aveon_skyline(self.ros(), [package])
-        self.assertEqual(self.segments(payload, "lookahead"), [])
-        reported = payload["charts"]["undated_completions"][0]
+        reported = self.segments(payload, "lookahead")[0]
+        self.assertEqual(reported["completion_date_kind"], "estimated")
+        self.assertGreaterEqual(reported["completion_date"], "2026-08-15")
+        self.assertLessEqual(reported["completion_date"], "2026-08-21")
         self.assertEqual(reported["reported_completion_date"], "2026-08-21")
         self.assertEqual(reported["actual_finish"], "")
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
-        self.assertEqual(payload["kpis"]["undated_completed_spools"], 5)
+        self.assertEqual(payload["kpis"]["estimated_completion_spools"], 5)
         segment = self.segments(payload, "forecast")[0]
         self.assertEqual(segment["fabrication_progress_pct"], 100)
         self.assertEqual(segment["progress_as_of_date"], "2026-08-21")
@@ -169,12 +174,12 @@ class AveonSkylineTests(SimpleTestCase):
         first = self.package(actual_finish=date(2026, 8, 4))
         second = self.package(2, actual_finish=date(2026, 9, 15))
         payload = source.build_aveon_skyline(self.ros(), [first, second])
-        self.assertEqual(self.segments(payload, "lookahead"), [])
-        reported = payload["charts"]["undated_completions"][0]
+        reported = self.segments(payload, "lookahead")[0]
+        self.assertEqual(reported["completion_date_kind"], "estimated")
         self.assertFalse(reported["actual_date_confirmed"])
         self.assertEqual(reported["actual_finish"], "")
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
-        self.assertEqual(payload["kpis"]["undated_completed_spools"], 5)
+        self.assertEqual(payload["kpis"]["estimated_completion_spools"], 5)
         second["actual_finish"] = date(2026, 8, 6)
         payload = source.build_aveon_skyline(self.ros(), [first, second])
         actual = self.segments(payload, "lookahead")[0]
@@ -184,6 +189,7 @@ class AveonSkylineTests(SimpleTestCase):
         self.assertEqual(actual["status"], "late")
         self.assertEqual(actual["spools"], 5)
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 5)
+        self.assertEqual(payload["kpis"]["estimated_completion_spools"], 0)
         self.assertEqual(payload["kpis"]["undated_completed_spools"], 0)
         self.assertEqual(payload["kpis"]["remaining_spools"], 3)
 

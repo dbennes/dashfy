@@ -88,22 +88,32 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.assertEqual(row["date_kind"], "actual")
         return row
 
-    def undated(self, payload):
-        self.assertEqual(self.segments(payload), [])
-        rows = payload["charts"]["undated_completions"]
+    def estimated(self, payload):
+        rows = self.segments(payload)
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]["line"], self.line)
-        self.assertEqual(rows[0]["spools"], 5)
-        self.assertFalse(rows[0]["actual_finish"])
-        self.assertEqual(payload["kpis"]["undated_completed_lines"], 1)
-        self.assertEqual(payload["kpis"]["undated_completed_spools"], 5)
-        self.assertEqual(payload["kpis"]["performed_line_count"], 0)
-        self.assertEqual(payload["kpis"]["performed_spools"], 0)
-        return rows[0]
+        row = rows[0]
+        self.assertEqual(row["line"], self.line)
+        self.assertEqual(row["spools"], 5)
+        self.assertEqual(row["completion_date_kind"], "estimated")
+        self.assertEqual(row["date"], row["completion_date"])
+        self.assertEqual(row["dates"], [row["completion_date"]])
+        self.assertFalse(row["actual_finish"])
+        self.assertFalse(row["actual_date_confirmed"])
+        self.assertIsInstance(row["completion_estimate"], dict)
+        self.assertEqual(len(payload["charts"]["estimated_completions"]), 1)
+        self.assertEqual(payload["charts"]["estimated_completions"][0]["line"], self.line)
+        self.assertEqual(payload["kpis"]["estimated_completion_line_count"], 1)
+        self.assertEqual(payload["kpis"]["estimated_completion_spools"], 5)
+        self.assertEqual(payload["kpis"]["performed_line_count"], 1)
+        self.assertEqual(payload["kpis"]["performed_spools"], 5)
+        self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
+        self.assertEqual(payload["kpis"]["undated_completed_spools"], 0)
+        return row
 
     def no_completion(self, payload):
         self.assertEqual(self.segments(payload), [])
         self.assertEqual(payload["charts"]["undated_completions"], [])
+        self.assertEqual(payload["charts"]["estimated_completions"], [])
         self.assertEqual(payload["kpis"]["performed_spools"], 0)
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
         self.assertEqual(payload["kpis"]["undated_completed_spools"], 0)
@@ -155,25 +165,27 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.no_completion(payload)
         self.assertEqual(payload["charts"]["status_totals"]["upcoming"], 0)
 
-    def test_reported_hundred_percent_is_undated_without_an_actual_finish(self):
+    def test_reported_hundred_percent_is_estimated_without_an_actual_finish(self):
         payload = source.build_aveon_skyline(self.ros(), [self.package(pct="100")])
-        evidence = self.undated(payload)
+        evidence = self.estimated(payload)
         self.assertEqual(evidence["reported_completion_date"], "2026-09-11")
         self.assertEqual(evidence["fabrication_progress_pct"], 100)
         self.assertEqual(self.forecast(payload)["progress_pct"], 100)
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
 
-    def test_reported_completion_never_classifies_actual_as_on_time_or_late(self):
-        for planned in ("2026-09-10", "2026-09-11", "2026-09-14"):
+    def test_estimated_completion_colors_use_estimated_date_without_claiming_actual(self):
+        for planned, expected in (("2026-09-02", "late"), ("2026-09-10", "on_time"),
+                                  ("2026-09-14", "on_time")):
             with self.subTest(planned=planned):
                 payload = source.build_aveon_skyline(
                     self.ros(), [self.package(pct="100", planned=planned)],
                 )
-                self.undated(payload)
-                self.assertEqual(payload["charts"]["status_totals"]["on_time"], 0)
-                self.assertEqual(payload["charts"]["status_totals"]["late"], 0)
+                estimate = self.estimated(payload)
+                self.assertEqual(estimate["status"], expected)
+                self.assertLessEqual(estimate["completion_date"], "2026-09-11")
+                self.assertGreaterEqual(estimate["completion_date"], "2026-09-05")
 
-    def test_first_reported_completion_is_preserved_in_undated_history(self):
+    def test_first_reported_completion_is_preserved_in_estimate_evidence(self):
         history = [
             self.entry(3, "2026-09-11", "100"),
             self.entry(1, "2026-08-28", "75"),
@@ -182,7 +194,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(pct="100")], progress_entries=history,
         )
-        evidence = self.undated(payload)
+        evidence = self.estimated(payload)
         self.assertEqual(evidence["reported_completion_date"], "2026-09-04")
         forecast = self.forecast(payload)
         self.assertEqual(forecast["progress_as_of_date"], "2026-09-11")
@@ -199,7 +211,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(pct="100")], progress_entries=history,
         )
-        self.assertEqual(self.undated(payload)["reported_completion_date"], "2026-09-11")
+        self.assertEqual(self.estimated(payload)["reported_completion_date"], "2026-09-11")
 
     def test_current_partial_report_does_not_reuse_an_old_completion(self):
         history = [self.entry(1, "2026-09-04", "100"), self.entry(2, "2026-09-11", "40")]
@@ -217,7 +229,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         payload = source.build_aveon_skyline(
             self.ros(), [self.package(pct="100")], progress_entries=history,
         )
-        self.assertEqual(self.undated(payload)["reported_completion_date"], "2026-09-11")
+        self.assertEqual(self.estimated(payload)["reported_completion_date"], "2026-09-11")
 
     def test_future_weekly_marker_falls_back_to_latest_nonfuture_report(self):
         history = [self.entry(1, "2026-09-11", "40"), self.entry(2, "2026-09-18", "100")]
@@ -251,7 +263,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.assertEqual(set(forecast["package_ids"]), {1, 2})
         self.no_completion(payload)
 
-    def test_all_packages_reported_complete_produce_one_undated_line(self):
+    def test_all_packages_reported_complete_produce_one_estimated_line(self):
         history = [
             self.entry(1, "2026-09-04", "100", package_id=1),
             self.entry(2, "2026-09-04", "70", package_id=2),
@@ -262,19 +274,20 @@ class SkylineReportedProgressTests(SimpleTestCase):
             self.ros(), [self.package(pct="100"), self.package(2, pct="100")],
             progress_entries=history,
         )
-        evidence = self.undated(payload)
+        evidence = self.estimated(payload)
         self.assertEqual(evidence["fabrication_progress_pct"], 100)
         self.assertEqual(evidence["reported_completion_date"], "2026-09-11")
         self.assertEqual(self.forecast(payload)["spools"], 5)
 
     def test_completion_tolerance_does_not_round_99_point_99_up_to_complete(self):
-        for pct, undated_lines in (("99.99999999999999", 1), ("99.99", 0)):
+        for pct, estimated_lines in (("99.99999999999999", 1), ("99.99", 0)):
             with self.subTest(pct=pct):
                 payload = source.build_aveon_skyline(self.ros(), [self.package(pct=pct)])
-                self.assertEqual(self.segments(payload), [])
-                self.assertEqual(len(payload["charts"]["undated_completions"]), undated_lines)
-                self.assertEqual(payload["kpis"]["undated_completed_lines"], undated_lines)
-                self.assertEqual(payload["kpis"]["performed_spools"], 0)
+                self.assertEqual(len(self.segments(payload)), estimated_lines)
+                self.assertEqual(len(payload["charts"]["estimated_completions"]), estimated_lines)
+                self.assertEqual(payload["kpis"]["estimated_completion_line_count"], estimated_lines)
+                self.assertEqual(payload["kpis"]["performed_spools"], estimated_lines * 5)
+                self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 0)
 
     def test_explicit_nonfuture_actual_finish_uses_actual_date_in_lower_band(self):
         payload = source.build_aveon_skyline(
@@ -288,6 +301,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.assertEqual(payload["kpis"]["performed_spools"], 5)
         self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 5)
         self.assertEqual(payload["charts"]["undated_completions"], [])
+        self.assertEqual(payload["charts"]["estimated_completions"], [])
 
     def test_actual_completion_colors_compare_real_finish_to_planned_finish(self):
         for planned, expected in (("2026-09-02", "late"), ("2026-09-03", "on_time"),
@@ -345,7 +359,7 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.assertIn("e.progress_date <= %s", history_query)
         self.assertNotIn("%%s", history_query)
         self.assertEqual(history_params, (date(2026, 9, 14),))
-        evidence = self.undated(payload)
+        evidence = self.estimated(payload)
         self.assertEqual(evidence["reported_completion_date"], "2026-09-04")
         self.assertEqual(self.forecast(payload)["progress_as_of_date"], "2026-09-11")
 
@@ -356,9 +370,9 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.assertEqual(evidence["fabrication_progress_pct"], 25)
         self.no_completion(payload)
 
-    def test_reported_completion_without_plan_stays_undated(self):
+    def test_reported_completion_without_plan_uses_estimated_history_date(self):
         payload = source.build_aveon_skyline(self.ros(), [self.package(planned=None, pct="100")])
-        evidence = self.undated(payload)
+        evidence = self.estimated(payload)
         self.assertEqual(self.segments(payload, "forecast"), [])
         self.assertEqual(evidence["fabrication_progress_pct"], 100)
         self.assertEqual(evidence["reported_completion_date"], "2026-09-11")
@@ -405,11 +419,13 @@ class SkylineReportedProgressTests(SimpleTestCase):
             self.ros(), [self.package(pct="100", actual_finish=date(2026, 9, 3))],
             progress_entries=history,
         )
-        evidence = self.undated(payload)
+        evidence = self.estimated(payload)
         self.assertEqual(evidence["reported_completion_date"], "2026-09-11")
         self.assertEqual(evidence["source_actual_finish"], "2026-09-03")
+        self.assertGreaterEqual(evidence["completion_date"], "2026-09-05")
+        self.assertLessEqual(evidence["completion_date"], "2026-09-11")
 
-    def test_weekly_reports_do_not_invent_actual_boxes_or_move_forecast_scope(self):
+    def test_weekly_completion_reports_add_estimates_without_moving_forecast_scope(self):
         before = source.build_aveon_skyline(
             self.ros(), [self.package(pct="25", reported="2026-09-04", planned="2026-10-01")],
         )
@@ -426,9 +442,81 @@ class SkylineReportedProgressTests(SimpleTestCase):
         self.assertEqual(first["progress_as_of_date"], "2026-09-04")
         self.assertEqual(latest["progress_as_of_date"], "2026-09-11")
         self.no_completion(before)
-        self.assertEqual(self.undated(after)["reported_completion_date"], "2026-09-11")
+        estimate = self.estimated(after)
+        self.assertEqual(estimate["reported_completion_date"], "2026-09-11")
+        self.assertGreaterEqual(estimate["completion_date"], "2026-09-05")
+        self.assertLessEqual(estimate["completion_date"], "2026-09-11")
         for payload in (before, after):
             self.assertEqual([
-                (bucket["date"], bucket["forecast_total"], bucket["lookahead_total"])
-                for bucket in payload["charts"]["dates"]
-            ], [("2026-10-02", 5, 0)])
+                (bucket["date"], bucket["forecast_total"])
+                for bucket in payload["charts"]["dates"] if bucket["forecast"]
+            ], [("2026-10-02", 5)])
+
+    def test_planned_date_inside_completion_reporting_interval_is_used_as_estimate(self):
+        package = self.package(pct="100", planned="2026-09-08")
+        history = [self.entry(1, "2026-09-04", "80"), self.entry(2, "2026-09-11", "100")]
+        payload = source.build_aveon_skyline(self.ros(), [package], progress_entries=history)
+        estimate = self.estimated(payload)
+        self.assertEqual(estimate["completion_date"], "2026-09-08")
+        self.assertEqual(estimate["reported_completion_date"], "2026-09-11")
+        self.assertEqual(estimate["status"], "on_time")
+
+    def test_persisted_estimate_survives_later_weekly_report_and_planned_date_edit(self):
+        package = self.package(pct="100", planned="2026-09-10")
+        history = [self.entry(1, "2026-08-21", "80"), self.entry(2, "2026-09-11", "100")]
+        first = source.build_aveon_skyline(self.ros(), [package], progress_entries=history)
+        original = self.estimated(first)
+        self.assertEqual(original["completion_date"], "2026-09-10")
+        stored = deepcopy(original["completion_estimate"])
+        for location in ("history", "weekly"):
+            with self.subTest(location=location):
+                later = deepcopy(package)
+                later_history = deepcopy(history)
+                later["stages"]["painting"]["plan_finish"] = "2026-09-09"
+                later["stages"]["_weekly_progress"]["report_date"] = "2026-09-14"
+                if location == "history":
+                    later_history[-1]["stages"]["_completion"] = deepcopy(stored)
+                else:
+                    later["stages"]["_weekly_progress"]["completion"] = deepcopy(stored)
+                payload = source.build_aveon_skyline(self.ros(), [later], progress_entries=later_history)
+                estimate = self.estimated(payload)
+                self.assertEqual(estimate["completion_date"], "2026-09-10")
+                self.assertEqual(estimate["progress_as_of_date"], "2026-09-14")
+                self.assertEqual(self.forecast(payload)["date"], "2026-09-09")
+
+    def test_confirmed_actual_finish_overrides_a_persisted_estimate(self):
+        package = self.package(pct="100", planned="2026-09-10")
+        history = [self.entry(1, "2026-08-21", "80"), self.entry(2, "2026-09-11", "100")]
+        first = source.build_aveon_skyline(self.ros(), [package], progress_entries=history)
+        stored = deepcopy(self.estimated(first)["completion_estimate"])
+        package["stages"]["_weekly_progress"]["completion"] = stored
+        package["actual_finish"] = date(2026, 9, 8)
+        payload = source.build_aveon_skyline(self.ros(), [package], progress_entries=history)
+        actual = self.actual(payload)
+        self.assertEqual(actual["completion_date_kind"], "actual")
+        self.assertEqual(actual["completion_date"], "2026-09-08")
+        self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 5)
+        self.assertEqual(payload["kpis"]["estimated_completion_spools"], 0)
+        self.assertEqual(payload["charts"]["estimated_completions"], [])
+
+    def test_actual_and_estimated_completions_have_separate_counts_in_same_skyline(self):
+        ros = self.ros()
+        other_line = '6"-VA-403237'
+        ros["charts"]["dates"][0]["forecast"].append({"line": other_line, "spools": 3})
+        ros["kpis"].update(line_count=2, scope_spools=8)
+        actual = self.package(pct="100", actual_finish=date(2026, 9, 3))
+        estimate = self.package(2, pct="100")
+        estimate["line"] = other_line + "-STD-H"
+        estimate["name"] = other_line + "-STD-H_BNO-DRAWING-2"
+        payload = source.build_aveon_skyline(ros, [actual, estimate])
+        lower = self.segments(payload)
+        self.assertEqual(len(lower), 2)
+        self.assertEqual({row["completion_date_kind"] for row in lower}, {"actual", "estimated"})
+        self.assertEqual(sum(row["spools"] for row in lower), 8)
+        self.assertEqual(payload["kpis"]["performed_line_count"], 2)
+        self.assertEqual(payload["kpis"]["performed_spools"], 8)
+        self.assertEqual(payload["kpis"]["confirmed_actual_line_count"], 1)
+        self.assertEqual(payload["kpis"]["confirmed_actual_spools"], 5)
+        self.assertEqual(payload["kpis"]["estimated_completion_line_count"], 1)
+        self.assertEqual(payload["kpis"]["estimated_completion_spools"], 3)
+        self.assertEqual(payload["kpis"]["undated_completed_spools"], 0)
