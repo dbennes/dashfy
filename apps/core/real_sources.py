@@ -14,6 +14,8 @@ from django.core.cache import cache
 from django.db.utils import OperationalError, ProgrammingError
 
 from apps.eclic.api_client import EclicAPIError, EclicClient
+from apps.core.datafy_drawings_scope import supply_scope_exclusions
+from apps.core.datafy_po_presence import blocked_material_ids
 from apps.core.engineering_monitor_import import monitor_discipline_order, normalize_monitor_discipline
 from apps.core.models import DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport, P6CurveImport
 from apps.core.supply_snapshot_filters import (
@@ -679,7 +681,13 @@ PO_GAP_LABELS = {
 
 
 def _supply_po_gap_status(row: dict[str, Any]) -> str:
-    if _truthy_flag(row.get("has_po")) or _supply_float(row.get("allocated_qty")) > 0:
+    # A canonical explicit flag wins over raw allocation quantity: DATAFY can
+    # withhold Linked POs for an item whose catalogue identity is unresolved.
+    has_po = (
+        _truthy_flag(row.get("has_po")) if row.get("has_po") is not None
+        else _supply_float(row.get("allocated_qty")) > 0
+    )
+    if has_po:
         return "allocated"
     if _truthy_flag(row.get("stock_free_na")):
         return "catalog_issue"
@@ -943,6 +951,7 @@ def _supply_build_drawing_line_rows(
             group["with_po"] += 1
         elif po_gap_status == "no_balance":
             group["no_balance"] += 1
+            group["without_po"] += 1
             group["unallocated"] += 1
         elif po_gap_status == "not_allocated":
             group["not_allocated"] += 1
@@ -969,8 +978,10 @@ def _supply_build_drawing_line_rows(
                 group["stage_po_pending"] += 1
         elif po_gap_status == "no_balance":
             group["stage_no_balance_items"] += 1
+            group["stage_no_po_items"] += 1
             if item_pending:
                 group["stage_no_balance_pending"] += 1
+                group["stage_no_po_pending"] += 1
         elif po_gap_status == "not_allocated":
             group["stage_not_allocated_items"] += 1
             group["stage_no_po_items"] += 1
@@ -1394,8 +1405,8 @@ def _supply_campaign_views(
     stage_defs = [
         ("total", "Total scope", "All items in the campaign"),
         ("po", "With PO", "Items with a linked purchase order"),
-        ("no_po", "Without PO", "Items without PO, allocation, or catalog match"),
-        ("no_balance", "No balance", "Compatible PO/stock exists, but remaining balance is zero"),
+        ("no_po", "Without PO", "Items without a linked PO allocation, including no-balance items"),
+        ("no_balance", "No balance", "Included in Without PO: compatible PO/stock exists, but remaining balance is zero"),
         ("no_yard", "Item not arrived", "Items with PO, awaiting yard arrival confirmation"),
         ("yard", "At Yard", "Items with confirmed yard arrival"),
     ]
@@ -1512,16 +1523,15 @@ def _supply_campaign_views(
                 campaign_row["po"] += 1
             else:
                 po_gap_status = item.get("po_gap_status") or _supply_apply_po_gap_status(item)
+                # Drawings export leaves Linked POs blank for every item with
+                # no recognized allocation. Stock availability describes the gap.
+                campaign_row["no_po"] += 1
                 if po_gap_status == "no_balance":
                     campaign_row["no_balance"] += 1
                 elif po_gap_status == "not_allocated":
                     campaign_row["not_allocated"] += 1
-                    campaign_row["no_po"] += 1
                 elif po_gap_status == "catalog_issue":
                     campaign_row["catalog_issue"] += 1
-                    campaign_row["no_po"] += 1
-                else:
-                    campaign_row["no_po"] += 1
             if has_yard:
                 campaign_row["yard"] += 1
 
@@ -1556,10 +1566,7 @@ def _supply_campaign_views(
         for row in campaigns:
             row["finalized"] = finalized_counts.get(row["key"], 0)
             row["no_yard"] = max(int(row["po"] or 0) - int(row["yard"] or 0), 0)
-            row["unallocated"] = (
-                int(row.get("no_po") or 0)
-                + int(row.get("no_balance") or 0)
-            )
+            row["unallocated"] = int(row.get("no_po") or 0)
         total_items = sum(row["total"] for row in campaigns)
         po_items = sum(row["po"] for row in campaigns)
         yard_items = sum(row["yard"] for row in campaigns)
@@ -1567,7 +1574,7 @@ def _supply_campaign_views(
         no_balance_items = sum(row["no_balance"] for row in campaigns)
         not_allocated_items = sum(row["not_allocated"] for row in campaigns)
         catalog_issue_items = sum(row["catalog_issue"] for row in campaigns)
-        unallocated_items = no_po_items + no_balance_items
+        unallocated_items = no_po_items
         no_yard_items = sum(row["no_yard"] for row in campaigns)
         max_stage = max(total_items, po_items, no_po_items, no_balance_items, no_yard_items, yard_items, 1)
         stages = []
@@ -1717,7 +1724,7 @@ def _supply_campaign_views(
             no_balance = int(row.get("no_balance") or 0)
             not_allocated = int(row.get("not_allocated") or 0)
             catalog_issue = int(row.get("catalog_issue") or 0)
-            unallocated = no_po + no_balance
+            unallocated = no_po
             no_yard = int(row.get("no_yard") or max(po - yard, 0))
             campaign_exec_rows.append({
                 **row,
@@ -5235,38 +5242,27 @@ def _construction_datafy(filters: dict) -> dict:
                 + ")"
             )
             material_params.extend(campaign_aliases)
-        # Match DATAFY's filter_current_drawing_documents: a newer upload only
-        # supersedes the previous revision after it has extracted material
-        # rows. This keeps every dashboard count on the same drawing revision
-        # used by the DATAFY Drawings export.
-        current_drawing_sql = """
-            (
-                coalesce(nullif(trim(d.drawing_number), ''), '') = ''
-                or not exists (
-                    select 1
-                    from core_document newer_d
-                    where newer_d.project_id = d.project_id
-                      and lower(newer_d.drawing_number) = lower(d.drawing_number)
-                      and coalesce(nullif(trim(newer_d.drawing_number), ''), '') <> ''
-                      and (
-                          newer_d.uploaded_at > d.uploaded_at
-                          or (
-                              newer_d.uploaded_at = d.uploaded_at
-                              and newer_d.id > d.id
-                          )
-                      )
-                      and exists (
-                          select 1
-                          from core_extractedtable newer_t
-                          join core_materialitem newer_mi
-                            on newer_mi.table_id = newer_t.id
-                          where newer_t.document_id = newer_d.id
-                      )
-                )
-            )
-        """
-        drawing_where.append(current_drawing_sql)
-        material_where.append(current_drawing_sql)
+        # Use the same revision selection and unnamed-table deduplication as
+        # DATAFY Drawings. IDs come only from the read-only canonical helper.
+        scope_exclusions = supply_scope_exclusions(conn)
+        blocked_po_ids = blocked_material_ids(conn)
+        linked_allocation_sql = (
+            "a.material_item_id not in (" + ", ".join(str(int(pk)) for pk in sorted(blocked_po_ids)) + ")"
+            if blocked_po_ids else "1 = 1"
+        )
+        excluded_documents = sorted(int(pk) for pk in scope_exclusions["document_ids"])
+        if excluded_documents:
+            current_drawing_sql = "d.id not in (" + ", ".join(map(str, excluded_documents)) + ")"
+            drawing_where.append(current_drawing_sql)
+            material_where.append(current_drawing_sql)
+        excluded_tables = sorted(int(pk) for pk in scope_exclusions["table_ids"])
+        current_table_sql = (
+            "t.id not in (" + ", ".join(map(str, excluded_tables)) + ")"
+            if excluded_tables else "1 = 1"
+        )
+        material_where.append(current_table_sql)
+        if not drawing_where:
+            drawing_where.append("1 = 1")
         drawing_where_sql = f"where {' and '.join(drawing_where)}"
         material_where_sql = f"where {' and '.join(material_where)}"
         finalized_doc_sql = """
@@ -5544,6 +5540,7 @@ def _construction_datafy(filters: dict) -> dict:
                 join core_extractedtable t on t.document_id = db.id
                 join core_materialitem mi on mi.table_id = t.id
                 left join doc_tables dt on dt.document_id = db.id
+                where {current_table_sql}
             ),
             rollup as (
                 select s.id, s.drawing_number, s.original_filename, s.title,
@@ -5572,6 +5569,7 @@ def _construction_datafy(filters: dict) -> dict:
                        end as erection_pct
                 from scoped_items s
                 left join catalog_allocation a on a.material_item_id = s.material_item_id
+                    and {linked_allocation_sql}
                 group by s.id, s.drawing_number, s.original_filename, s.title,
                          s.revision, s.discipline, s.status, s.priority
             )
@@ -5732,6 +5730,7 @@ def _construction_datafy(filters: dict) -> dict:
                    count(distinct a.material_item_id) as covered
             from filtered_materials fm
             left join catalog_allocation a on a.material_item_id = fm.material_item_id
+                and {linked_allocation_sql}
             """,
             tuple(material_params),
         )[0]
@@ -5749,6 +5748,7 @@ def _construction_datafy(filters: dict) -> dict:
                    po.procurement_plan_payload
             from filtered_materials fm
             join catalog_allocation a on a.material_item_id = fm.material_item_id
+                and {linked_allocation_sql}
             join catalog_stockpiece sp on sp.id = a.stock_piece_id
             join core_purchaseorderitem poi on poi.id = sp.po_item_id
             join core_purchaseorder po on po.id = poi.purchase_order_id
@@ -5881,6 +5881,7 @@ def _construction_datafy(filters: dict) -> dict:
                    po.procurement_plan_payload
             from scoped_items si
             join catalog_allocation a on a.material_item_id = si.material_item_id
+                and {linked_allocation_sql}
             join catalog_stockpiece sp on sp.id = a.stock_piece_id
             join core_purchaseorderitem poi on poi.id = sp.po_item_id
             join core_purchaseorder po on po.id = poi.purchase_order_id
@@ -5888,6 +5889,15 @@ def _construction_datafy(filters: dict) -> dict:
             """,
             tuple(material_params),
         )
+        for row in material_rows:
+            if row.get("material_item_id") in blocked_po_ids:
+                # The Drawings export hides unresolved PO links. Keep raw
+                # quantities intact while suppressing misleading PO details.
+                row["has_po"] = 0
+                row["po_covering"] = ""
+                row["po_expected_date"] = None
+                row["po_expected_dates"] = ""
+                row["po_delivery_pairs"] = []
         material_yard_qty_by_id = _supply_yard_allocation_qty_by_material(
             material_scope_po_rows
         )
