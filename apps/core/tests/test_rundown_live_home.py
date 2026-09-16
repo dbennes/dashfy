@@ -8,6 +8,7 @@ from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from apps.accounts.models import User
 from apps.core import rundown_source, skyline_source
+from apps.core.tests.test_rundown_modes_ui import rundown_modes_fixture
 from apps.core.views import home_view
 
 
@@ -23,19 +24,21 @@ class RundownLiveHomeTests(SimpleTestCase):
             },
         ))
         self.piping = rundown_source.fabrication_rundown()
-        self.disciplines = {
-            "piping": deepcopy(self.piping),
-            "structural": rundown_source._empty_payload("Structural test source unavailable"),
-        }
+        self.modes = rundown_modes_fixture()
+        self.disciplines = self.modes["fabrication"]["disciplines"]
+        self.disciplines["piping"] = deepcopy(self.piping)
+        self.disciplines["structural"] = rundown_source._empty_payload("Structural test source unavailable")
         self.disciplines["piping"]["source"].update(
             discipline="piping", discipline_label="Piping", unit="spools",
             unit_label="spools", baseline_label="Baseline", lookahead_label="Lookahead",
-            has_lookahead=True,
+            has_lookahead=True, mode="fabrication", mode_label="Fabrication",
+            data_kind="real", is_sample=False,
         )
         self.disciplines["structural"]["source"].update(
             discipline="structural", discipline_label="Structural", unit="packages",
             unit_label="packages", baseline_label="AVEON plan", lookahead_label="Lookahead",
-            has_lookahead=False,
+            has_lookahead=False, mode="fabrication", mode_label="Fabrication",
+            data_kind="real", is_sample=False,
         )
         self.request = RequestFactory().get("/")
         self.request.user = User(username="unsaved-rundown-test", role=User.Role.ADMIN)
@@ -59,8 +62,8 @@ class RundownLiveHomeTests(SimpleTestCase):
             return_value=skyline_source._empty_payload(),
         ))
         self.loader = self.enterContext(patch(
-            "apps.core.rundown_discipline_source.rundown_disciplines_safe",
-            return_value=self.disciplines,
+            "apps.core.rundown_discipline_source.rundown_modes_safe",
+            return_value=self.modes,
         ))
 
     def rendered_home(self):
@@ -70,11 +73,11 @@ class RundownLiveHomeTests(SimpleTestCase):
         self.assertIn('id="s03"', html)
         self.assertIn('id="fabRundownChart"', html)
         match = re.search(
-            r'<script id="fabRundownDisciplines" type="application/json">(.*?)</script>',
+            r'<script id="fabRundownModes" type="application/json">(.*?)</script>',
             html,
             re.DOTALL,
         )
-        self.assertIsNotNone(match, "The home must ship the rundown discipline payload.")
+        self.assertIsNotNone(match, "The home must ship both rundown modes and their discipline payloads.")
         return html, json.loads(match.group(1))
 
     def assert_piping_preserved(self, actual):
@@ -84,7 +87,8 @@ class RundownLiveHomeTests(SimpleTestCase):
         self.assertEqual(actual["kpis"]["scope_total"], 607)
 
     def test_top_selector_defaults_to_the_original_piping_rundown(self):
-        html, disciplines = self.rendered_home()
+        html, modes = self.rendered_home()
+        disciplines = modes["fabrication"]["disciplines"]
 
         self.loader.assert_called_once()
         self.assert_piping_preserved(self.loader.call_args.args[0])
@@ -98,9 +102,18 @@ class RundownLiveHomeTests(SimpleTestCase):
         self.assertLess(selector.start(), html.index('id="fabRundownChart"'))
         options = re.findall(r'<option\b([^>]*)>(.*?)</option>', selector.group(1), re.DOTALL)
         values = [re.search(r'value="([^"]+)"', attributes).group(1) for attributes, _ in options]
-        self.assertEqual(values, ["piping", "structural"])
+        self.assertEqual(values, ["piping", "electrical", "structural"])
         selected = [value for value, (attributes, _) in zip(values, options) if re.search(r'\bselected\b', attributes)]
         self.assertEqual(selected or values[:1], ["piping"])
+        buttons = re.findall(r'<button\b([^>]*\bdata-rundown-mode="[^"]+"[^>]*)>(.*?)</button>', html, re.DOTALL)
+        self.assertEqual(len(buttons), 2)
+        for (attributes, label), mode, pressed in zip(buttons, ("fabrication", "installation"), ("true", "false")):
+            self.assertIn('data-rundown-mode="' + mode + '"', attributes)
+            self.assertIn('aria-pressed="' + pressed + '"', attributes)
+            self.assertIn('aria-controls="fabRundownChart fabRundownSummary"', attributes)
+            self.assertEqual(label.strip(), mode.title())
+            self.assertLess(html.index('data-rundown-mode="' + mode + '"'), selector.start())
+        self.assertRegex(html, r'<span\b[^>]*id="fabRundownSample"[^>]*\bhidden[^>]*>Sample data</span>')
         self.assertIsNone(self.request.user.pk)
 
     def test_structural_plan_keeps_its_own_units_dates_and_safe_source_text(self):
@@ -123,7 +136,8 @@ class RundownLiveHomeTests(SimpleTestCase):
         }
         structural["charts_json"] = json.dumps(structural["charts"])
 
-        html, disciplines = self.rendered_home()
+        html, modes = self.rendered_home()
+        disciplines = modes["fabrication"]["disciplines"]
 
         self.assert_piping_preserved(disciplines["piping"])
         actual = disciplines["structural"]
@@ -138,7 +152,8 @@ class RundownLiveHomeTests(SimpleTestCase):
         self.assertNotIn(source_note, html)
 
     def test_structural_unavailable_does_not_replace_or_hide_piping(self):
-        _, disciplines = self.rendered_home()
+        _, modes = self.rendered_home()
+        disciplines = modes["fabrication"]["disciplines"]
 
         self.assert_piping_preserved(disciplines["piping"])
         structural = disciplines["structural"]
@@ -146,3 +161,31 @@ class RundownLiveHomeTests(SimpleTestCase):
         self.assertEqual(structural["error"], "Structural test source unavailable")
         self.assertEqual(structural["charts"]["dates"], [])
         self.assertFalse(structural["source"]["has_lookahead"])
+
+    def test_installation_samples_and_missing_electrical_source_remain_distinct(self):
+        original = deepcopy(self.modes)
+        html, modes = self.rendered_home()
+
+        self.assertEqual(set(modes), {"fabrication", "installation"})
+        self.assertEqual(modes["fabrication"]["label"], "Fabrication")
+        self.assertEqual(modes["installation"]["label"], "Installation")
+        self.assert_piping_preserved(modes["fabrication"]["disciplines"]["piping"])
+        electrical = modes["fabrication"]["disciplines"]["electrical"]
+        self.assertFalse(electrical["available"])
+        self.assertFalse(electrical["source"]["is_sample"])
+        self.assertEqual(electrical["source"]["data_kind"], "real")
+        self.assertEqual(electrical["charts"]["dates"], [])
+        for key, sample in modes["installation"]["disciplines"].items():
+            self.assertTrue(sample["available"], key)
+            self.assertTrue(sample["source"]["is_sample"], key)
+            self.assertEqual(sample["source"]["data_kind"], "sample")
+            self.assertEqual(sample["source"]["source_label"], "Sample data")
+            self.assertEqual(sample["source"]["mode"], "installation")
+            self.assertEqual(sample["source"]["discipline"], key)
+            self.assertIn("demonstration", sample["source"]["notice"])
+        self.assertEqual(self.modes, original, "Rendering must not alter either source payload")
+        # The other card retains its own source controls and data contract.
+        self.assertIn('data-fab-skyline', html)
+        self.assertIn('data-skyline-schedule="ros"', html)
+        self.assertIn('data-skyline-schedule="aveon"', html)
+        self.assertIn('id="fabSkylineSchedules"', html)

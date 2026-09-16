@@ -23,7 +23,7 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.models import User
 from apps.accounts.permissions import has_module_permission
-from apps.core import fabrication_source, rundown_source, rundown_discipline_source, skyline_source, skyline_aveon_source, tracking_source
+from apps.core import fabrication_source, rundown_source, rundown_discipline_source, skyline_source, skyline_aveon_source, skyline_installation_source, tracking_source
 from apps.core.datafy_supply import refresh_supply_snapshot, supply_filters_hash
 from apps.core.engineering_import import import_engineering_status_workbook
 from apps.core.engineering_monitor_import import import_engineering_monitor_workbook, normalize_monitor_discipline
@@ -427,11 +427,19 @@ def home_view(request):
         rundown_source.fabrication_rundown_safe(snapshot=ros_schedule["rundown"])
         if ros_schedule else rundown_source._empty_payload("The current ROS schedule is unavailable.")
     )
-    # Each discipline keeps its own source dates, scope and unit.
-    rundown_disciplines = {
-        discipline: {key: payload.get(key) for key in ("available", "error", "source", "kpis", "charts")}
-        for discipline, payload in rundown_discipline_source.rundown_disciplines_safe(rundown).items()
+    # Real fabrication sources and sample installation data share only the
+    # chart contract; each mode/discipline retains its own dates and units.
+    rundown_modes = {
+        mode: {
+            "label": group["label"],
+            "disciplines": {
+                discipline: {key: payload.get(key) for key in ("available", "error", "source", "kpis", "charts")}
+                for discipline, payload in group["disciplines"].items()
+            },
+        }
+        for mode, group in rundown_discipline_source.rundown_modes_safe(rundown).items()
     }
+    rundown_disciplines = rundown_modes["fabrication"]["disciplines"]
     # A skyline ROS combina baseline e lookahead da Planilha1 e
     # falha de forma independente para preservar a Fabricacao e a curva.
     skyline = (
@@ -440,6 +448,7 @@ def home_view(request):
     )
     skyline_source.attach_live_material_readiness(skyline)
     aveon_skyline = skyline_aveon_source.aveon_skyline_safe(skyline)
+    installation_skyline = skyline_installation_source.installation_skyline_sample(skyline)
     # Both date views use the same live material evidence and physical scope.
     # Keep the shared material map in fabSkylineData rather than duplicating it.
     skyline_schedules = {
@@ -447,6 +456,9 @@ def home_view(request):
         "aveon": {
             **{key: aveon_skyline.get(key) for key in ("available", "error", "source", "kpis")},
             "charts": {key: value for key, value in aveon_skyline.get("charts", {}).items() if key != "material_readiness"},
+        },
+        "installation": {
+            key: installation_skyline.get(key) for key in ("available", "error", "source", "kpis", "charts")
         },
     }
     # S04 · Tracking fica atras de uma flag ate a secao estar pronta para
@@ -461,6 +473,7 @@ def home_view(request):
         "fabrication": fabrication,
         "rundown": rundown,
         "rundown_disciplines": rundown_disciplines,
+        "rundown_modes": rundown_modes,
         "skyline": skyline,
         "skyline_schedules": skyline_schedules,
         "ros_schedule": ros_schedule,

@@ -1,17 +1,38 @@
 # Rundown by discipline
 
-In **Cockpit → Fabrication**, the **Discipline** selector sits in the Rundown
-header, above its chart. English labels and a 26px control match the existing
-fabrication controls. Piping is the initial selection. Switching updates the
-chart, summary, units, legend, source date and provenance without reloading the
-page. The Skyline and its ROS / AVEON selector remain independent.
+In **Cockpit → Fabrication**, the Rundown toolbar contains **Fabrication** and
+**Installation** buttons, followed by a **Discipline** selector with **Piping**,
+**Electrical** and **Structural**. All controls are 26px high. Fabrication /
+Piping is the initial selection. Changing mode preserves the selected
+discipline. Both controls update the chart, summary, units, legend, source date
+and provenance without reloading. The Skyline and its schedule selector remain
+independent.
 
 ## Sources and quantities
 
 | Discipline | Source | Unit | Series |
 | --- | --- | --- | --- |
 | Piping | Last accepted ROS workbook; original reconciled snapshot until the first import | Spools | Baseline and 60-day lookahead daily releases and remaining balances |
+| Electrical | No electrical fabrication schedule is provided by the current DATAFY importer | Not established | Explicit unavailable state; no inferred or simulated fabrication curve |
 | Structural | Active structural fabrication packages and their linked schedule imports in DATAFY | WBS packages | Planned fabrication completions and remaining balance |
+
+These are **Fabrication** sources. **Installation** uses separate deterministic
+sample schedules for all three disciplines. The toolbar displays **Sample
+data**, and the source footer, explanatory note and accessible chart summary
+identify the simulation. Sample quantities and dates do not enter DATAFY,
+fabrication progress, ROS schedules, Skyline or stored imports. Repeated
+selections reproduce the same curves. Each sample reconciles daily completions
+with a nonnegative start-of-day remaining balance and its own finish dates.
+The sample curves distribute completions across the schedule with a gradual
+startup, a busier middle period and a taper near completion. Installation axes
+fit the selected sample scope and daily quantities; they do not inherit the
+700-spool / 100-release display limits of the real Piping ROS chart.
+
+`rundown_modes_safe(piping_payload)` provides both modes with the same chart
+contract. Real-source failures remain isolated from the sample installation
+view. At verification on 15 September 2026, DATAFY contained no identifiable
+electrical fabrication schedule, so that real-data selection correctly showed
+an unavailable state.
 
 `rundown_discipline_source.rundown_disciplines_safe(piping_payload)` preserves
 the supplied Piping arrays and KPIs. The Skyline toolbar provides the

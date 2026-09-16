@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
-<link href="{% static 'css/fabrication-s03.css' %}?v=20260914-s03-fabrication-v10" rel="stylesheet">
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260916-s03-status-v13" rel="stylesheet">
 {% endblock %}
 
 {% block tickers %}
@@ -1010,6 +1010,7 @@
     <script id="fabChartsData" type="application/json">{{ fab.charts_json|safe }}</script>
     <script id="fabRundownData" type="application/json">{{ rundown.charts_json|safe }}</script>
     {{ rundown_disciplines|json_script:"fabRundownDisciplines" }}
+    {{ rundown_modes|json_script:"fabRundownModes" }}
     {{ skyline.charts|json_script:"fabSkylineData" }}
     {{ skyline_schedules|json_script:"fabSkylineSchedules" }}
 
@@ -1235,12 +1236,12 @@
     {# ---------- Piping delivery analytics ---------- #}
     <div class="fab-delivery-grid">
       <article class="fab-rundown-card" data-fab-rundown data-snapshot-date="{{ rundown.source.snapshot_date|default:'' }}">
-        <div class="fab-rundown-head">
-          <div class="fab-rundown-title">
-            <span class="fab-rundown-kicker">Piping · ISO delivery plan</span>
-            <h3><i class="bi bi-graph-down-arrow"></i> <span id="fabRundownTitle">Piping ISO rundown (ROS)</span></h3>
-            <p>Daily spool releases and remaining balance · 60-day lookahead versus baseline</p>
+        <div class="fab-rundown-toolbar">
+          <div class="fab-rundown-mode-control" role="group" aria-label="Rundown view">
+            <button type="button" data-rundown-mode="fabrication" aria-pressed="true" aria-controls="fabRundownChart fabRundownSummary">Fabrication</button>
+            <button type="button" data-rundown-mode="installation" aria-pressed="false" aria-controls="fabRundownChart fabRundownSummary">Installation</button>
           </div>
+          <span class="fab-rundown-sample" id="fabRundownSample" role="status" hidden>Sample data</span>
           <div class="fab-rundown-discipline-control">
             <label for="fabRundownDiscipline">Discipline</label>
             <select id="fabRundownDiscipline" aria-controls="fabRundownChart fabRundownSummary">
@@ -1248,6 +1249,13 @@
                 <option value="{{ key }}"{% if key == 'piping' %} selected{% endif %}>{{ discipline.source.discipline_label }}</option>
               {% endfor %}
             </select>
+          </div>
+        </div>
+        <div class="fab-rundown-head">
+          <div class="fab-rundown-title">
+            <span class="fab-rundown-kicker">Piping · ISO delivery plan</span>
+            <h3><i class="bi bi-graph-down-arrow"></i> <span id="fabRundownTitle">Piping ISO rundown (ROS)</span></h3>
+            <p>Daily spool releases and remaining balance · 60-day lookahead versus baseline</p>
           </div>
           <dl class="fab-rundown-kpis" aria-label="Rundown summary" aria-live="polite" aria-atomic="true">
             <div class="is-scope" title="Reconciled piping spool scope">
@@ -1299,25 +1307,28 @@
       </article>
 
       <article class="fab-skyline-card" data-fab-skyline data-skyline-view="compact" data-as-of-date="{{ skyline.source.as_of_date|default:'2026-09-03' }}">
+        <div class="fab-skyline-toolbar">
+          <div class="fab-skyline-schedule-control" role="group" aria-label="Skyline view">
+            <div class="fab-skyline-schedule-buttons">
+              <button class="ob-btn" type="button" data-skyline-schedule="aveon" aria-pressed="false" aria-controls="fabSkylinePlot">Fabrication</button>
+              <button class="ob-btn" type="button" data-skyline-schedule="ros" aria-pressed="true" aria-controls="fabSkylinePlot">Wooden Box</button>
+              <button class="ob-btn" type="button" data-skyline-schedule="installation" aria-pressed="false" aria-controls="fabSkylinePlot">Installation</button>
+            </div>
+          </div>
+          <span class="fab-skyline-sample" id="fabSkylineSample" title="Real ROS lines and spools; simulated installation dates and progress" hidden>Sample data</span>
+          <button class="ob-btn ob-btn-blue fab-skyline-view-toggle" id="fabSkylineViewToggle" type="button" aria-expanded="false" aria-controls="fabSkylinePlot"><i class="bi bi-arrows-angle-expand" aria-hidden="true"></i><span>Show all</span></button>
+        </div>
         <div class="fab-rundown-head fab-skyline-head">
           <div class="fab-rundown-title">
             <span class="fab-rundown-kicker">Piping · Schedule comparison</span>
-            <h3><i class="bi bi-bar-chart-steps"></i> Fabrication skyline</h3>
-            <p id="fabSkylineScheduleCaption">ROS · Baseline forecast and 60-day lookahead dates</p>
+            <h3><i class="bi bi-bar-chart-steps"></i> <span id="fabSkylineTitle">Wooden Box skyline</span></h3>
+            <p id="fabSkylineScheduleCaption">Wooden Box · ROS baseline forecast and 60-day lookahead dates</p>
           </div>
           <div class="fab-skyline-head-actions">
             <div class="fab-ros-actions" role="group" aria-label="ROS workbook">
               <a class="ob-btn" href="{% url 'core:export_ros' %}" title="Download editable ROS dates and spool quantities"><i class="bi bi-download" aria-hidden="true"></i>Export ROS</a>
               {% if user.is_admin %}<a class="ob-btn" href="{% url 'core:import_ros' %}" title="Review and import the updated ROS workbook"><i class="bi bi-upload" aria-hidden="true"></i>Import ROS</a>{% endif %}
             </div>
-            <div class="fab-skyline-schedule-control" role="group" aria-label="Skyline schedule source">
-              <span>Schedule</span>
-              <div class="fab-skyline-schedule-buttons">
-                <button class="ob-btn" type="button" data-skyline-schedule="ros" aria-pressed="true" aria-controls="fabSkylinePlot">ROS</button>
-                <button class="ob-btn" type="button" data-skyline-schedule="aveon" aria-pressed="false" aria-controls="fabSkylinePlot">FABRICATION</button>
-              </div>
-            </div>
-            {% if skyline.available %}<button class="ob-btn ob-btn-blue fab-skyline-view-toggle" id="fabSkylineViewToggle" type="button" aria-expanded="false" aria-controls="fabSkylinePlot"><i class="bi bi-arrows-angle-expand" aria-hidden="true"></i><span>Show all</span></button>{% endif %}
           </div>
         </div>
         <div class="fab-skyline-summary" aria-live="polite">
@@ -1325,22 +1336,19 @@
           <span><b id="fabSkylineSpoolCount">{{ skyline.kpis.scope_spools|default:0 }}</b> spools</span>
           <span id="fabSkylineCompletionSummary">{{ skyline.kpis.performed_spools|default:0 }} performed · {{ skyline.kpis.remaining_spools|default:0 }} remaining</span>
         </div>
-        {% if skyline.available %}
         <div class="fab-skyline-material-legend" aria-label="Wooden box material indicators">
           <span class="fab-skyline-category-key"><b>Box lights</b><span><em>1</em> Supports</span><span><em>2</em> Bolts &amp; gaskets</span><span><em>3</em> Valves</span><i class="bi bi-info-circle" tabindex="0" role="img" aria-label="Lights are read from left to right. Hover or select a box for its material status; select a spool total for period details." title="Lights are read from left to right. Hover or select a box for its material status; select a spool total for period details."></i></span>
           <span class="fab-skyline-material-key"><span><i class="fab-material-light is-ready" aria-hidden="true"></i>Ready</span><span><i class="fab-material-light is-partial" aria-hidden="true"></i>Partial</span><span><i class="fab-material-light is-pending" aria-hidden="true"></i>Pending</span><span><i class="fab-material-light is-unknown" aria-hidden="true"></i>No data</span><span><i class="fab-material-light is-not-applicable" aria-hidden="true"></i>N/A</span></span>
         </div>
-        {% endif %}
         <div class="fab-skyline-plot">
-          {% if skyline.available %}
             <div class="fab-skyline-legend" aria-label="Skyline series legend">
               <span class="is-forecast" id="fabSkylineForecastLegend" title="Forecast uses the baseline schedule in Planilha1."><i class="bi bi-calendar3" aria-hidden="true"></i><span>Forecast</span> <b>{{ skyline.kpis.line_count|default:0 }} lines · {{ skyline.kpis.scope_spools|default:0 }} spools</b></span>
               <span class="is-on-time" data-skyline-status="on_time" title="Fully performed by the baseline date."><i class="bi bi-check2-circle" aria-hidden="true"></i><span data-status-label>On plan</span> <b>{{ skyline.kpis.on_time_line_count|default:0 }} lines · {{ skyline.kpis.on_time_spools|default:0 }} spools</b></span>
               <span class="is-late" data-skyline-status="late" title="A fully performed line whose final lookahead date exceeded its baseline."><i class="bi bi-exclamation-diamond" aria-hidden="true"></i><span data-status-label>Delayed</span> <b>{{ skyline.kpis.late_line_count|default:0 }} lines · {{ skyline.kpis.late_spools|default:0 }} spools</b></span>
-              <span class="is-partial" data-skyline-status="partial" title="Past quantities from a line that still has future work; color moves from red through yellow toward green as line progress increases."><i class="bi bi-circle-half" aria-hidden="true"></i><span data-status-label>Partial scale</span> <b>{{ skyline.kpis.partial_line_count|default:0 }} lines · {{ skyline.kpis.partial_spools|default:0 }} spools</b></span>
-              <span class="is-upcoming" data-skyline-status="upcoming" title="Lookahead dates on or after the cutoff remain planned and gray."><i class="bi bi-clock-history" aria-hidden="true"></i><span data-status-label>Planned</span> <b>{{ skyline.kpis.upcoming_line_count|default:0 }} lines · {{ skyline.kpis.upcoming_spools|default:0 }} spools</b></span>
-              <span class="is-on-time" id="fabSkylineActualLegend" data-skyline-status="completed" hidden><i class="bi bi-check2-circle" aria-hidden="true"></i><span data-status-label>Completed</span> <b></b></span>
-              <span class="is-current" title="The amber axis marks the schedule period containing the classification cutoff."><i class="bi bi-calendar-week" aria-hidden="true"></i><span id="fabSkylineCutoffLabel">Cutoff</span> <b>{{ skyline.source.as_of_label|default:"today" }}</b></span>
+              <span class="is-partial" data-skyline-status="partial" title="Work in progress or partial delivery. Orange remains constant at every partial percentage."><i class="bi bi-circle-half" aria-hidden="true"></i><span data-status-label>In progress / Partial</span> <b>{{ skyline.kpis.partial_line_count|default:0 }} lines · {{ skyline.kpis.partial_spools|default:0 }} spools</b></span>
+              <span class="is-upcoming" data-skyline-status="upcoming" title="No recorded start or progress. Gray also applies when the planned date has passed."><i class="bi bi-clock-history" aria-hidden="true"></i><span data-status-label>Not started</span> <b>{{ skyline.kpis.upcoming_line_count|default:0 }} lines · {{ skyline.kpis.upcoming_spools|default:0 }} spools</b></span>
+              <span class="is-completed" id="fabSkylineActualLegend" data-skyline-status="completed" hidden><i class="bi bi-check2-circle" aria-hidden="true"></i><span data-status-label>Completed</span> <b></b></span>
+              <span class="is-current" title="The amber axis marks the schedule period containing the classification cutoff."><i class="bi bi-calendar-week" aria-hidden="true"></i><span id="fabSkylineCutoffLabel">Cutoff</span> <b id="fabSkylineCutoffDate">{{ skyline.source.as_of_label|default:"today" }}</b></span>
             </div>
             <div class="fab-skyline-band-labels" aria-hidden="true">
               <span id="fabSkylineForecastBand">Forecast</span><span></span><span id="fabSkylineActualBand">Actual / lookahead</span>
@@ -1352,24 +1360,21 @@
             <p class="visually-hidden" id="fabSkylineSummary">
               Skyline for {{ skyline.kpis.line_count|default:0 }} piping lines. The single center axis is shared by both scenarios and uses schedule periods.
               Forecast is above the axis in its baseline period. Actual and planned work is below it in the period that contains each line's own 60-day-lookahead date.
-              Work before {{ skyline.source.as_of_label|default:"today" }} is treated as performed. Partial progress moves from red through yellow toward green. Fully completed on-plan work is green, delayed completion is red, and dates on or after the cutoff are gray.
+              Work before {{ skyline.source.as_of_label|default:"today" }} is treated as performed. Work in progress or partial delivery is orange. Fully completed on-plan work is green, delayed completion is blue, and work without recorded progress is gray.
               Long line codes are shortened with an ellipsis. Hover, focus or select a box for the line's material status and evidence. Select a period spool total to inspect every exact baseline or lookahead date and quantity.
             </p>
             <div class="fab-chart-empty" id="fabSkylineEmpty" role="status" hidden>No skyline points to show.</div>
-          {% else %}
-            <div class="fab-chart-empty" role="status">Skyline unavailable: {{ skyline.error|default:"the source snapshot could not be read." }}</div>
-          {% endif %}
         </div>
         <div class="fab-rundown-source fab-skyline-sources">
           <span id="fabSkylineScheduleSource">ROS · {{ skyline.source.workbook|default:"DATAFY material requisition"|truncatechars:54 }} · {{ skyline.source.forecast_scope|default:"Planilha1!A1:E176" }} · snapshot {{ skyline.source.snapshot_label|default:"—" }}</span>
-          <span>{{ skyline.source.material_readiness_label|default:"DATAFY · material availability" }}</span>
+          <span id="fabSkylineMaterialSource">{{ skyline.source.material_readiness_label|default:"DATAFY · material availability" }}</span>
         </div>
       </article>
     </div>
 
     <section class="fab-skyline-box-detail is-compact" id="fabSkylineBoxDetail" role="dialog" aria-modal="false" aria-labelledby="fabSkylineBoxTitle" tabindex="-1" hidden>
       <div class="fab-skyline-box-head">
-        <div><div class="fab-skyline-box-kicker">Whole-line material status</div><h4 id="fabSkylineBoxTitle"></h4></div>
+        <div><div class="fab-skyline-box-kicker" id="fabSkylineBoxKicker">Whole-line material status</div><h4 id="fabSkylineBoxTitle"></h4></div>
         <div class="fab-skyline-box-actions">
           <button class="fab-skyline-box-toggle" id="fabSkylineBoxToggle" type="button" aria-expanded="false" aria-controls="fabSkylineBoxSchedule fabSkylineBoxCategories fabSkylineBoxFootnote">Show all</button>
           <button class="fab-skyline-box-close" type="button" aria-label="Close box details"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
@@ -1395,12 +1400,12 @@
         </div>
         <div class="fab-po-table-wrap" tabindex="0" role="region" aria-label="Skyline line details and material availability; scroll horizontally for all columns">
           <table class="fab-po-table fab-skyline-detail-table">
-            <thead><tr><th>Line</th><th id="fabSkylineModalDateHeading">Source date</th><th>Status</th><th class="r" id="fabSkylineModalSpoolHeading">Spools</th><th>Supports</th><th>Bolts &amp; gaskets</th><th>Valves</th></tr></thead>
+            <thead><tr><th>Line</th><th id="fabSkylineModalDateHeading">Source date</th><th>Status</th><th class="r" id="fabSkylineModalSpoolHeading">Spools</th><th data-skyline-material-column>Supports</th><th data-skyline-material-column>Bolts &amp; gaskets</th><th data-skyline-material-column>Valves</th></tr></thead>
             <tbody id="fabSkylineModalBody"></tbody>
           </table>
         </div>
-        <div class="fab-card-note"><i class="bi bi-info-circle"></i> Box lights use DATAFY quantities and support status for the whole line: green = available, amber = partially available, red = pending. Each status includes its source and quantities. N/A means the complete drawing scope does not require that category; No data identifies a missing source or incomplete scope.</div>
-        <div class="fab-card-note" id="fabSkylineModalScheduleNote"><i class="bi bi-info-circle"></i> Temporary completion proxy: Planilha1 lookahead quantities before {{ skyline.source.as_of_label|default:"today" }} count as performed. Future lookahead quantities remain gray. Partial colors follow the red–yellow–green completion scale.</div>
+        <div class="fab-card-note" id="fabSkylineModalMaterialNote"><i class="bi bi-info-circle"></i> Box lights use DATAFY quantities and support status for the whole line: green = available, amber = partially available, red = pending. Each status includes its source and quantities. N/A means the complete drawing scope does not require that category; No data identifies a missing source or incomplete scope.</div>
+        <div class="fab-card-note" id="fabSkylineModalScheduleNote"><i class="bi bi-info-circle"></i> Temporary completion proxy: Planilha1 lookahead quantities before {{ skyline.source.as_of_label|default:"today" }} count as performed. Future lookahead quantities without started work remain gray. Partial colors follow the red–yellow–green completion scale.</div>
       </div>
     </div>
 
@@ -1713,6 +1718,7 @@
   {% endwith %}
 </section>
 {% endif %}
+
 
 {# ===== S05 — 3D MODEL ===== #}
 <section id="s05" class="section" style="border-bottom: none;">
@@ -4030,7 +4036,7 @@
     c3WhenVisible(document.querySelector("#s03 .fab-charts"), initCharts);
   }
 
-  // ===== S03 · Discipline rundown — ROS and imported fabrication schedules =====
+  // ===== S03 · Fabrication and installation rundown by discipline =====
   function fabRundownInit() {
     var dataNode = document.getElementById("fabRundownData");
     var canvas = document.getElementById("fabRundownChart");
@@ -4044,13 +4050,23 @@
       empty.hidden = false;
     }
     var disciplinesNode = document.getElementById("fabRundownDisciplines");
+    var modesNode = document.getElementById("fabRundownModes");
     var selector = document.getElementById("fabRundownDiscipline");
-    var disciplines;
+    var modeButtons = root.querySelectorAll("[data-rundown-mode]");
+    var mode = "fabrication";
+    var disciplines, modes;
     try {
       disciplines = JSON.parse(disciplinesNode ? disciplinesNode.textContent : "{}");
     } catch (_err) {
       disciplines = {};
     }
+    try {
+      modes = JSON.parse(modesNode ? modesNode.textContent : "{}");
+    } catch (_err) {
+      modes = {};
+    }
+    if (!modes || !modes.fabrication) modes = { fabrication: { label: "Fabrication", disciplines: disciplines } };
+    disciplines = modes.fabrication.disciplines || disciplines;
     var data = {}, dates = [], timestamps = [], source = {}, unit = "spools";
     var chart = null, canRender = false, selectedPayload = null;
 
@@ -4159,6 +4175,9 @@
         return;
       }
       var initialTickLimit = tickLimitFor(canvas.clientWidth || root.clientWidth || window.innerWidth);
+      var isRosPiping = mode === "fabrication" && source.discipline === "piping";
+      var remainingScaleMax = Math.max(1, Number(selectedPayload.kpis.scope_total) || 0);
+      if (source.is_sample) remainingScaleMax = Math.ceil(remainingScaleMax * 1.1);
       try {
         chart = new Chart(canvas, {
         type: "bar",
@@ -4166,7 +4185,7 @@
           datasets: [
             {
               type: "line",
-              label: "Lookahead rundown",
+              label: (source.lookahead_label || "Lookahead") + " rundown",
               metricKey: "lookaheadRemaining",
               data: points(data.lookahead_rundown),
               yAxisID: "yRemaining",
@@ -4198,7 +4217,7 @@
             },
             {
               type: "bar",
-              label: "Lookahead releases",
+              label: (source.lookahead_label || "Lookahead") + (mode === "installation" ? " completions" : " releases"),
               metricKey: "lookaheadDaily",
               data: points(data.lookahead_total),
               yAxisID: "yDaily",
@@ -4212,7 +4231,7 @@
             },
             {
               type: "bar",
-              label: source.baseline_label === "Baseline" ? "Baseline releases" : source.baseline_label + " completions",
+              label: (source.baseline_label || "Plan") + (mode === "fabrication" && source.discipline === "piping" ? " releases" : " completions"),
               metricKey: "baselineDaily",
               data: points(data.baseline_total),
               yAxisID: "yDaily",
@@ -4260,7 +4279,8 @@
                 },
                 label: function (context) {
                   var daily = context.dataset.yAxisID === "yDaily";
-                  var suffix = " " + unit + (daily ? (source.discipline === "structural" ? " planned to finish" : " released") : " remaining");
+                  var suffix = " " + unit + (daily ? (mode === "installation" ? " installed"
+                    : source.discipline !== "piping" ? " planned to finish" : " released") : " remaining");
                   return context.dataset.label + ": " + Number(context.parsed.y).toLocaleString("en-US") + suffix;
                 },
                 footer: function (items) {
@@ -4297,7 +4317,7 @@
             yRemaining: {
               position: "left",
               beginAtZero: true,
-              suggestedMax: source.discipline === "piping" ? 700 : Math.max(1, Number(selectedPayload.kpis.scope_total) || 0),
+              suggestedMax: isRosPiping ? 700 : remainingScaleMax,
               grid: { color: palette.borderSubtle },
               border: { display: false },
               title: {
@@ -4308,7 +4328,7 @@
               },
               ticks: {
                 color: palette.fgSubtle,
-                stepSize: source.discipline === "piping" ? 100 : undefined,
+                stepSize: isRosPiping ? 100 : undefined,
                 precision: 0,
                 font: { family: "JetBrains Mono, monospace", size: 8.5 },
                 callback: function (value) { return Number(value).toLocaleString("en-US"); }
@@ -4317,18 +4337,19 @@
             yDaily: {
               position: "right",
               beginAtZero: true,
-              suggestedMax: source.discipline === "piping" ? 100 : undefined,
+              suggestedMax: isRosPiping ? 100 : undefined,
               grid: { drawOnChartArea: false },
               border: { display: false },
               title: {
                 display: true,
-                text: (source.discipline === "structural" ? "PLANNED COMPLETIONS · " : "DAILY RELEASES · ") + unit.toUpperCase(),
+                text: (mode === "installation" ? "DAILY COMPLETIONS · "
+                  : source.discipline !== "piping" ? "PLANNED COMPLETIONS · " : "DAILY RELEASES · ") + unit.toUpperCase(),
                 color: palette.fgSubtle,
                 font: { family: "JetBrains Mono, monospace", size: 8, weight: "600" }
               },
               ticks: {
                 color: palette.fgSubtle,
-                stepSize: source.discipline === "piping" ? 10 : undefined,
+                stepSize: isRosPiping ? 10 : undefined,
                 precision: 0,
                 font: { family: "JetBrains Mono, monospace", size: 8.5 },
                 callback: function (value) { return Number(value).toLocaleString("en-US"); }
@@ -4370,7 +4391,9 @@
       data = selectedPayload.charts || {};
       unit = source.unit_label || "packages";
       var kpis = selectedPayload.kpis || {};
-      var isPiping = key === "piping";
+      var isInstallation = mode === "installation";
+      var isPiping = key === "piping" && !isInstallation;
+      var isSample = Boolean(source.is_sample);
       var isAveon = source.baseline_label === "AVEON plan";
       var available = Boolean(selectedPayload.available);
       var hasLookahead = available && source.has_lookahead;
@@ -4379,19 +4402,25 @@
       snapshotTimestamp = Date.parse((source.snapshot_date || "") + "T00:00:00Z");
       root.dataset.snapshotDate = source.snapshot_date || "";
       root.dataset.rundownDiscipline = key;
+      root.dataset.rundownMode = mode;
       setText("#fabRundownTitle", source.title || (source.discipline_label + " rundown"));
-      setText(".fab-rundown-kicker", isPiping ? "Piping · ISO delivery plan" : source.discipline_label + " · Fabrication plan");
-      setText(".fab-rundown-title p", isPiping
-        ? "Daily spool releases and remaining balance · 60-day lookahead versus baseline"
+      setText(".fab-rundown-kicker", isInstallation ? source.discipline_label + " · Installation plan"
+        : isPiping ? "Piping · ISO delivery plan" : source.discipline_label + " · Fabrication plan");
+      setText(".fab-rundown-title p", isInstallation
+        ? "Daily installation completions and remaining balance · " + (source.lookahead_label || "Lookahead") + " versus " + (source.baseline_label || "baseline")
+        : isPiping ? "Daily spool releases and remaining balance · 60-day lookahead versus baseline"
         : "Daily planned completions and remaining balance · " + (isAveon ? "AVEON" : "Imported") + " fabrication dates");
+      var sampleBadge = root.querySelector("#fabRundownSample");
+      if (sampleBadge) sampleBadge.hidden = !isSample;
       setMetric(".is-scope dd", available ? Number(kpis.scope_total || 0).toLocaleString("en-US") : "—", unit);
       root.querySelector(".is-scope").title = source.unit_reason || (source.discipline_label + " scope in " + unit);
       setText(".is-baseline dt", (source.baseline_label || "Plan") + " zero");
       setText(".is-baseline dd", available ? kpis.baseline_finish_label || "—" : "—");
       root.querySelector(".is-baseline").title = source.balance_rule || "First date when the planned remaining balance reaches zero";
       setText(".is-lookahead dd", hasLookahead ? kpis.lookahead_finish_label || "—" : "—");
+      setText(".is-lookahead dt", (source.lookahead_label || "Lookahead") + " zero");
       root.querySelector(".is-lookahead").title = hasLookahead
-        ? "First date when the 60-day lookahead remaining balance reaches zero" : "No lookahead schedule is loaded for this discipline";
+        ? "First date when the " + (source.lookahead_label || "lookahead") + " remaining balance reaches zero" : "No lookahead schedule is loaded for this discipline";
       var gap = kpis.finish_variance_days;
       var showGap = hasLookahead && gap !== null && gap !== undefined;
       setMetric(".is-variance dd", showGap ? (gap > 0 ? "+" : "") + gap : "—", showGap ? "days" : "");
@@ -4399,11 +4428,11 @@
       root.querySelectorAll("[data-rundown-baseline-label]").forEach(function (node) { node.textContent = source.baseline_label || "Plan"; });
       root.querySelectorAll("[data-rundown-lookahead-label]").forEach(function (node) { node.textContent = source.lookahead_label || "Lookahead"; });
       var groups = root.querySelectorAll(".fab-rundown-legend-label");
-      if (groups[1]) groups[1].textContent = isPiping ? "Daily releases" : "Planned completions";
+      if (groups[1]) groups[1].textContent = isInstallation ? "Daily completions" : isPiping ? "Daily releases" : "Planned completions";
       root.querySelector(".fab-rundown-legend").hidden = !available;
       setText("#fabRundownDataDate", "Data date · " + (source.snapshot_label || "—"));
       root.querySelector(".fab-rundown-data-date").hidden = !source.snapshot_date;
-      root.querySelector(".fab-rundown-data-date").title = isPiping ? "Workbook snapshot date" : "Fabrication schedule import date";
+      root.querySelector(".fab-rundown-data-date").title = isSample ? "Sample schedule reference date" : isPiping ? "Workbook snapshot date" : "Fabrication schedule import date";
       var sourceNode = root.querySelector(".fab-rundown-source");
       sourceNode.textContent = "Source · " + (source.source_label || "No source loaded");
       sourceNode.title = [source.workbook, source.worksheet, source.source_label, source.unit_reason, source.balance_rule].filter(Boolean).join(" · ");
@@ -4413,16 +4442,28 @@
       var summary = available
         ? source.discipline_label + " rundown for " + kpis.scope_total + " " + unit + ". "
           + (source.baseline_label || "Plan") + " reaches zero on " + (kpis.baseline_finish_label || "an unknown date") + ". "
-          + (hasLookahead ? "Lookahead reaches zero on " + kpis.lookahead_finish_label + ". Zero-date gap: " + gap + " days." : source.notice || "")
+          + (hasLookahead ? (source.lookahead_label || "Lookahead") + " reaches zero on " + kpis.lookahead_finish_label + ". Zero-date gap: " + gap + " days." : source.notice || "")
         : source.discipline_label + " rundown unavailable: " + (selectedPayload.error || "no source loaded.");
-      setText("#fabRundownSummary", summary);
-      canvas.setAttribute("aria-label", (source.discipline_label || "Fabrication") + " rundown in " + unit);
+      setText("#fabRundownSummary", (isSample ? "Sample installation data. " : "") + summary);
+      canvas.setAttribute("aria-label", (source.discipline_label || "") + " " + mode + " rundown in " + unit + (isSample ? " — sample data" : ""));
       canvas.hidden = false;
       if (empty) empty.hidden = true;
       renderRundown();
     }
+    function selectMode(key) {
+      if (!Object.prototype.hasOwnProperty.call(modes, key)) return;
+      mode = key;
+      disciplines = modes[key].disciplines || {};
+      modeButtons.forEach(function (button) {
+        button.setAttribute("aria-pressed", button.dataset.rundownMode === mode ? "true" : "false");
+      });
+      selectDiscipline(selector ? selector.value : "piping");
+    }
+    modeButtons.forEach(function (button) {
+      button.addEventListener("click", function () { selectMode(button.dataset.rundownMode); });
+    });
     if (selector) selector.addEventListener("change", function () { selectDiscipline(selector.value); });
-    selectDiscipline(selector ? selector.value : "piping");
+    selectMode("fabrication");
     c3WhenVisible(root, function () {
       canRender = true;
       renderRundown();
@@ -4451,12 +4492,6 @@
         || Number(dateBucket.lookahead_total || 0) > 0;
     }
     var dates = Array.isArray(data.dates) ? data.dates.filter(hasSkylineData) : [];
-    if (!dates.length) {
-      viewport.hidden = true;
-      var empty = document.getElementById("fabSkylineEmpty");
-      if (empty) empty.hidden = false;
-      return;
-    }
     var schedulesNode = document.getElementById("fabSkylineSchedules");
     var schedules = {};
     try { schedules = JSON.parse(schedulesNode ? schedulesNode.textContent : "{}") || {}; } catch (_err) { schedules = {}; }
@@ -4465,6 +4500,12 @@
     var scheduleKey = "ros";
     var currentSchedule = schedules.ros;
     var rosAccessibleSummary = document.getElementById("fabSkylineSummary").textContent;
+    function isInstallation() { return scheduleKey === "installation"; }
+    function isCompletionSchedule() { return scheduleKey === "aveon" || isInstallation(); }
+    function plannedFinishLabel() { return isInstallation() ? "Planned installation finish" : "Planned fabrication finish"; }
+    function completedScopeLabel(entries, total) {
+      return spoolLabel(total) + " on completed lines" + (isInstallation() ? " · Sample data" : " · " + entries.filter(estimatedCompletion).length + " estimated dates");
+    }
 
     var SCENARIOS = {
       forecast: { label: "Forecast", detailLabel: "Baseline forecast", icon: "bi-calendar3", key: "forecast", totalKey: "forecast_total" },
@@ -4473,10 +4514,10 @@
     var STATUSES = {
       forecast: { label: "Baseline forecast", icon: "bi-calendar3" },
       on_time: { label: "Completed on plan", icon: "bi-check2-circle" },
-      completed: { label: "Completed", icon: "bi-check2-circle" },
+      completed: { label: "Completed · Timing unknown", icon: "bi-check2-circle" },
       late: { label: "Delayed", icon: "bi-exclamation-diamond" },
-      partial: { label: "Partial progress", icon: "bi-circle-half" },
-      upcoming: { label: "Planned", icon: "bi-clock-history" }
+      partial: { label: "In progress / Partial", icon: "bi-circle-half" },
+      upcoming: { label: "Not started", icon: "bi-clock-history" }
     };
     var STATUS_ORDER = { late: 0, partial: 1, on_time: 2, completed: 2, upcoming: 3 };
     var MATERIAL_CATEGORIES = [
@@ -4581,11 +4622,7 @@
       return lines;
     }
     function progressAccent(value) {
-      var progress = progressValue(value);
-      if (progress <= 50) {
-        return "color-mix(in srgb, var(--fb-warning) " + Math.round(progress * 2) + "%, var(--fb-danger))";
-      }
-      return "color-mix(in srgb, var(--fb-success) " + Math.round((progress - 50) * 2) + "%, var(--fb-warning))";
+      return "#f97316";
     }
     function segmentDate(segment) {
       var explicitDate = String((segment && segment.date) || "");
@@ -4600,7 +4637,7 @@
     }
     function orderedSegments(entries, scenarioKey) {
       return entries.slice().sort(function (a, b) {
-        if (scheduleKey === "aveon") return Number(a.spools || 0) - Number(b.spools || 0) || String(a.line).localeCompare(String(b.line));
+        if (isCompletionSchedule()) return Number(a.spools || 0) - Number(b.spools || 0) || String(a.line).localeCompare(String(b.line));
         if (scenarioKey === "lookahead") {
           var stateDelta = Number(STATUS_ORDER[a.status] || 0) - Number(STATUS_ORDER[b.status] || 0);
           if (stateDelta) return stateDelta;
@@ -4620,8 +4657,22 @@
       return "is-load-low";
     }
     function statusClassName(statusKey) {
-      if (statusKey === "completed") return "is-on-time";
       return "is-" + String(statusKey || "upcoming").replace(/_/g, "-");
+    }
+    function segmentVisualStatus(segment, scenarioKey) {
+      var related = scenarioKey === "forecast" ? dates.flatMap(function (bucket) {
+        return (bucket.lookahead || []).filter(function (item) { return item.line === segment.line; });
+      }) : [segment];
+      var finished = related.find(function (item) {
+        return item.status === "on_time" || item.status === "late" || item.status === "completed";
+      });
+      if (finished) return finished.status;
+      var progress = Number(segment.fabrication_progress_pct ?? segment.progress_pct ?? 0);
+      if (progress >= 100 && segment.has_upcoming === false) return "completed";
+      if (progress > 0 || related.some(function (item) {
+        return item.status === "partial" || Number(item.progress_pct || 0) > 0;
+      })) return "partial";
+      return "upcoming";
     }
     function materialState(segment, category) {
       var lineData = Object.prototype.hasOwnProperty.call(materialReadiness, segment.line) ? materialReadiness[segment.line] : null;
@@ -4732,11 +4783,11 @@
       boxTitle.textContent = displayLine(segment.line);
       var sourceDates = MATERIAL_CATEGORIES.map(function (category) { return materialState(segment, category).entry.as_of_date; }).filter(Boolean);
       var observedDates = Array.from(new Set(sourceDates));
-      boxSource.textContent = "DATAFY · drawings, allocated PO items and receipt records" + (observedDates.length === 1 ? " · Checked " + observedDates[0] : "");
+      boxSource.textContent = isInstallation() ? "Real ROS lines and spools · Sample data: installation dates and progress" : "DATAFY · drawings, allocated PO items and receipt records" + (observedDates.length === 1 ? " · Checked " + observedDates[0] : "");
       boxSchedule.replaceChildren();
-      appendBoxText(boxSchedule, "span", "fab-skyline-box-caption", "Box fill · " + (scheduleKey === "aveon" ? "FABRICATION" : "ROS") + " schedule");
+      appendBoxText(boxSchedule, "span", "fab-skyline-box-caption", "Box fill · " + (isInstallation() ? "Installation · Sample data" : scheduleKey === "aveon" ? "Fabrication" : "Wooden Box · ROS"));
       boxSchedule.appendChild(seriesCell(scenarioKey, segment));
-      var dateCaption = scheduleKey === "aveon" ? (scenarioKey === "forecast" ? "Planned finish " : estimatedCompletion(segment) ? "Estimated finish ~ " : "Actual finish ") : (scenarioKey === "forecast" ? "Baseline " : "Lookahead ");
+      var dateCaption = isInstallation() ? (scenarioKey === "forecast" ? "Simulated planned finish " : "Simulated completion ") : scheduleKey === "aveon" ? (scenarioKey === "forecast" ? "Planned finish " : estimatedCompletion(segment) ? "Estimated finish ~ " : "Actual finish ") : (scenarioKey === "forecast" ? "Baseline " : "Lookahead ");
       appendBoxText(boxSchedule, "span", "", spoolLabel(segment.spools) + " in this period · " + dateCaption + (segmentDatesLabel(segment) || longDate.format(dateObject(segmentDate(segment)))));
       if (scheduleKey === "aveon") {
         if (segment.date_source) appendBoxText(boxSchedule, "span", "", segment.date_source);
@@ -4755,9 +4806,14 @@
         if (segment.fabrication_progress && segment.fabrication_progress.length > 1 && segment.progress_note) appendBoxText(boxSchedule, "span", "", segment.progress_note);
         if (segment.source_workbook) appendBoxText(boxSchedule, "span", "", "Schedule · " + segment.source_workbook);
         if (segment.line_mapping_note) appendBoxText(boxSchedule, "span", "", segment.line_mapping_note);
+      } else if (isInstallation()) {
+        if (currentSchedule.source.scope_workbook) appendBoxText(boxSchedule, "span", "", "Line and spool source · ROS · " + currentSchedule.source.scope_workbook);
+        if (segment.planned_finish) appendBoxText(boxSchedule, "span", "", "Simulated planned finish · " + longDate.format(dateObject(segment.planned_finish)));
+        if (scenarioKey === "lookahead") appendBoxText(boxSchedule, "span", "", "Completed line · " + (segment.status === "late" ? "After the planned finish" : "On or before the planned finish"));
+        appendBoxText(boxSchedule, "span", "", "Demonstration only · As of " + (currentSchedule.source.as_of_label || currentSchedule.source.as_of_date));
       } else if (scenarioKey === "lookahead") appendBoxText(boxSchedule, "span", "", progressLabel(segment) + " (schedule proxy)");
       boxCategories.replaceChildren();
-      MATERIAL_CATEGORIES.forEach(function (category) {
+      (isInstallation() ? [] : MATERIAL_CATEGORIES).forEach(function (category) {
         var state = materialState(segment, category);
         var counts = state.entry.counts || {};
         var card = appendBoxText(boxCategories, "div", "fab-skyline-box-category", "");
@@ -4793,20 +4849,21 @@
         if (state.entry.source) appendBoxText(card, "p", "fab-skyline-box-evidence", state.entry.source + (observedDates.length !== 1 && state.entry.as_of_date ? " · " + state.entry.as_of_date : ""));
       });
       boxPeriodAction = function () { openDetail(dateBucket, scenarioKey, periodTrigger); };
-      if (resetBoxView) setBoxExpanded(false);
+      if (resetBoxView) setBoxExpanded(isInstallation());
       boxDetail.hidden = false;
       boxDetail.scrollTop = 0;
       positionBox();
       if (mode === "click") boxDetail.focus({ preventScroll: true });
     }
     function segmentNode(segment, scenarioKey, dateBucket, periodTrigger) {
-      var statusKey = scenarioKey === "forecast" ? "forecast" : (STATUSES[segment.status] ? segment.status : "upcoming");
+      var statusKey = segmentVisualStatus(segment, scenarioKey);
       var isEstimated = scheduleKey === "aveon" && scenarioKey === "lookahead" && estimatedCompletion(segment);
       var item = document.createElement("button");
       item.type = "button";
       item.className = "fab-skyline-item " + statusClassName(statusKey) + " " + loadClass(segment.spools);
       item.dataset.skylineLine = segment.line;
       if (scheduleKey === "aveon" && scenarioKey === "lookahead") item.dataset.completionDateKind = isEstimated ? "estimated" : "actual";
+      if (isInstallation()) item.dataset.completionDateKind = "sample";
       item.setAttribute("aria-haspopup", "dialog");
       item.setAttribute("aria-controls", "fabSkylineBoxDetail");
       item.setAttribute("aria-expanded", "false");
@@ -4815,12 +4872,12 @@
       var lights = document.createElement("span");
       lights.className = "fab-skyline-material-lights";
       lights.setAttribute("aria-hidden", "true");
-      MATERIAL_CATEGORIES.forEach(function (category) {
+      (isInstallation() ? [] : MATERIAL_CATEGORIES).forEach(function (category) {
         var light = materialLight(segment, category);
         light.removeAttribute("title");
         lights.appendChild(light);
       });
-      item.appendChild(lights);
+      if (!isInstallation()) item.appendChild(lights);
 
       var code = document.createElement("span");
       code.className = "fab-skyline-code";
@@ -4831,7 +4888,7 @@
       quantity.setAttribute("aria-label", spoolLabel(segment.spools));
       item.appendChild(code);
       item.appendChild(quantity);
-      item.setAttribute("aria-label", (isEstimated ? "Estimated completion · " + (segment.completion_date || segmentDate(segment)) + " · " : "") + displayLine(segment.line) + " · " + SCENARIOS[scenarioKey].label + " · " + spoolLabel(segment.spools) + ". " + MATERIAL_CATEGORIES.map(function (category) { return category.label + ": " + materialState(segment, category).label; }).join(". ") + ". Show box details.");
+      item.setAttribute("aria-label", (isEstimated ? "Estimated completion · " + (segment.completion_date || segmentDate(segment)) + " · " : "") + displayLine(segment.line) + " · " + SCENARIOS[scenarioKey].label + " · " + spoolLabel(segment.spools) + ". " + (isInstallation() ? "Sample data · " + STATUSES[statusKey].label : MATERIAL_CATEGORIES.map(function (category) { return category.label + ": " + materialState(segment, category).label; }).join(". ")) + ". Show box details.");
       item.addEventListener("pointerenter", function (event) {
         if (event.pointerType === "touch" || boxPinned) return;
         window.clearTimeout(boxCloseTimer);
@@ -4851,7 +4908,7 @@
       return item;
     }
     function seriesCell(scenarioKey, segment) {
-      var statusKey = scenarioKey === "forecast" ? "forecast" : (STATUSES[segment.status] ? segment.status : "upcoming");
+      var statusKey = segmentVisualStatus(segment, scenarioKey);
       var status = STATUSES[statusKey];
       var statusLabel = status.label;
       if (scheduleKey === "aveon" && scenarioKey === "lookahead" && estimatedCompletion(segment)) {
@@ -4887,11 +4944,11 @@
       if (lastTrigger && lastTrigger !== trigger) lastTrigger.setAttribute("aria-expanded", "false");
       lastTrigger = trigger;
       trigger.setAttribute("aria-expanded", "true");
-      modalKicker.textContent = scenario.label + " · schedule period ending";
+      modalKicker.textContent = (isInstallation() ? "Installation · Sample data · " : "") + scenario.label + " · schedule period ending";
       modalTitle.textContent = longDate.format(dateObject(dateBucket.date));
-      if (modalDateHeading) modalDateHeading.textContent = scheduleKey === "aveon" ? (scenarioKey === "forecast" ? "Planned fabrication finish" : "Completion date") : (scenarioKey === "forecast" ? "Baseline date" : "Lookahead date(s)");
+      if (modalDateHeading) modalDateHeading.textContent = isCompletionSchedule() ? (scenarioKey === "forecast" ? plannedFinishLabel() : isInstallation() ? "Simulated completion" : "Completion date") : (scenarioKey === "forecast" ? "Baseline date" : "Lookahead date(s)");
       if (modalSpoolHeading) modalSpoolHeading.textContent = "Spools";
-      modalMeta.textContent = entries.length.toLocaleString("en-US") + " line" + (entries.length === 1 ? "" : "s") + " · " + (scenarioKey === "forecast" ? spoolLabel(total) : scheduleKey === "aveon" ? spoolLabel(total) + " on completed lines · " + entries.filter(estimatedCompletion).length + " estimated dates" : performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed");
+      modalMeta.textContent = entries.length.toLocaleString("en-US") + " line" + (entries.length === 1 ? "" : "s") + " · " + (scenarioKey === "forecast" ? spoolLabel(total) : isCompletionSchedule() ? completedScopeLabel(entries, total) : performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed");
       modalBody.replaceChildren();
       orderedSegments(entries, scenarioKey).forEach(function (segment) {
         var row = document.createElement("tr");
@@ -4906,6 +4963,7 @@
           if (estimatedDate) dateCell.title += "\n" + completionEstimateLines(segment).join("\n");
         }
         var stateCell = document.createElement("td");
+        if (isInstallation()) dateCell.title = "Sample data · " + (scenarioKey === "forecast" ? "Simulated planned finish" : "Simulated completion") + (segment.planned_finish ? " · Planned finish: " + segment.planned_finish : "");
         stateCell.appendChild(seriesCell(scenarioKey, segment));
         if (scheduleKey === "aveon") stateCell.title = [fabricationProgressLabel(segment)].concat(fabricationEvidenceLines(segment)).join("\n");
         var spoolCell = document.createElement("td");
@@ -4915,7 +4973,7 @@
         row.appendChild(dateCell);
         row.appendChild(stateCell);
         row.appendChild(spoolCell);
-        MATERIAL_CATEGORIES.forEach(function (category) { row.appendChild(materialCell(segment, category)); });
+        if (!isInstallation()) MATERIAL_CATEGORIES.forEach(function (category) { row.appendChild(materialCell(segment, category)); });
         modalBody.appendChild(row);
       });
       if (modal.hidden) bodyOverflowBeforeModal = document.body.style.overflow;
@@ -4945,7 +5003,7 @@
       totalUnit.textContent = total === 1 ? "spool" : "spools";
       totalNode.appendChild(totalValue);
       totalNode.appendChild(totalUnit);
-      var totalDescription = scenarioKey === "forecast" ? scenario.label + " period total: " + spoolLabel(total) : scheduleKey === "aveon" ? "Completed: " + spoolLabel(total) + " on completed lines · " + entries.filter(estimatedCompletion).length + " estimated dates" : "Lookahead period progress: " + performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed";
+      var totalDescription = scenarioKey === "forecast" ? scenario.label + " period total: " + spoolLabel(total) : isCompletionSchedule() ? "Completed: " + completedScopeLabel(entries, total) : "Lookahead period progress: " + performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed";
       totalNode.setAttribute("aria-label", totalDescription);
       totalNode.title = totalDescription;
 
@@ -4955,7 +5013,7 @@
         stack = document.createElement("div");
         stack.className = "fab-skyline-stack";
         stack.setAttribute("role", "group");
-        var periodLabel = scenario.label + ", schedule period ending " + longDate.format(dateObject(dateBucket.date)) + ": " + entries.length + " lines and " + (scenarioKey === "forecast" ? spoolLabel(total) : scheduleKey === "aveon" ? spoolLabel(total) + " completed · " + entries.filter(estimatedCompletion).length + " estimated dates" : performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed");
+        var periodLabel = (isInstallation() ? "Sample data · " : "") + scenario.label + ", schedule period ending " + longDate.format(dateObject(dateBucket.date)) + ": " + entries.length + " lines and " + (scenarioKey === "forecast" ? spoolLabel(total) : isCompletionSchedule() ? completedScopeLabel(entries, total) : performedTotal.toLocaleString("en-US") + " of " + spoolLabel(total) + " performed");
         stack.setAttribute("aria-label", periodLabel);
         totalNode.setAttribute("aria-label", periodLabel + ". Open period details.");
         totalNode.setAttribute("aria-haspopup", "dialog");
@@ -5031,60 +5089,108 @@
       data = currentSchedule.charts || {};
       dates = Array.isArray(data.dates) ? data.dates.filter(hasSkylineData) : [];
       var isAveon = key === "aveon";
+      var sample = isInstallation();
+      var completion = isCompletionSchedule();
       var source = currentSchedule.source || {};
       var kpis = currentSchedule.kpis || {};
-      var ready = currentSchedule.available && dates.length > 0;
-      SCENARIOS.forecast.label = isAveon ? "Planned finish" : "Forecast";
-      SCENARIOS.forecast.detailLabel = isAveon ? "Planned fabrication finish" : "Baseline forecast";
-      SCENARIOS.lookahead.label = isAveon ? "Completed" : "Actual / lookahead";
-      SCENARIOS.lookahead.detailLabel = isAveon ? "Completed fabrication" : "60-day lookahead";
-      STATUSES.forecast.label = isAveon ? "Planned fabrication finish" : "Baseline forecast";
-      STATUSES.on_time.label = isAveon ? "On plan" : "Completed on plan";
+      var ready = !!(currentSchedule.available && dates.length);
+      var viewLabel = sample ? "Installation" : isAveon ? "Fabrication" : "Wooden Box";
+      materialReadiness = sample ? {} : data.material_readiness || schedules.ros.charts.material_readiness || {};
+      root.dataset.asOfDate = source.as_of_date || "";
+      asOfTimestamp = Date.parse((source.as_of_date || "") + "T00:00:00Z");
+      SCENARIOS.forecast.label = completion ? "Planned finish" : "Forecast";
+      SCENARIOS.forecast.detailLabel = completion ? plannedFinishLabel() : "Baseline forecast";
+      SCENARIOS.lookahead.label = completion ? "Completed" : "Actual / lookahead";
+      SCENARIOS.lookahead.detailLabel = sample ? "Completed installation · Sample data" : isAveon ? "Completed fabrication" : "60-day lookahead";
+      STATUSES.forecast.label = completion ? plannedFinishLabel() : "Baseline forecast";
+      STATUSES.on_time.label = completion ? "On plan" : "Completed on plan";
       STATUSES.late.label = "Delayed";
-      STATUSES.upcoming.label = isAveon ? "Not started" : "Planned";
+      STATUSES.upcoming.label = "Not started";
       root.dataset.scheduleSource = key;
       root.querySelectorAll("[data-skyline-schedule]").forEach(function (button) { button.setAttribute("aria-pressed", String(button.dataset.skylineSchedule === key)); });
-      document.getElementById("fabSkylineScheduleCaption").textContent = isAveon ? "FABRICATION · Planned finish above; actual dates or weekly-history estimates below (~)" : "ROS · Baseline forecast and 60-day lookahead dates";
+      document.getElementById("fabSkylineTitle").textContent = viewLabel + " skyline";
+      document.getElementById("fabSkylineSample").hidden = !sample;
+      root.querySelector(".fab-ros-actions").hidden = key !== "ros";
+      root.querySelector(".fab-skyline-material-legend").hidden = sample || !ready;
+      document.getElementById("fabSkylineMaterialSource").hidden = sample;
+      document.getElementById("fabSkylineMaterialSource").textContent = source.material_readiness_label || "DATAFY · material availability";
+      document.getElementById("fabSkylineBoxKicker").textContent = sample ? "Installation · Sample data" : "Whole-line material status";
+      boxCategories.hidden = sample;
+      document.getElementById("fabSkylineBoxFootnote").hidden = sample;
+      document.getElementById("fabSkylineModalMaterialNote").hidden = sample;
+      modal.querySelectorAll("[data-skyline-material-column]").forEach(function (column) { column.hidden = sample; });
+      modal.querySelector(".fab-po-table-wrap").setAttribute("aria-label", sample ? "Sample installation line details; scroll horizontally for all columns" : "Skyline line details and material availability; scroll horizontally for all columns");
+      document.getElementById("fabSkylineScheduleCaption").textContent = sample ? "Installation · Real lines and spools · Simulated dates and progress" : isAveon ? "Fabrication · Planned finish above; actual dates or weekly-history estimates below (~)" : "Wooden Box · ROS baseline forecast and 60-day lookahead dates";
       document.getElementById("fabSkylineLineCount").textContent = Number(kpis.line_count || 0).toLocaleString("en-US");
       document.getElementById("fabSkylineSpoolCount").textContent = Number(kpis.scope_spools || 0).toLocaleString("en-US");
-      document.getElementById("fabSkylineCompletionSummary").textContent = isAveon ? (ready ? Number(kpis.performed_line_count || 0) + " completed lines · " + spoolLabel(kpis.performed_spools) + " · " + Number(kpis.confirmed_actual_line_count || 0) + " actual / " + Number(kpis.estimated_completion_line_count || 0) + " estimated dates" : "Fabrication schedule unavailable") : Number(kpis.performed_spools || 0) + " performed · " + Number(kpis.remaining_spools || 0) + " remaining";
+      document.getElementById("fabSkylineCompletionSummary").textContent = completion ? (ready ? Number(kpis.performed_line_count || 0) + " completed lines · " + spoolLabel(kpis.performed_spools) + (sample ? " · Simulated progress" : " · " + Number(kpis.confirmed_actual_line_count || 0) + " actual / " + Number(kpis.estimated_completion_line_count || 0) + " estimated dates") : viewLabel + " schedule unavailable") : Number(kpis.performed_spools || 0) + " performed · " + Number(kpis.remaining_spools || 0) + " remaining";
       var forecastLegend = document.getElementById("fabSkylineForecastLegend");
       forecastLegend.querySelector("span").textContent = SCENARIOS.forecast.label;
-      forecastLegend.querySelector("b").textContent = Number(isAveon ? kpis.scheduled_line_count || 0 : kpis.line_count || 0) + " lines · " + spoolLabel(isAveon ? kpis.scheduled_spools : kpis.scope_spools);
-      forecastLegend.title = isAveon ? source.date_rule || "Planned finish from the fabrication schedule." : "Forecast uses the ROS baseline schedule in Planilha1.";
-      var statusTitles = isAveon ? {
+      forecastLegend.querySelector("b").textContent = Number(completion ? kpis.scheduled_line_count || 0 : kpis.line_count || 0) + " lines · " + spoolLabel(completion ? kpis.scheduled_spools : kpis.scope_spools);
+      forecastLegend.title = completion ? source.date_rule || "Planned finish from the schedule." : "Forecast uses the ROS baseline schedule in Planilha1.";
+      var statusTitles = sample ? {
+        on_time: "Sample data · Simulated completion on or before the planned finish.",
+        late: "Sample data · Simulated completion after the planned finish."
+      } : isAveon ? {
         on_time: "Completion falls on or before the planned finish. Dates marked ~ are estimates from weekly progress history.",
         completed: "Completed without a comparable planned finish. Dates marked ~ are estimates.",
         late: "Completion falls after the planned finish. Dates marked ~ are estimates from weekly progress history."
       } : {
         on_time: "Fully performed by the baseline date.",
         late: "A fully performed line whose final lookahead date exceeded its baseline.",
-        partial: "Past quantities from a line that still has future work; color moves from red through yellow toward green as line progress increases.",
-        upcoming: "Lookahead dates on or after the cutoff remain planned and gray."
+        partial: "Work in progress or partial delivery. Orange remains constant at every partial percentage.",
+        upcoming: "No recorded start or progress. Gray also applies when the planned date has passed."
       };
+      statusTitles.partial = "Work in progress or partial delivery. Orange remains constant at every partial percentage.";
+      statusTitles.upcoming = "No recorded start or progress. Gray also applies when the planned date has passed.";
+      var visualTotals = {};
+      var visualLines = {};
+      var countedLines = new Set();
+      dates.forEach(function (bucket) {
+        var entries = completion ? (bucket.forecast || []) : (bucket.lookahead || []);
+        entries.forEach(function (segment) {
+          var status = segmentVisualStatus(segment, completion ? "forecast" : "lookahead");
+          visualTotals[status] = (visualTotals[status] || 0) + Number(segment.spools || 0);
+          if (!visualLines[status]) visualLines[status] = new Set();
+          visualLines[status].add(segment.line);
+          countedLines.add(segment.line);
+        });
+      });
+      if (completion) dates.forEach(function (bucket) {
+        (bucket.lookahead || []).forEach(function (segment) {
+          if (countedLines.has(segment.line)) return;
+          var status = segmentVisualStatus(segment, "lookahead");
+          visualTotals[status] = (visualTotals[status] || 0) + Number(segment.spools || 0);
+          if (!visualLines[status]) visualLines[status] = new Set();
+          visualLines[status].add(segment.line);
+          countedLines.add(segment.line);
+        });
+      });
       root.querySelectorAll("[data-skyline-status]").forEach(function (legend) {
         var statusKey = legend.dataset.skylineStatus;
-        legend.hidden = (isAveon && (statusKey === "partial" || statusKey === "upcoming")) || (statusKey === "completed" && (!isAveon || !Number(kpis.completed_line_count || 0)));
-        legend.querySelector("[data-status-label]").textContent = statusKey === "on_time" ? "On plan" : statusKey === "partial" ? "Partial scale" : STATUSES[statusKey].label;
-        legend.querySelector("b").textContent = Number(kpis[statusKey + "_line_count"] || 0) + " lines · " + spoolLabel(kpis[statusKey + "_spools"]);
+        legend.hidden = statusKey === "completed" && !visualTotals.completed;
+        legend.querySelector("[data-status-label]").textContent = statusKey === "on_time" ? "On plan" : statusKey === "partial" ? "In progress / Partial" : STATUSES[statusKey].label;
+        legend.querySelector("b").textContent = (visualLines[statusKey] ? visualLines[statusKey].size : 0) + " lines · " + spoolLabel(visualTotals[statusKey]);
         legend.title = statusTitles[statusKey] || "";
       });
       document.getElementById("fabSkylineForecastBand").textContent = SCENARIOS.forecast.label;
       document.getElementById("fabSkylineActualBand").textContent = SCENARIOS.lookahead.label;
-      document.getElementById("fabSkylineCutoffLabel").textContent = isAveon ? "As of" : "Cutoff";
-      document.getElementById("fabSkylineNoActual").hidden = !isAveon || !ready || dates.some(function (bucket) { return bucket.lookahead && bucket.lookahead.length; });
-      document.getElementById("fabSkylineSummary").textContent = isAveon ? "Planned fabrication finish appears above the axis. Completed lines appear below at their recorded actual finish or a completion date estimated from weekly progress history. A tilde marks every estimated box; its details show the reporting window and estimate basis. Completion on plan is green and delayed completion is red. Partial and unstarted lines do not appear below." : rosAccessibleSummary;
-      viewport.setAttribute("aria-label", isAveon ? "Planned fabrication finish above and completed lines below, with estimated dates marked by a tilde" : "ROS baseline forecast and independently dated lookahead work");
+      document.getElementById("fabSkylineCutoffLabel").textContent = sample ? "Sample as of" : isAveon ? "As of" : "Cutoff";
+      document.getElementById("fabSkylineCutoffDate").textContent = source.as_of_label || source.as_of_date || "—";
+      document.getElementById("fabSkylineNoActual").hidden = !completion || !ready || dates.some(function (bucket) { return bucket.lookahead && bucket.lookahead.length; });
+      document.getElementById("fabSkylineNoActual").textContent = sample ? "No lines have a simulated completion by the sample date." : "No completed lines have an actual or estimated completion date.";
+      document.getElementById("fabSkylineSummary").textContent = sample ? "Real ROS line identifiers and per-line spool quantities. Only installation dates and progress are simulated. Planned finish above; only fully completed lines below, at simulated completion dates. Green means completion on or before plan and blue means delayed completion." : isAveon ? "Planned fabrication finish appears above the axis. Completed lines appear below at their recorded actual finish or a completion date estimated from weekly progress history. A tilde marks every estimated box; its details show the reporting window and estimate basis. Completion on plan is green and delayed completion is blue. Partial and unstarted lines do not appear below." : rosAccessibleSummary;
+      viewport.setAttribute("aria-label", sample ? "Sample piping installation: planned finish above and completed lines below at simulated completion dates" : isAveon ? "Planned fabrication finish above and completed lines below, with estimated dates marked by a tilde" : "Wooden Box: ROS baseline forecast and independently dated lookahead work");
       var sourceLabel = document.getElementById("fabSkylineScheduleSource");
-      sourceLabel.textContent = isAveon ? "FABRICATION · " + (source.workbook || source.source_label || "Fabrication schedule") + (source.snapshot_label ? " · imported " + source.snapshot_label : "") : "ROS · " + (source.workbook || "Planilha1") + " · " + (source.forecast_scope || "Planilha1") + " · snapshot " + (source.snapshot_label || "—");
-      sourceLabel.title = sourceLabel.textContent + (source.date_rule ? " · " + source.date_rule : "");
-      document.getElementById("fabSkylineModalScheduleNote").textContent = isAveon ? "Completed lines use recorded actual dates where available. Dates marked ~ are estimates from weekly progress history; details show the reporting window and basis. Estimated dates are not recorded actual finishes. Spool quantities are the full scope of each completed line." : "Temporary completion proxy: ROS lookahead quantities before " + (source.as_of_label || "the cutoff") + " count as performed. Future lookahead quantities remain gray.";
+      sourceLabel.textContent = sample ? "ROS lines & spools · Sample data: installation dates and progress · As of " + (source.as_of_label || source.as_of_date) : isAveon ? "Fabrication · " + (source.workbook || source.source_label || "Fabrication schedule") + (source.snapshot_label ? " · imported " + source.snapshot_label : "") : "Wooden Box · ROS · " + (source.workbook || "Planilha1") + " · " + (source.forecast_scope || "Planilha1") + " · snapshot " + (source.snapshot_label || "—");
+      sourceLabel.title = sourceLabel.textContent + (sample && source.scope_workbook ? " · Scope workbook: " + source.scope_workbook + " · snapshot " + (source.scope_snapshot_label || "—") : "") + (source.date_rule ? " · " + source.date_rule : "");
+      document.getElementById("fabSkylineModalScheduleNote").textContent = sample ? "Real ROS lines and spool quantities. Sample data: only installation dates and progress are simulated. Only fully completed lines appear below, at their simulated completion date. Green: on or before plan. Blue: after plan." : isAveon ? "Completed lines use recorded actual dates where available. Dates marked ~ are estimates from weekly progress history; details show the reporting window and basis. Estimated dates are not recorded actual finishes. Spool quantities are the full scope of each completed line." : "Temporary completion proxy: ROS lookahead quantities before " + (source.as_of_label || "the cutoff") + " count as performed. Future lookahead quantities without started work remain gray.";
       viewport.hidden = !ready;
       root.querySelector(".fab-skyline-band-labels").hidden = !ready;
       root.querySelector(".fab-skyline-legend").hidden = !ready;
       var empty = document.getElementById("fabSkylineEmpty");
-      empty.hidden = !!ready;
-      empty.textContent = ready ? "" : currentSchedule.error || key.toUpperCase() + " schedule dates are unavailable.";
+      empty.hidden = ready;
+      empty.textContent = ready ? "" : currentSchedule.error || viewLabel + " schedule dates are unavailable.";
       if (skylineViewToggle) skylineViewToggle.disabled = !ready;
       matrix.replaceChildren();
       delete matrix.dataset.skylineRendered;

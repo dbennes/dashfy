@@ -26,7 +26,7 @@ class FabricationRundownStyleTests(SimpleTestCase):
         chart = rule(".cockpit-v3 #s03 .fab-rundown-chart")
         canvas = rule(".cockpit-v3 #s03 .fab-rundown-canvas")
 
-        self.assertIn("height: 390px", card)
+        self.assertIn("height: 432px", card)
         self.assertIn("min-height: 0", card)
         self.assertIn("align-items: center", head)
         self.assertIn("grid-template-columns: repeat(4", kpis)
@@ -78,10 +78,10 @@ class FabricationSkylineStyleTests(SimpleTestCase):
         self.assertIn("justify-self: end", legend)
         self.assertIn("flex-wrap: nowrap", legend)
         self.assertIn("background: transparent", legend)
-        self.assertIn("linear-gradient", partial_legend)
-        self.assertIn("var(--fb-danger)", partial_legend)
-        self.assertIn("var(--fb-warning)", partial_legend)
-        self.assertIn("var(--fb-success)", partial_legend)
+        self.assertNotIn("linear-gradient", partial_legend)
+        self.assertIn("#f97316", partial_legend)
+        self.assertIn("var(--fb-info)", rule(".cockpit-v3 #s03 .fab-skyline-item.is-late"))
+        self.assertIn("var(--fb-success)", rule(".cockpit-v3 #s03 .fab-skyline-item.is-on-time"))
         self.assertIn("grid-column: 1", labels)
         self.assertIn("grid-row: 2", labels)
         self.assertIn("grid-column: 2", viewport)
@@ -255,98 +255,63 @@ class HomeSectionLayoutTests(TestCase):
         self.assertIn("Daily releases", html)
         self.assertIn("Data date · 02 Sep 26", html)
         self.assertIn("Source · Runddown!T1:X75 · reconciled schedule · snapshot 02 Sep 26", html)
-        self.assertIn("Fabrication skyline", html)
-        self.assertIn("Forecast follows baseline dates; Actual follows its own lookahead dates", html)
-        self.assertIn("607 spools · 48 performed / 559 remaining", html)
-        self.assertIn("<span>Forecast</span><span></span><span>Actual / lookahead</span>", html)
-        self.assertIn("Forecast", html)
-        self.assertIn("On plan", html)
-        self.assertIn("Delayed", html)
-        self.assertIn("Partial scale", html)
-        self.assertIn("Planned", html)
-        self.assertIn("Cutoff", html)
+        skyline = response.context["skyline"]
+        self.assertEqual(skyline["kpis"]["scope_spools"], 607)
+        self.assertEqual(skyline["kpis"]["performed_spools"], 48)
+        self.assertEqual(skyline["kpis"]["remaining_spools"], 559)
+        self.assertEqual(skyline["source"]["forecast_scope"], "Planilha1!A1:E176")
+        self.assertEqual(skyline["source"]["as_of_date"], "2026-09-03")
+        schedules = response.context["skyline_schedules"]
+        self.assertEqual(set(schedules), {"ros", "aveon", "installation"})
+        self.assertEqual(schedules["ros"]["kpis"], skyline["kpis"])
+        self.assertEqual(schedules["ros"]["source"], skyline["source"])
+        self.assertTrue(schedules["installation"]["source"]["is_sample"])
+        self.assertEqual(schedules["installation"]["source"]["discipline"], "piping")
+
+        modes = response.context["rundown_modes"]
+        self.assertEqual(set(modes), {"fabrication", "installation"})
+        self.assertEqual(set(modes["fabrication"]["disciplines"]), {"piping", "electrical", "structural"})
+        piping = modes["fabrication"]["disciplines"]["piping"]
+        self.assertEqual(piping["kpis"], response.context["rundown"]["kpis"])
+        self.assertEqual(piping["charts"], response.context["rundown"]["charts"])
+        self.assertFalse(piping["source"]["is_sample"])
+        self.assertTrue(modes["installation"]["disciplines"]["piping"]["source"]["is_sample"])
+
+        for element_id in (
+            "fabRundownModes", "fabRundownDiscipline", "fabRundownSample",
+            "fabRundownEmpty", "fabSkylineSchedules", "fabSkylineTitle",
+            "fabSkylineSample", "fabSkylineCutoffDate", "fabSkylineViewToggle",
+            "fabSkylineForecastBand", "fabSkylineActualBand", "fabSkylineBoxDetail",
+        ):
+            self.assertTrue(f'id="{element_id}"' in html, f"Missing delivery control: {element_id}")
+        buttons = re.findall(
+            r'<button\b([^>]*\bdata-skyline-schedule="[^"]+"[^>]*)>(.*?)</button>',
+            html, re.DOTALL,
+        )
+        self.assertEqual(len(buttons), 3)
+        for (attributes, label), key, title in zip(
+            buttons, ("aveon", "ros", "installation"), ("Fabrication", "Wooden Box", "Installation")
+        ):
+            self.assertIn('data-skyline-schedule="' + key + '"', attributes)
+            self.assertIn('aria-pressed="' + ("true" if key == "ros" else "false") + '"', attributes)
+            self.assertEqual(label.strip(), title)
+            self.assertLess(html.index('data-skyline-schedule="' + key + '"'), html.index('id="fabSkylineTitle"'))
+        for text in (
+            "Wooden Box skyline", "ROS baseline forecast and 60-day lookahead dates",
+            "48 performed · 559 remaining", "On plan", "Delayed", "In progress / Partial",
+            "shared by both scenarios", "Long line codes are shortened with an ellipsis",
+            "Temporary completion proxy",
+        ):
+            self.assertTrue(text in html, f"Missing delivery summary: {text}")
+        self.assertNotIn("Runddown!F5:G180", html)
         self.assertLess(html.index('class="fab-skyline-plot"'), html.index('class="fab-skyline-legend"'))
         self.assertLess(html.index('class="fab-skyline-legend"'), html.index('id="fabSkylinePlot"'))
-        self.assertIn("shared by both scenarios", html)
-        self.assertIn("Long line codes are shortened with an ellipsis", html)
-        self.assertNotIn("scroll horizontally to inspect all weeks", html)
-        self.assertIn("Planilha1!A1:E176 · baseline and lookahead schedule periods", html)
-        self.assertNotIn("Runddown!F5:G180", html)
-        self.assertIn("Temporary completion proxy", html)
-        for label in (
-            "Lookahead releases",
-            "Baseline releases",
-            "Lookahead rundown",
-            "Baseline rundown",
-        ):
-            self.assertIn(label, html)
-        self.assertIn('id: "fabRundownDataDate"', html)
-        self.assertIn('legend: { display: false }', html)
-        self.assertIn('text: "REMAINING SPOOLS"', html)
-        self.assertIn('text: "DAILY RELEASES · SPOOLS"', html)
-        self.assertIn('return "Remaining gap: "', html)
-        self.assertIn('offset: true', html)
-        self.assertIn('stepSize: 100', html)
-        self.assertIn('stepSize: 10', html)
-        self.assertIn('(prefers-reduced-motion: reduce)', html)
-        self.assertIn("function tickLimitFor(width)", html)
-        self.assertIn("onResize: function (chart, size)", html)
-        self.assertIn('metricKey: "lookaheadRemaining"', html)
-        self.assertIn('metricKey: "baselineRemaining"', html)
-        self.assertIn('showRundownError("Rundown chart could not be loaded.")', html)
-        self.assertIn('showRundownError("Rundown chart could not be rendered.")', html)
-        self.assertIn('id="fabRundownEmpty" role="status"', html)
-        self.assertNotIn("REMAINING ISO LINES", html)
-        self.assertNotIn("DAILY ISO LINES", html)
         self.assertLess(html.index('id="fabBody"'), html.index('id="fabRundownChart"'))
+        self.assertLess(html.index('id="fabRundownDiscipline"'), html.index('id="fabRundownChart"'))
         self.assertLess(html.index('id="fabRundownChart"'), html.index('id="fabSkylinePlot"'))
-        self.assertLess(html.index('id="fabRundownChart"'), html.index('id="s05"'))
-        self.assertIn("fabSkylineInit", html)
-        self.assertIn("function hasSkylineData(dateBucket)", html)
-        self.assertIn("data.dates.filter(hasSkylineData)", html)
-        self.assertIn("Number(dateBucket.forecast_total || 0) > 0", html)
-        self.assertIn("Number(dateBucket.lookahead_total || 0) > 0", html)
-        self.assertNotIn('column.classList.add("has-gap-before")', html)
-        self.assertNotIn("column.dataset.omittedWeeks", html)
-        self.assertNotIn('gapMarker.className = "fab-skyline-gap-marker"', html)
-        self.assertNotIn("function statusCell", html)
-        self.assertIn("function segmentDate(segment)", html)
-        self.assertIn("function progressAccent(value)", html)
-        self.assertIn("function orderedSegments(entries, scenarioKey)", html)
-        self.assertNotIn("function groupedSegments(entries, scenarioKey)", html)
-        self.assertNotIn("function dateGroupNode(group, scenarioKey)", html)
-        self.assertIn("function stackRows(entryCount)", html)
-        self.assertNotIn("function dateColumnWeight", html)
-        self.assertNotIn("function stackLayout(entryCount)", html)
-        self.assertNotIn("maxDateColumns", html)
-        self.assertNotIn("targetRowsPerColumn", html)
-        self.assertNotIn("var maxStackRows", html)
-        self.assertIn('quantity.textContent = Number(segment.spools || 0).toLocaleString("en-US")', html)
-        self.assertNotIn("quantity.textContent = spoolLabel(segment.spools)", html)
-        self.assertNotIn('totalNode.appendChild(document.createTextNode(" spools"))', html)
-        self.assertIn('totalUnit.className = "fab-skyline-total-unit"', html)
-        self.assertIn('totalUnit.textContent = total === 1 ? "spool" : "spools"', html)
-        self.assertIn('"Forecast period total: " + spoolLabel(total)', html)
-        self.assertIn("totalNode.hidden = true", html)
-        self.assertIn("function loadClass(value)", html)
-        self.assertIn("function statusClassName(statusKey)", html)
-        self.assertIn('return "is-load-high"', html)
-        self.assertIn("var linePitch = 16", html)
-        self.assertIn('column.className = "fab-skyline-date-column"', html)
-        self.assertIn('time.textContent = shortDate.format(dateObject(dateBucket.date))', html)
-        self.assertNotIn('time.textContent = "W/E "', html)
-        self.assertIn('modalDateHeading.textContent = scenarioKey === "forecast" ? "Baseline date" : "Lookahead date(s)"', html)
-        self.assertIn("var lookaheadHeight = Math.max(76", html)
-        self.assertIn('matrix.style.setProperty("--fab-skyline-date-count", String(dates.length))', html)
-        self.assertNotIn("--fab-skyline-week-count", html)
-        self.assertNotIn("weekLanes", html)
-        self.assertNotIn("column.style.gridColumn", html)
-        self.assertIn("asOfTimestamp <= dateTimestamp", html)
-        self.assertIn("--fab-skyline-forecast-height", html)
-        self.assertIn("--fab-skyline-lookahead-height", html)
-        self.assertNotIn("--fab-skyline-actual-height", html)
-        self.assertNotIn("function visibleSegments", html)
-        self.assertNotIn('line: "+" + hidden.length + " lines"', html)
+        self.assertLess(html.index('id="fabSkylinePlot"'), html.index('id="s05"'))
+        # Source switching, chart rendering, units and unavailable states are
+        # exercised by the Node controller tests, not JavaScript string matches.
 
     def test_fabrication_detail_endpoint_returns_json(self):
         """O subnivel do desenho e servido pelo endpoint que le o banco DATAFY."""

@@ -18,7 +18,7 @@ from typing import Any
 from django.utils import timezone
 
 from . import real_sources
-from .rundown_source import _empty_payload
+from .rundown_source import _empty_payload, fabrication_rundown
 
 logger = logging.getLogger(__name__)
 
@@ -197,3 +197,150 @@ def rundown_disciplines_safe(piping_payload: dict) -> dict[str, dict]:
         structural = structural_rundown([])
         structural["error"] = "The structural fabrication source could not be refreshed."
         return {"piping": _piping_payload(piping_payload), "structural": structural}
+
+
+_DISCIPLINE_LABELS = {"piping": "Piping", "electrical": "Electrical", "structural": "Structural"}
+# Fixed examples remain identical across refreshes and do not inherit dates,
+# quantities, or current progress from any operational source.
+_INSTALLATION_SAMPLE_START = date(2026, 9, 1)
+_INSTALLATION_SAMPLE_AS_OF = date(2026, 9, 15)
+# Daily completions build up toward the middle of each example, then taper.
+# Enumerate retains the existing (day offset, quantity) fixture contract.
+_INSTALLATION_SAMPLES = {
+    "piping": {
+        "unit": "spools",
+        "baseline": tuple(enumerate((
+            1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 6, 6,
+            7, 7, 7, 8, 8, 9, 9, 9, 9, 7, 7, 6,
+            6, 6, 5, 5, 4, 4, 3, 3, 2, 2, 1, 1,
+        ))),
+        "lookahead": tuple(enumerate((
+            1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5,
+            6, 6, 7, 7, 7, 7, 8, 8, 8, 7, 6, 6, 6, 5,
+            5, 5, 5, 4, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1,
+        ))),
+    },
+    "electrical": {
+        "unit": "packages",
+        "baseline": tuple(enumerate((
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2,
+            2, 2, 2, 2, 2, 2, 3, 2, 2, 2, 2,
+            2, 2, 1, 1, 1, 1, 1, 1, 1, 1,
+        ))),
+        "lookahead": tuple(enumerate((
+            1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2,
+            2, 2, 2, 2, 2, 3, 2, 2, 2, 2, 1, 2,
+            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1,
+        ))),
+    },
+    "structural": {
+        "unit": "packages",
+        "baseline": tuple(enumerate((
+            0, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 2, 2, 1, 2, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1,
+        ))),
+        "lookahead": tuple(enumerate((
+            1, 1, 1, 1, 1, 1, 2, 2,
+            2, 2, 2, 2, 2, 2, 2, 1,
+            1, 1, 1, 1, 1, 1, 1,
+        ))),
+    },
+}
+
+
+def _with_mode(payload: dict, mode: str, *, sample: bool = False) -> dict:
+    result = deepcopy(payload)
+    result.setdefault("source", {}).update({
+        "mode": mode, "mode_label": mode.title(),
+        "data_kind": "sample" if sample else "real", "is_sample": sample,
+    })
+    return result
+
+
+def _electrical_fabrication_unavailable() -> dict:
+    """The current DATAFY importer has no electrical fabrication discipline.
+
+    Electrical drawings/material rows do not establish a dated fabrication
+    scope. Do not borrow the structural schedule or fabricate a zero curve.
+    """
+    error = "No electrical fabrication schedule is available in DATAFY."
+    payload = _empty_payload(error)
+    payload["source"] = {
+        "discipline": "electrical", "discipline_label": "Electrical",
+        "title": "Electrical fabrication rundown", "unit": "packages", "unit_label": "packages",
+        "source_label": "DATAFY · electrical fabrication schedule unavailable",
+        "baseline_label": "Imported plan", "lookahead_label": "Lookahead", "has_lookahead": False,
+        "workbook": "", "snapshot_date": "", "snapshot_label": "—",
+        "notice": error,
+    }
+    payload["kpis"].update(scope_total=None, finish_variance_days=None)
+    return payload
+
+
+def installation_rundown_sample(discipline: str) -> dict:
+    """Return a clearly labelled, deterministic example for one discipline."""
+    if discipline not in _INSTALLATION_SAMPLES:
+        raise ValueError("Unsupported installation rundown discipline")
+    fixture = _INSTALLATION_SAMPLES[discipline]
+    label = _DISCIPLINE_LABELS[discipline]
+    scope_total = sum(quantity for _offset, quantity in fixture["baseline"])
+    last_offset = max(offset for series in ("baseline", "lookahead") for offset, _qty in fixture[series])
+    charts = {
+        "dates": [(_INSTALLATION_SAMPLE_START + timedelta(days=offset)).isoformat()
+                  for offset in range(last_offset + 2)],
+    }
+    for series in ("baseline", "lookahead"):
+        releases = dict(fixture[series])
+        final_release = max(releases)
+        remaining = scope_total
+        daily, rundown = [], []
+        for offset in range(last_offset + 2):
+            if offset > final_release + 1:
+                daily.append(None)
+                rundown.append(None)
+                continue
+            daily.append(releases.get(offset, 0))
+            rundown.append(remaining)
+            remaining -= releases.get(offset, 0)
+        charts[f"{series}_total"] = daily
+        charts[f"{series}_rundown"] = rundown
+    source = {
+        "discipline": discipline, "discipline_label": label,
+        "title": f"{label} installation rundown", "unit": fixture["unit"], "unit_label": fixture["unit"],
+        "source_label": "Sample data", "workbook": "", "sample_version": 2,
+        "snapshot_date": _INSTALLATION_SAMPLE_AS_OF.isoformat(),
+        "as_of_date": _INSTALLATION_SAMPLE_AS_OF.isoformat(),
+        "baseline_label": "Sample baseline", "lookahead_label": "Sample lookahead", "has_lookahead": True,
+        "notice": "Sample data for the installation view. These figures are simulated and do not represent reported offshore progress.",
+        "scope_rule": f"Simulated {fixture['unit']} for the {label.lower()} installation example.",
+        "date_rule": "Fixed sample installation dates; no operational dates are used.",
+        "balance_rule": "Remaining scope is measured at the start of each day. A scheduled completion is deducted from the following day's balance.",
+    }
+    # Reuse the normal parser to enforce equal scopes, complete series,
+    # start-of-day balances and finish-date KPI consistency in the examples.
+    payload = fabrication_rundown(snapshot={"schema": 1, "source": source, **charts})
+    payload["kpis"].update(scheduled_scope=scope_total, unscheduled_scope=0)
+    return _with_mode(payload, "installation", sample=True)
+
+
+def rundown_modes_safe(piping_payload: dict) -> dict[str, dict]:
+    """Build both mode choices without changing the legacy discipline API.
+
+    Fabrication preserves the accepted Piping ROS and live Structural plan.
+    An unavailable live source remains unavailable; installation examples
+    are separate and remain labelled Sample data even during source failures.
+    """
+    existing = rundown_disciplines_safe(piping_payload)
+    fabrication = {
+        "piping": _with_mode(existing["piping"], "fabrication"),
+        "electrical": _with_mode(_electrical_fabrication_unavailable(), "fabrication"),
+        "structural": _with_mode(existing["structural"], "fabrication"),
+    }
+    return {
+        "fabrication": {"label": "Fabrication", "disciplines": fabrication},
+        "installation": {
+            "label": "Installation",
+            "disciplines": {key: installation_rundown_sample(key) for key in _DISCIPLINE_LABELS},
+        },
+    }

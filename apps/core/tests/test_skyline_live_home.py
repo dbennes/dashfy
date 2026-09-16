@@ -1,6 +1,7 @@
 """The existing cockpit must carry live material evidence into its skyline."""
 import json
 import re
+from collections import Counter
 from contextlib import ExitStack
 from copy import deepcopy
 from datetime import date
@@ -9,7 +10,7 @@ from unittest.mock import patch
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from apps.accounts.models import User
-from apps.core import rundown_source, skyline_source
+from apps.core import rundown_source, skyline_installation_source, skyline_source
 from apps.core.views import home_view
 
 
@@ -18,7 +19,7 @@ class SkylineLiveHomeTests(SimpleTestCase):
     cutoff = date(2026, 9, 14)
 
     def setUp(self):
-        self.enterContext(patch(
+        self.ros_loader = self.enterContext(patch(
             "apps.core.views.ros_workbook.load_current_schedule",
             return_value={
                 "skyline": json.loads(skyline_source.SKYLINE_DATA_PATH.read_text(encoding="utf-8")),
@@ -72,6 +73,7 @@ class SkylineLiveHomeTests(SimpleTestCase):
         response = home_view(self.request)
         self.assertEqual(response.status_code, 200)
         html = response.content.decode("utf-8")
+        self.rendered_html = html
         self.assertIn('id="s03"', html)
         self.assertIn('id="fabSkylinePlot"', html)
         payloads = {}
@@ -200,7 +202,7 @@ class SkylineLiveHomeTests(SimpleTestCase):
         self.assert_schedule_preserved(self.aveon_loader.call_args.args[0]["charts"])
         self.assert_schedule_preserved(payloads["fabSkylineData"])
         schedules = payloads["fabSkylineSchedules"]
-        self.assertEqual(set(schedules), {"ros", "aveon"})
+        self.assertEqual(set(schedules), {"ros", "aveon", "installation"})
         self.assertTrue(schedules["ros"]["available"])
         self.assertEqual(schedules["ros"]["kpis"], self.schedule["kpis"])
         actual_aveon = schedules["aveon"]
@@ -225,3 +227,74 @@ class SkylineLiveHomeTests(SimpleTestCase):
         self.assertFalse(schedules["aveon"]["available"])
         self.assertEqual(schedules["aveon"]["error"], "AVEON test source unavailable")
         self.assertEqual(schedules["aveon"]["charts"]["dates"], [])
+
+    @patch("apps.core.skyline_material_source.skyline_material_readiness", return_value={})
+    def test_installation_preserves_ros_line_scope_and_ships_three_top_mode_buttons(self, _live_readiness):
+        expected = skyline_installation_source.installation_skyline_sample(self.schedule)
+        with patch.object(
+            skyline_installation_source, "installation_skyline_sample",
+            wraps=skyline_installation_source.installation_skyline_sample,
+        ) as installation_loader:
+            payloads = self.rendered_payloads()
+        installation_loader.assert_called_once()
+        self.assert_schedule_preserved(installation_loader.call_args.args[0]["charts"])
+        sample = payloads["fabSkylineSchedules"]["installation"]
+
+        for key in ("available", "source", "kpis", "charts"):
+            self.assertEqual(sample[key], expected[key], key)
+        self.assertTrue(sample["source"]["is_sample"])
+        self.assertEqual(sample["source"]["discipline"], "piping")
+        self.assertEqual(sample["source"]["scope_kind"], "real")
+        self.assertEqual(sample["source"]["scope_source"], "ROS")
+        self.assertEqual(sample["source"]["scope_workbook"], self.schedule["source"]["workbook"])
+        self.assertEqual(sample["source"]["scope_snapshot_label"], self.schedule["source"]["snapshot_label"])
+        self.assertEqual(sample["charts"]["material_readiness"], {})
+        self.assert_schedule_preserved(payloads["fabSkylineData"])
+        scopes = []
+        for charts in (payloads["fabSkylineData"], sample["charts"]):
+            scope = Counter()
+            for bucket in charts["dates"]:
+                for segment in bucket["forecast"]:
+                    scope[segment["line"]] += segment["spools"]
+            scopes.append(scope)
+        self.assertEqual(scopes[1], scopes[0], "Installation must preserve each real ROS line and spool quantity")
+        self.assertEqual((len(scopes[1]), sum(scopes[1].values())), (166, 607))
+        self.assertEqual((sample["kpis"]["line_count"], sample["kpis"]["scope_spools"]), (166, 607))
+        lower = [segment for bucket in sample["charts"]["dates"] for segment in bucket["lookahead"]]
+        self.assertTrue(lower)
+        self.assertTrue(all(segment["status"] in {"on_time", "late", "completed"} for segment in lower))
+        self.assertTrue(all(segment["date"] <= sample["source"]["as_of_date"] for segment in lower))
+        self.assertTrue(all(segment["spools"] == scopes[0][segment["line"]] for segment in lower))
+        self.assertFalse(any(segment.get("actual_date_confirmed") for segment in lower))
+
+        html = self.rendered_html
+        buttons = re.findall(r'<button\b([^>]*\bdata-skyline-schedule="[^"]+"[^>]*)>(.*?)</button>', html, re.DOTALL)
+        self.assertEqual(len(buttons), 3)
+        for (attributes, label), key, title in zip(buttons, ("aveon", "ros", "installation"), ("Fabrication", "Wooden Box", "Installation")):
+            self.assertIn('data-skyline-schedule="' + key + '"', attributes)
+            self.assertEqual(label.strip(), title)
+            self.assertIn('aria-pressed="' + ("true" if key == "ros" else "false") + '"', attributes)
+            self.assertLess(html.index('data-skyline-schedule="' + key + '"'), html.index('id="fabSkylinePlot"'))
+        skyline_card = re.search(r'<article\b[^>]*\bdata-fab-skyline\b[^>]*>(.*?)</article>', html, re.DOTALL)
+        self.assertIsNotNone(skyline_card)
+        self.assertNotRegex(skyline_card.group(1), r'<select\b')
+        self.assertRegex(skyline_card.group(1), r'id="fabSkylineSample"[^>]*\bhidden')
+
+    @patch("apps.core.skyline_material_source.skyline_material_readiness", return_value={})
+    def test_no_ros_scope_keeps_installation_unavailable_without_fabricating_lines(self, live_readiness):
+        self.ros_loader.return_value = None
+
+        payloads = self.rendered_payloads()
+
+        schedules = payloads["fabSkylineSchedules"]
+        self.assertFalse(schedules["ros"]["available"])
+        self.assertEqual(payloads["fabSkylineData"]["dates"], [])
+        installation = schedules["installation"]
+        self.assertFalse(installation["available"])
+        self.assertEqual(installation["charts"]["dates"], [])
+        self.assertEqual((installation["kpis"]["line_count"], installation["kpis"]["scope_spools"]), (0, 0))
+        self.assertIn("ROS", installation["error"])
+        self.assertIn('class="fab-skyline-viewport"', self.rendered_html)
+        self.assertIn('id="fabSkylinePlot"', self.rendered_html)
+        self.assertIn('data-skyline-schedule="installation"', self.rendered_html)
+        live_readiness.assert_not_called()
