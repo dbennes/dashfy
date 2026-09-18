@@ -10,3 +10,7 @@ https://leafletjs.com/download.html:
 - leaflet.css: `sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=`
 
 Tiles are requested separately by the browser; they are not bundled or prefetched.
+
+The matching `leaflet.js.map` is bundled from the same pinned 1.9.4
+distribution so Django/WhiteNoise can resolve the sourceMappingURL during
+production collectstatic.
