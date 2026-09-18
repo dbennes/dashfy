@@ -1,0 +1,189 @@
+<section class="section vt-section" id="vessel-tracking" data-vessel-tracking data-api-base="/vessels/api/"
+         data-vessel-model="{{ vessel_tracking_config.vessel_model_url|default:'' }}"
+         data-mini-tile="{{ vessel_tracking_config.tile_url|default:'' }}" aria-labelledby="vt-heading">
+  <header class="section-head vt-header">
+    <div class="vt-heading">
+      <span class="vt-kicker">MARINE OPERATIONS · AIS</span>
+      <h2 id="vt-heading"><i class="bi bi-compass" aria-hidden="true"></i> Vessel tracking</h2>
+      <p>Latest received positions and stored track history</p>
+    </div>
+    <div class="vt-header-controls">
+      <div class="vt-range-group" role="group" aria-label="Track history period">
+        <button type="button" class="vt-button" data-vt-range="all" aria-pressed="true">All history</button>
+        <button type="button" class="vt-button" data-vt-range="24h" aria-pressed="false">24h</button>
+        <button type="button" class="vt-button" data-vt-range="7d" aria-pressed="false">7d</button>
+        <button type="button" class="vt-button" data-vt-range="30d" aria-pressed="false">30d</button>
+        <button type="button" class="vt-button" data-vt-range="custom" aria-pressed="false">Custom</button>
+      </div>
+      <button type="button" class="vt-button" data-vt-export><i class="bi bi-filetype-csv" aria-hidden="true"></i> Export CSV</button>
+      <button type="button" class="vt-button" data-vt-import hidden><i class="bi bi-upload" aria-hidden="true"></i> Import positions</button>
+      <button type="button" class="vt-button vt-primary" data-vt-add hidden><i class="bi bi-plus-lg" aria-hidden="true"></i> Add vessel</button>
+    </div>
+  </header>
+  <form class="vt-custom-range" data-vt-custom hidden>
+    <label>From (UTC)<input type="datetime-local" name="start" required aria-label="Track start, UTC"></label>
+    <label>To (UTC)<input type="datetime-local" name="end" required aria-label="Track end, UTC"></label>
+    <button type="submit" class="vt-button vt-primary">Apply range</button>
+    <span class="vt-inline-error" data-vt-range-error role="alert"></span>
+  </form>
+  <div class="vt-collection" data-vt-collection role="status"><span class="vt-status-dot"></span><span data-vt-collection-text>Waiting to load AIS collection status…</span></div>
+  <div class="vt-alert" data-vt-error hidden role="alert"><span data-vt-error-text></span><button type="button" class="vt-button" data-vt-retry>Retry</button></div>
+  <div class="vt-workspace">
+    <div class="vt-fleet" aria-labelledby="vt-fleet-heading">
+      <div class="vt-panel-heading"><h3 id="vt-fleet-heading">Fleet</h3><span data-vt-fleet-count>—</span></div>
+      <label class="vt-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" data-vt-search placeholder="Find name or MMSI" aria-label="Find vessel by name or MMSI" autocomplete="off"></label>
+      <div class="vt-fleet-list" data-vt-fleet aria-label="Tracked vessels"><p class="vt-empty-copy">Loading vessels…</p></div>
+    </div>
+    <div class="vt-details" aria-labelledby="vt-detail-name">
+      <div class="vt-detail-heading"><div><span class="vt-kicker">SELECTED VESSEL</span><h3 id="vt-detail-name" data-vt-name>Select a vessel</h3></div><button class="vt-button" type="button" data-vt-edit hidden>Edit</button></div>
+      <div class="vt-identity"><span data-vt-identity>MMSI —</span><span class="vt-status" data-vt-status data-status="NO_RECENT_AIS">NO RECENT AIS</span></div>
+      <p class="vt-last-seen" data-vt-last-seen>Last AIS position: —</p>
+      <dl class="vt-detail-grid">
+        <div class="vt-wide"><dt>Journey · latest received position</dt><dd class="vt-journey-state" data-vt-detail="journey">—</dd></div>
+        <div class="vt-wide"><dt>Origin</dt><dd data-vt-detail="origin">—</dd></div>
+        <div class="vt-wide"><dt>Position · latitude, longitude</dt><dd data-vt-detail="position">—</dd></div>
+        <div><dt>Speed over ground</dt><dd data-vt-detail="sog">—</dd></div>
+        <div><dt>Course over ground</dt><dd data-vt-detail="cog">—</dd></div>
+        <div><dt>Heading</dt><dd data-vt-detail="heading">—</dd></div>
+        <div><dt>Draught</dt><dd data-vt-detail="draught">—</dd></div>
+        <div class="vt-wide"><dt>Navigational status</dt><dd data-vt-detail="navigation">—</dd></div>
+        <div class="vt-wide"><dt><span data-vt-destination-label>Destination</span> <span class="vt-declared" data-vt-destination-source hidden></span></dt><dd data-vt-detail="destination">—</dd></div>
+        <div class="vt-wide"><dt>ETA · AIS declared, year not provided</dt><dd data-vt-detail="eta">—</dd></div>
+        <div><dt>Vessel type</dt><dd data-vt-detail="type">—</dd></div>
+        <div><dt>IMO</dt><dd data-vt-detail="imo">—</dd></div>
+      </dl>
+      <p class="vt-data-note">Arrival is recorded inside the port radius; a newer position outside records departure. Journey status follows the last received position. On a regular route, the next port switches after arrival. ETA is shown only for a reported destination.</p>
+    </div>
+    <div class="vt-map-panel">
+      <div class="vt-map-toolbar">
+        <span class="vt-track-key"><span aria-hidden="true"></span> REAL TRACK <small>Stored AIS positions</small></span>
+        <div class="vt-map-actions"><label class="vt-follow"><input type="checkbox" data-vt-follow checked> Follow selected</label><label class="vt-follow"><input type="checkbox" data-vt-scroll checked> Zoom with mouse wheel</label><button type="button" class="vt-button" data-vt-zoom-vessel disabled><i class="bi bi-zoom-in" aria-hidden="true"></i> Zoom to vessel</button><button type="button" class="vt-button" data-vt-containers-open><i class="bi bi-box-seam" aria-hidden="true"></i> Containers</button><button type="button" class="vt-button" data-vt-fit disabled><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Fit map</button><button type="button" class="vt-button" data-vt-export-track disabled><i class="bi bi-download" aria-hidden="true"></i> Export track</button></div>
+      </div>
+      {% comment %}
+        Maps the basemap's two neutral greys onto the chart palette exactly:
+        sea rgb(35,34,39) -> #191f24 and land rgb(71,71,73) -> #32414e, measured
+        from the provider's tiles at the zooms this map actually uses. sRGB
+        interpolation is required, or the browser applies the curve in linear
+        light and the result drifts.
+      {% endcomment %}
+      <svg class="vt-filter-defs" width="0" height="0" aria-hidden="true" focusable="false">
+        <filter id="vtSeaLand" color-interpolation-filters="sRGB">
+          <feComponentTransfer>
+            <feFuncR type="linear" slope="0.69444" intercept="0.00664"/>
+            <feFuncG type="linear" slope="0.91892" intercept="-0.00095"/>
+            <feFuncB type="linear" slope="1.23529" intercept="-0.04575"/>
+          </feComponentTransfer>
+        </filter>
+      </svg>
+      <div class="vt-map-frame">
+        <div class="vt-map" data-vt-map aria-label="Vessel positions, port arrival areas and recorded AIS track"></div>
+        <div class="vt-map-empty" data-vt-map-empty><i class="bi bi-compass" aria-hidden="true"></i><strong data-vt-map-empty-title>No AIS positions yet</strong><span data-vt-map-empty-text>Received positions will appear on the map.</span></div>
+        <div class="vt-containers" data-vt-containers hidden role="dialog" aria-label="Trackfy containers and open shipments">
+          <div class="vt-containers-head">
+            <div><span class="vt-kicker">TRACKFY · CONTAINERS</span><strong data-vt-containers-summary>Loading containers…</strong></div>
+            <button type="button" class="vt-button vt-close" data-vt-containers-close aria-label="Close containers"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+          </div>
+          <label class="vt-search vt-containers-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" data-vt-containers-search placeholder="Find container or report" aria-label="Find container or shipment report" autocomplete="off"></label>
+          <div class="vt-containers-list" data-vt-containers-list></div>
+        </div>
+        <div class="vt-tile-error" data-vt-tile-error hidden role="status">Map tiles could not be loaded. Received positions and vessel details remain available.</div>
+      </div>
+      <div class="vt-endpoints" data-vt-endpoints hidden></div>
+      <div class="vt-map-footer"><span data-vt-track-meta>Choose a vessel to view its stored history.</span><span data-vt-refreshed>Updates every 20s while visible</span></div>
+    </div>
+  </div>
+  <div class="vh-overlay" data-vh-overlay hidden role="dialog" aria-modal="true" aria-labelledby="vh-title">
+    <div class="vh-shell" data-vh-shell>
+      <header class="vh-head">
+        <nav class="vh-crumb" aria-label="Breadcrumb"><span>AIS VESSELS</span><span class="vh-crumb-on">SELECTED VESSEL</span></nav>
+        <h2 id="vh-title" data-vh-name>Vessel</h2>
+        <span class="vh-chip vh-mmsi" data-vh-subtitle>MMSI —</span>
+        <span class="vh-status" data-vh-status data-status="NO_RECENT_AIS">NO RECENT AIS</span>
+        <div class="vh-head-actions">
+          <button type="button" class="vh-btn" data-vh-locate><i class="bi bi-zoom-in" aria-hidden="true"></i> Zoom to vessel</button>
+          <button type="button" class="vh-btn" data-vh-manifest disabled><i class="bi bi-download" aria-hidden="true"></i> Export manifest</button>
+          <button type="button" class="vh-close" data-vh-close aria-label="Close vessel dossier"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+        </div>
+      </header>
+      <div class="vh-grid">
+        <section class="vh-stage" aria-label="Vessel hologram">
+          <div class="vh-stage-top">
+            <span class="vh-stage-label"><i class="bi bi-box" aria-hidden="true"></i> 3D MODEL</span>
+            <span class="vh-stage-hint">DRAG TO ORBIT · WHEEL TO ZOOM</span>
+          </div>
+          <div class="vh-stage-canvas" data-vh-stage></div>
+          <div class="vh-stage-grid" aria-hidden="true"></div>
+          <div class="vh-scan" aria-hidden="true"></div>
+          <div class="vh-stage-note" data-vh-stage-note>Initialising projection…</div>
+          <div class="vh-specs" data-vh-specs></div>
+        </section>
+        <section class="vh-card vh-facts" aria-label="Vessel data">
+          <h3 class="vh-card-title">Vessel data</h3>
+          <dl class="vh-facts-grid" data-vh-facts></dl>
+          <div class="vh-mini" data-vh-mini-wrap>
+            <span class="vh-mini-label">LAST KNOWN POSITION</span>
+            <div class="vh-mini-map" data-vh-mini></div>
+          </div>
+        </section>
+        <section class="vh-card vh-boxes" aria-label="Containers awaiting receipt">
+          <div class="vh-boxes-head">
+            <h3 class="vh-card-title">Containers<br><span class="vh-card-sub">awaiting receipt</span></h3>
+            <span class="vh-boxes-total" data-vh-boxes-count>—</span>
+            <ul class="vh-legend">
+              <li><i data-state="sent"></i> In transit</li>
+              <li><i data-state="draft"></i> Draft</li>
+              <li><i data-state="late"></i> Overdue</li>
+            </ul>
+          </div>
+          <div class="vh-boxes-rail" data-vh-boxes></div>
+        </section>
+        <section class="vh-card vh-items" aria-label="Container contents">
+          <div class="vh-items-head" data-vh-items-head hidden>
+            <span class="vh-dot" data-vh-items-dot></span>
+            <strong data-vh-items-title>—</strong>
+            <span class="vh-chip" data-vh-items-tag></span>
+            <span class="vh-items-sub" data-vh-items-sub></span>
+            <div class="vh-progress" title="Items already verified on receipt">
+              <span class="vh-progress-label">CHECKED</span>
+              <span class="vh-progress-track"><span class="vh-progress-fill" data-vh-progress></span></span>
+              <span class="vh-progress-num" data-vh-progress-num>—</span>
+            </div>
+          </div>
+          <div class="vh-items-body" data-vh-items>
+            <p class="vh-hint">Pick a container above to reveal what is inside it.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+  <noscript><p class="vt-alert">Enable JavaScript to load vessel positions and the map.</p></noscript>
+  <dialog class="vt-dialog" data-vt-dialog aria-labelledby="vt-dialog-title">
+    <form data-vt-form>
+      {% csrf_token %}
+      <div class="vt-dialog-heading"><h3 id="vt-dialog-title">Add vessel</h3><button type="button" class="vt-button vt-close" data-vt-cancel aria-label="Close vessel form"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
+      <p class="vt-form-help">Tracking starts when the collector receives this MMSI. Stopping tracking retains the recorded history.</p>
+      <div class="vt-form-grid">
+        <label class="vt-wide"><span>Vessel name</span><input name="name" type="text" maxlength="120" required autocomplete="off"></label>
+        <label><span>MMSI</span><input name="mmsi" type="text" inputmode="numeric" pattern="[0-9]{9}" minlength="9" maxlength="9" required aria-describedby="vt-mmsi-help"><small id="vt-mmsi-help">9 digits; fixed after registration</small></label>
+        <label><span>IMO <small>Optional</small></span><input name="imo" type="text" inputmode="numeric" pattern="[0-9]{7}" maxlength="7"></label>
+        <label class="vt-wide"><span>Vessel type <small>Optional</small></span><input name="vessel_type" type="text" maxlength="64" placeholder="e.g. Offshore supply vessel"></label>
+      </div>
+      <p class="vt-form-error" data-vt-form-error role="alert" hidden></p>
+      <div class="vt-dialog-footer"><button type="button" class="vt-button vt-danger" data-vt-stop hidden>Stop tracking</button><span class="vt-dialog-spacer"></span><button type="button" class="vt-button" data-vt-cancel>Cancel</button><button type="submit" class="vt-button vt-primary" data-vt-save>Start tracking</button></div>
+    </form>
+  </dialog>
+  <dialog class="vt-dialog vt-dialog-wide" data-vt-import-dialog aria-labelledby="vt-import-title">
+    <form data-vt-import-form>
+      {% csrf_token %}
+      <div class="vt-dialog-heading"><h3 id="vt-import-title">Import positions</h3><button type="button" class="vt-button vt-close" data-vt-import-cancel aria-label="Close import form"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
+      <p class="vt-form-help">Upload a provider export, or the fleet template downloaded with Export CSV. Rows are matched to tracked vessels by MMSI; a report never registers a new vessel.</p>
+      <div class="vt-form-grid">
+        <label class="vt-wide"><span>Report file <small>CSV or TSV, up to 32 MB</small></span><input name="file" type="file" accept=".csv,.tsv,.txt,text/csv" data-vt-import-file required></label>
+        <label class="vt-wide vt-check"><input name="dry_run" type="checkbox" data-vt-import-dry checked><span>Check the file first without saving</span></label>
+      </div>
+      <p class="vt-form-error" data-vt-import-error role="alert" hidden></p>
+      <div class="vt-import-result" data-vt-import-result role="status" hidden></div>
+      <div class="vt-dialog-footer"><span class="vt-dialog-spacer"></span><button type="button" class="vt-button" data-vt-import-cancel>Cancel</button><button type="submit" class="vt-button vt-primary" data-vt-import-submit>Import positions</button></div>
+    </form>
+  </dialog>
+</section>

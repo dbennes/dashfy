@@ -3043,19 +3043,17 @@
         materials.forEach(material => material?.dispose?.());
       });
     };
+    // One pending frame at most. OrbitControls change events keep damping alive
+    // only while the camera is actually moving; an idle model does no GPU work.
     const startRenderLoop = () => {
-      if (state.renderFrame || !state.renderer || !state.scene || !state.camera) return;
-      const animate = () => {
-        if (!state.viewerVisible || !state.renderer || !state.scene || !state.camera) {
-          state.renderFrame = null;
-          return;
-        }
+      if (state.renderFrame || !state.viewerVisible || document.hidden || !state.renderer || !state.scene || !state.camera) return;
+      state.renderFrame = requestAnimationFrame(() => {
+        state.renderFrame = null;
+        if (!state.viewerVisible || document.hidden || !state.renderer) return;
         state.controls?.update();
         state.renderer.render(state.scene, state.camera);
         updateDatafyCallouts();
-        state.renderFrame = requestAnimationFrame(animate);
-      };
-      state.renderFrame = requestAnimationFrame(animate);
+      });
     };
     const stopRenderLoop = () => {
       if (state.renderFrame) {
@@ -3063,11 +3061,7 @@
         state.renderFrame = null;
       }
     };
-    const renderOnce = () => {
-      if (!state.renderer || !state.scene || !state.camera) return;
-      state.renderer.render(state.scene, state.camera);
-      updateDatafyCallouts();
-    };
+    const renderOnce = () => startRenderLoop();
     const requestIdle = callback => {
       if ('requestIdleCallback' in window) {
         window.requestIdleCallback(callback, { timeout: 2200 });
@@ -3083,7 +3077,7 @@
       setStatus('Fast preview ready. HQ will refine when the browser is idle.');
       requestIdle(() => {
         if (!state.pendingDetail || state.currentModelMode === 'detail') return;
-        if (!state.viewerVisible) {
+        if (!state.viewerVisible || document.hidden) {
           setLoadButton(false, '<i class="bi bi-layers"></i> Load HQ');
           setStatus('Fast preview ready. HQ paused until this section returns to the screen.');
           return;
@@ -3102,7 +3096,7 @@
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x0f172a);
       const camera = new THREE.PerspectiveCamera(45, Math.max(viewer.clientWidth, 1) / Math.max(viewer.clientHeight, 1), 0.1, 100000);
-      const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+      const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'low-power' });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
       renderer.setSize(viewer.clientWidth, viewer.clientHeight);
       viewer.innerHTML = '';
@@ -3114,6 +3108,7 @@
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
+      controls.addEventListener('change', renderOnce);
       controls.screenSpacePanning = true;
       const loader = new GLTFLoader();
       loader.setMeshoptDecoder(MeshoptDecoder);
@@ -3286,6 +3281,7 @@
     renderModelTree();
     setActiveTab(defaultTab);
     const activateViewer = () => {
+      if (document.hidden) return;
       state.viewerVisible = true;
       if (state.modelLoaded) startRenderLoop();
       if (state.pendingDetail && state.currentModelMode === 'overview' && !state.modelLoading) {
@@ -3299,17 +3295,34 @@
       state.viewerVisible = false;
       stopRenderLoop();
     };
+    let viewerIntersecting = false;
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && viewerIntersecting) activateViewer();
+      else deactivateViewer();
+    });
+    window.addEventListener('pagehide', deactivateViewer);
+    window.addEventListener('pageshow', () => {
+      if (viewerIntersecting) activateViewer();
+    });
     if ('IntersectionObserver' in window) {
       const observer = new IntersectionObserver(entries => {
         entries.forEach(entry => {
+          viewerIntersecting = entry.isIntersecting;
           if (entry.isIntersecting) activateViewer();
           else deactivateViewer();
         });
-      }, { rootMargin: '900px 0px 900px 0px', threshold: 0.01 });
-      observer.observe(root);
+      }, { rootMargin: '0px', threshold: 0.01 });
+      observer.observe(viewer);
     } else if (root.dataset.modelAutoload === 'true') {
-      state.viewerVisible = true;
-      setTimeout(() => loadModel('overview'), 250);
+      const checkViewer = () => {
+        const rect = viewer.getBoundingClientRect();
+        viewerIntersecting = rect.bottom > 0 && rect.top < window.innerHeight && rect.width > 0;
+        if (viewerIntersecting) activateViewer();
+        else deactivateViewer();
+      };
+      window.addEventListener('scroll', checkViewer, { passive: true });
+      window.addEventListener('resize', checkViewer);
+      checkViewer();
     }
   };
 

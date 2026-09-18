@@ -1,0 +1,22 @@
+[Unit]
+Description=DASHFY AIS vessel position collector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/dashfy
+EnvironmentFile=/opt/dashfy/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/dashfy/.venv/bin/python manage.py listen_ais
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

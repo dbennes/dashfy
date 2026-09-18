@@ -9,6 +9,9 @@
 {% block extra_css %}
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
 <link href="{% static 'css/fabrication-s03.css' %}?v=20260916-s03-status-v13" rel="stylesheet">
+<link href="{% static 'vendor/leaflet/leaflet.css' %}" rel="stylesheet">
+<link href="{% static 'css/vessel-tracking.css' %}?v=20260918-ais-map-v17" rel="stylesheet">
+<link href="{% static 'css/vessel-hologram.css' %}?v=20260918-dossier-v9" rel="stylesheet">
 {% endblock %}
 
 {% block tickers %}
@@ -142,6 +145,9 @@
     <span class="chip amber" title="Open shipments (draft + sent) in Trackfy">{{ tracking.kpis.shipments_open|default:0 }}</span>
   </a>
   {% endif %}
+  <a class="sn-tab" data-target="vessel-tracking" href="#vessel-tracking">
+    <span class="num">AIS</span><span>Vessels</span>
+  </a>
   <a class="sn-tab" data-target="s05" href="#s05">
     <span class="num">S05</span><span>3D Model</span>
     <span class="chip">GLB local</span>
@@ -1719,6 +1725,8 @@
 </section>
 {% endif %}
 
+{% include "vessels/_dashboard.html" %}
+{{ vessel_tracking_config|json_script:"vesselTrackingConfig" }}
 
 {# ===== S05 — 3D MODEL ===== #}
 <section id="s05" class="section" style="border-bottom: none;">
@@ -1738,7 +1746,7 @@
       <div class="rhs"><span class="pill">Progressive LOD</span></div>
     </div>
     <div class="card-body">
-      <section class="dx-project-consult" data-project-3d data-project-default-tab="model" data-model-autoload="true" data-model-auto-refine="true" data-model-url="{% static 'models/bonga-2-overview.glb' %}" data-model-detail-url="{% static 'models/bonga-2-refined-hq.glb' %}" data-model-hierarchy-url="{% static 'models/bonga-2-hierarchy.json' %}" data-model-selection-url="{% url 'core:model_node_glb' 0 %}" data-material-items-url="{% url 'core:material_items_3d' %}">
+      <section class="dx-project-consult" data-project-3d data-project-default-tab="model" data-model-autoload="true" data-model-auto-refine="false" data-model-url="{% static 'models/bonga-2-overview.glb' %}" data-model-detail-url="{% static 'models/bonga-2-refined-hq.glb' %}" data-model-hierarchy-url="{% static 'models/bonga-2-hierarchy.json' %}" data-model-selection-url="{% url 'core:model_node_glb' 0 %}" data-material-items-url="{% url 'core:material_items_3d' %}">
         <div class="dx-project-consult-shell">
           <aside class="dx-project-tree-panel">
             <div class="dx-project-search">
@@ -1802,6 +1810,9 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'vendor/leaflet/leaflet.js' %}" defer></script>
+<script src="{% static 'js/vessel-tracking.js' %}?v=20260918-ais-map-v17" defer></script>
+<script type="module" src="{% static 'js/vessel-hologram.js' %}?v=20260918-dossier-v11"></script>
 {{ block.super }}
 <script>
   // ===== Industrial SVG charts (curve / area-perf / monthly load) =====
@@ -6204,6 +6215,7 @@
     var navMetaDefault = navMeta ? navMeta.innerHTML : '';
     var navMeta3d = '<span>Model · <b>Bonga North Project</b></span><span>·</span><span><b>Local GLB</b> · 3D hierarchy</span>';
     var navMetaFab = '<span>Source · <b>P6 schedule</b></span><span>·</span><span><b>SPDM</b> · fabrication packages</span>';
+    var navMetaVessels = '<span>Source · <b>AISStream</b></span><span>·</span><span><b>AIS</b> · received positions and stored history</span>';
     {% if show_tracking %}
     var navMetaTrk = '<span>Source · <b>Trackfy</b></span><span>·</span><span><b>Taskfy</b> · container shipments</span>';
     {% endif %}
@@ -6211,6 +6223,7 @@
       tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.target === id); });
       if (!navMeta) return;
       if (id === 's05') navMeta.innerHTML = navMeta3d;
+      else if (id === 'vessel-tracking') navMeta.innerHTML = navMetaVessels;
       {% if show_tracking %}
       else if (id === 's04') navMeta.innerHTML = navMetaTrk;
       {% endif %}
@@ -6222,12 +6235,19 @@
         e.preventDefault();
         var el = document.getElementById(t.dataset.target);
         if (!el) return;
+        if (t.dataset.target === 'vessel-tracking') {
+          // Let the browser resolve skipped content-visibility sections before
+          // positioning this anchor below the sticky cockpit navigation.
+          el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          activate(t.dataset.target);
+          return;
+        }
         var y = el.getBoundingClientRect().top + window.scrollY - 124;
         window.scrollTo({ top: y, behavior: 'smooth' });
         activate(t.dataset.target);
       });
     });
-    var secs = ['s00','s01','s02','s03'{% if show_tracking %},'s04'{% endif %},'s05'];
+    var secs = ['s00','s01','s02','s03'{% if show_tracking %},'s04'{% endif %},'vessel-tracking','s05'];
     window.addEventListener('scroll', function(){
       var pos = window.scrollY + 200;
       var cur = secs[0];

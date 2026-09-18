@@ -102,6 +102,7 @@ LOCAL_APPS = [
     "apps.taskfy",
     "apps.schedule",
     "apps.eclic",
+    "apps.vessels",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -210,6 +211,9 @@ LOGIN_EXEMPT_URLS = [
     r"^media/.*$",
     r"^favicon\.ico$",
     r"^admin/login/?$",
+    # A API de embarcacoes responde 403 em JSON; redirecionar para o HTML de
+    # login quebraria o fetch do cockpit e nao revelaria nada a mais.
+    r"^vessels/api/.*$",
 ]
 
 AUTH_PASSWORD_VALIDATORS = [
@@ -363,3 +367,63 @@ if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
+
+
+# ------------------------------------------------------------------
+# Rastreamento de embarcacoes (AIS)
+# ------------------------------------------------------------------
+# Chave privada do provedor, usada somente pelo coletor no servidor. O browser
+# recebe apenas um indicador de "configurado" e o status sanitizado da conexao.
+AISSTREAM_API_KEY = env("AISSTREAM_API_KEY", "")
+AISSTREAM_BOUNDING_BOXES = [[[-90, -180], [90, 180]]]
+
+# Cadencia de retencao de posicoes recebidas.
+AIS_POSITION_INTERVAL_SECONDS = int(env("AIS_POSITION_INTERVAL_SECONDS", "180") or 180)
+AIS_POSITION_MIN_SECONDS = int(env("AIS_POSITION_MIN_SECONDS", "10") or 10)
+AIS_POSITION_DISTANCE_METERS = int(env("AIS_POSITION_DISTANCE_METERS", "250") or 250)
+AIS_POSITION_COURSE_DEGREES = int(env("AIS_POSITION_COURSE_DEGREES", "15") or 15)
+AIS_SUBSCRIPTION_REFRESH_SECONDS = int(env("AIS_SUBSCRIPTION_REFRESH_SECONDS", "30") or 30)
+
+# Frescor do sinal e saude do coletor.
+AIS_RECENT_SECONDS = int(env("AIS_RECENT_SECONDS", "600") or 600)
+AIS_STALE_SECONDS = int(env("AIS_STALE_SECONDS", "3600") or 3600)
+AIS_HEARTBEAT_TIMEOUT_SECONDS = int(env("AIS_HEARTBEAT_TIMEOUT_SECONDS", "120") or 120)
+
+# Limites da frota e do historico exposto pela API.
+AIS_MAX_ACTIVE_VESSELS = int(env("AIS_MAX_ACTIVE_VESSELS", "200") or 200)
+AIS_MAX_TRACK_POINTS = int(env("AIS_MAX_TRACK_POINTS", "5000") or 5000)
+AIS_POLL_SECONDS = int(env("AIS_POLL_SECONDS", "20") or 20)
+
+# Mapa. Um provedor diferente pode ser usado trocando a URL e a atribuicao; uma
+# atribuicao personalizada e renderizada como texto puro, nunca como markup.
+AIS_MAP_TILE_URL = env(
+    "AIS_MAP_TILE_URL",
+    "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+)
+AIS_MAP_ATTRIBUTION = env("AIS_MAP_ATTRIBUTION", "Esri, HERE, Garmin, \u00a9 OpenStreetMap contributors")
+# Os nomes de lugares vem numa camada transparente por cima, para que a
+# recoloracao de mar e terra nao desbote o texto. Vazio desliga os rotulos.
+AIS_MAP_LABELS_URL = env(
+    "AIS_MAP_LABELS_URL",
+    "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+)
+
+# Modelo 3D do dossie. Aceita .glb/.gltf (menor), .fbx ou .obj. Vazio mantem a
+# projecao esquematica embutida.
+AIS_VESSEL_MODEL_URL = env("AIS_VESSEL_MODEL_URL", "/static/models/vessel-hq.glb")
+
+# Fixed operational area anchored to the position the user identified as AVEON
+# JETTY PH on 2026-09-16. This is not a surveyed port boundary, and the centre
+# must never follow subsequent vessel positions.
+AIS_PORT_GEOFENCES = [
+    {"id": "aveon-jetty-ph", "name": "AVEON JETTY PH", "latitude": 4.7942467,
+     "longitude": 6.9417582, "radius_m": 3000},
+    {"id": "bonga-north", "name": "BONGA NORTH", "latitude": 4.5575266,
+     "longitude": 4.6164432, "radius_m": 3000},
+]
+
+# Regular supply shuttle confirmed by the user. The second endpoint is the
+# configured outbound target when no departure has yet been observed.
+AIS_VESSEL_SHUTTLE_ROUTES = {
+    "636023616": ["aveon-jetty-ph", "bonga-north"],
+}

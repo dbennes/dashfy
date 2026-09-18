@@ -479,6 +479,13 @@ def home_view(request):
         "ros_schedule": ros_schedule,
         "tracking": tracking,
         "show_tracking": show_tracking,
+        "vessel_tracking_config": {
+            "poll_seconds": settings.AIS_POLL_SECONDS,
+            "tile_url": settings.AIS_MAP_TILE_URL,
+            "tile_attribution": settings.AIS_MAP_ATTRIBUTION,
+            "labels_url": settings.AIS_MAP_LABELS_URL,
+            "vessel_model_url": settings.AIS_VESSEL_MODEL_URL,
+        },
         "DATAFY_BASE_URL": settings.DATAFY_BASE_URL,
         "TASKFY_BASE_URL": settings.TASKFY_BASE_URL,
         "show_login_boot": bool(request.session.pop("show_login_boot", False)),

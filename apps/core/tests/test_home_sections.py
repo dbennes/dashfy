@@ -136,7 +136,7 @@ class HomeSectionLayoutTests(TestCase):
         )
         self.client.force_login(self.user)
 
-    @override_settings(DASHFY_SHOW_TRACKING=False)
+    @override_settings(DASHFY_SHOW_TRACKING=False, AISSTREAM_API_KEY="private-ais-home-test-key")
     @patch("apps.core.views.tracking_source.tracking_dashboard_safe")
     def test_home_exposes_fabrication_and_model_without_tracking(self, tracking_safe):
         response = self.client.get(reverse("core:home"))
@@ -156,6 +156,15 @@ class HomeSectionLayoutTests(TestCase):
         self.assertIn('id="s05"', html)
         self.assertIn("S05 · 3D Model", html)
         self.assertNotIn("S04 · 3D Model", html)
+        self.assertIn('data-target="vessel-tracking"', html)
+        self.assertLess(html.index('id="vessel-tracking"'), html.index('id="s05"'))
+        self.assertIn('data-vessel-tracking', html)
+        # The map config is a closed contract: only presentation settings reach the
+        # browser, never the provider key or the subscription payload.
+        self.assertEqual(set(response.context["vessel_tracking_config"]), {
+            "poll_seconds", "tile_url", "tile_attribution", "labels_url", "vessel_model_url",
+        })
+        self.assertNotIn("private-ais-home-test-key", html)
 
     @override_settings(DASHFY_SHOW_TRACKING=True)
     @patch("apps.core.views.tracking_source.tracking_dashboard_safe")

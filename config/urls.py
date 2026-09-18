@@ -10,6 +10,7 @@ urlpatterns = [
     path("", include("apps.core.urls", namespace="core")),
     path("exports/", include("apps.exports.urls", namespace="exports")),
     path("filters/", include("apps.filters.urls", namespace="filters")),
+    path("vessels/", include("apps.vessels.urls", namespace="vessels")),
     path("favicon.ico", RedirectView.as_view(url="/static/img/favicon.ico", permanent=True)),
 ]
 

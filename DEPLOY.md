@@ -104,6 +104,11 @@ python manage.py check --deploy
 
 ## 6. Rodar com Gunicorn
 
+O rastreamento de embarcacoes tambem precisa da chave privada `AISSTREAM_API_KEY`
+e de um processo separado `python manage.py listen_ais`. Aplique as migrations
+no PostgreSQL do DASHFY e configure o [servico AIS](docs/vessel-tracking.md)
+para continuar coletando posicoes mesmo sem o dashboard aberto.
+
 Teste manual:
 
 ```bash
@@ -163,3 +168,41 @@ server {
 ```
 
 Ative HTTPS com Certbot depois que o dominio apontar para o servidor.
+
+## Atualizacao Vessel tracking (setembro/2026)
+
+Na pasta existente do DASHFY no servidor, com o ambiente virtual ativado:
+
+```bash
+git pull --ff-only
+git lfs pull --include="static/models/vessel-hq.glb"
+pip install -r requirements.txt
+python manage.py migrate --database default
+python manage.py showmigrations vessels --database default
+python manage.py collectstatic --noinput
+python manage.py check
+```
+
+As quatro migrations de `vessels` devem aparecer com `[X]`. Elas criam o
+historico AIS e acrescentam origem do provedor, estado da viagem e data da
+declaracao de destino. Nao execute `makemigrations` no servidor.
+
+O GLB distribuido e `static/models/vessel-hq.glb` (~4 MB), padrao do sistema.
+Se o `.env` do servidor ja tiver `AIS_VESSEL_MODEL_URL`, ajuste para
+`/static/models/vessel-hq.glb`. Um valor vazio desativa o modelo externo.
+
+Reinicie o servico web existente apos as migrations e o collectstatic.
+Se os servicos tiverem os nomes do exemplo deste documento:
+
+```bash
+sudo systemctl restart dashfy
+sudo systemctl restart dashfy-ais
+sudo systemctl status dashfy dashfy-ais --no-pager
+```
+
+Na primeira instalacao do coletor, configure a chave `AISSTREAM_API_KEY`
+privadamente no servidor e instale `deploy/dashfy-ais.service`, ajustando
+usuario e caminhos. O servidor web sozinho nao inicia a coleta.
+Os dados locais (navios cadastrados e posicoes importadas) nao viajam com
+o codigo: mantenha os dados existentes no servidor ou importe um relatorio
+AIS pelo fluxo autenticado. Nao substitua o banco de producao pelo local.

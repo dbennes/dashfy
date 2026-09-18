@@ -381,3 +381,193 @@ def tracking_dashboard_safe() -> dict:
             "charts": empty_charts,
             "charts_json": json.dumps(empty_charts),
         }
+
+
+def map_containers() -> dict:
+    """Containers com envio ABERTO (draft/sent), para o modal do mapa.
+
+    Le as mesmas tabelas do dashboard S04, sem escrever nada. Containers sem
+    nenhum envio pendente ficam de fora: o painel existe para mostrar o que
+    ainda nao foi recebido, nao a frota inteira. O total da frota continua em
+    ``totals`` para dar contexto ao numero exibido.
+    """
+    from .real_sources import _taskfy_conn
+
+    now = timezone.now()
+    with _taskfy_conn() as conn:
+        cur = conn.cursor()
+        containers = _rows(
+            cur,
+            """
+            select id, container_number, owner, status, current_location
+              from trackfy_conteiner
+             order by container_number
+            """,
+        )
+        open_rows = _rows(
+            cur,
+            """
+            select s.id, s.container_id, s.report_number, s.status, s.origin,
+                   s.destination, s.date_sent, s.created_at,
+                   (select count(*) from trackfy_shipmentitem i where i.shipment_id = s.id) as items_count,
+                   (select count(*) from trackfy_shipmentitem i
+                     where i.shipment_id = s.id and i.receive_status in ('missing', 'damaged')) as issues_count
+              from trackfy_shipment s
+             where s.status in ('draft', 'sent')
+             order by coalesce(s.date_sent, s.created_at) desc
+            """,
+        )
+
+    by_container: dict[int, list[dict]] = {}
+    for row in open_rows:
+        reference = row.get("date_sent") or row.get("created_at")
+        days_open = int((now - reference).total_seconds() // 86400) if isinstance(reference, datetime) else 0
+        status = str(row.get("status") or "")
+        by_container.setdefault(row["container_id"], []).append({
+            "id": row["id"],
+            "report": row.get("report_number") or "—",
+            "status": status,
+            "status_label": STATUS_LABELS.get(status, status.title() or "—"),
+            "origin": row.get("origin") or "—",
+            "destination": row.get("destination") or "—",
+            "sent": _fmt_dt(row.get("date_sent")),
+            "sent_iso": _iso(row.get("date_sent")),
+            "days_open": days_open,
+            "items": int(row.get("items_count") or 0),
+            "issues": int(row.get("issues_count") or 0),
+        })
+
+    payload = []
+    for row in containers:
+        shipments = by_container.get(row["id"], [])
+        if not shipments:
+            continue
+        payload.append({
+            "id": row["id"],
+            "number": row.get("container_number") or "—",
+            "owner": row.get("owner") or "—",
+            "status": row.get("status") or "—",
+            "location": LOCATION_LABELS.get(str(row.get("current_location") or "").lower(),
+                                            row.get("current_location") or "—"),
+            "open_count": len(shipments),
+            "oldest_days_open": max((item["days_open"] for item in shipments), default=0),
+            "open_shipments": shipments,
+        })
+    # O mais atrasado no topo: e o que se cobra primeiro.
+    payload.sort(key=lambda item: (-item["oldest_days_open"], -item["open_count"], item["number"]))
+    return {
+        "available": True,
+        "containers": payload,
+        "totals": {
+            "fleet": len(containers),
+            "containers": len(payload),
+            "with_open": len(payload),
+            "open_shipments": sum(item["open_count"] for item in payload),
+        },
+    }
+
+
+def map_containers_safe() -> dict:
+    """Nunca derruba o mapa: em falha devolve lista vazia com o motivo."""
+    try:
+        return map_containers()
+    except Exception as exc:  # pragma: no cover - depende do Postgres do Taskfy
+        return {"available": False, "error": str(exc), "containers": [],
+                "totals": {"fleet": 0, "containers": 0, "with_open": 0, "open_shipments": 0}}
+
+
+ITEM_STATUS_LABELS = {
+    "pending": "Pending",
+    "ok": "Received",
+    "missing": "Missing",
+    "damaged": "Damaged",
+}
+
+
+def shipment_items(shipment_id: int, *, limit: int = 500) -> dict:
+    """Itens dentro de um envio, para o painel do mapa.
+
+    Somente leitura. O envio precisa existir; a lista e limitada porque um
+    envio pode ter centenas de linhas e o painel e um resumo, nao um relatorio.
+    """
+    from .real_sources import _taskfy_conn
+
+    with _taskfy_conn() as conn:
+        cur = conn.cursor()
+        header = _rows(
+            cur,
+            """
+            select s.id, s.report_number, s.status, s.origin, s.destination, s.date_sent,
+                   c.container_number, c.owner
+              from trackfy_shipment s
+              join trackfy_conteiner c on c.id = s.container_id
+             where s.id = %s
+            """,
+            (shipment_id,),
+        )
+        if not header:
+            return {"available": True, "found": False, "items": [], "shipment": None, "total_count": 0}
+        total = int(_scalar(cur, "select count(*) from trackfy_shipmentitem where shipment_id = %s", (shipment_id,)))
+        rows = _rows(
+            cur,
+            """
+            select id, material_code, material_rfid, material_description,
+                   quantity, received_quantity, unit, receive_status, observations
+              from trackfy_shipmentitem
+             where shipment_id = %s
+             order by id
+             limit %s
+            """,
+            (shipment_id, max(1, min(2000, int(limit)))),
+        )
+
+    head = header[0]
+    items = []
+    for row in rows:
+        status = str(row.get("receive_status") or "pending").lower()
+        items.append({
+            "id": row["id"],
+            "code": row.get("material_code") or "",
+            "rfid": row.get("material_rfid") or "",
+            "description": row.get("material_description") or "—",
+            "quantity": float(row["quantity"]) if row.get("quantity") is not None else None,
+            "received_quantity": float(row["received_quantity"]) if row.get("received_quantity") is not None else None,
+            "unit": row.get("unit") or "",
+            "status": status,
+            "status_label": ITEM_STATUS_LABELS.get(status, status.title() or "—"),
+            "observations": row.get("observations") or "",
+        })
+    # Conferencia real: tudo que saiu de "pending" ja foi verificado no recebimento.
+    counts = {"pending": 0, "ok": 0, "missing": 0, "damaged": 0}
+    for item in items:
+        if item["status"] in counts:
+            counts[item["status"]] += 1
+    checked = counts["ok"] + counts["missing"] + counts["damaged"]
+    return {
+        "available": True,
+        "found": True,
+        "shipment": {
+            "id": head["id"],
+            "report": head.get("report_number") or "—",
+            "status": str(head.get("status") or ""),
+            "container": head.get("container_number") or "—",
+            "owner": head.get("owner") or "—",
+            "origin": head.get("origin") or "—",
+            "destination": head.get("destination") or "—",
+            "sent": _fmt_dt(head.get("date_sent")),
+        },
+        "counts": counts,
+        "checked": checked,
+        "items": items,
+        "total_count": total,
+        "returned_count": len(items),
+    }
+
+
+def shipment_items_safe(shipment_id: int) -> dict:
+    """Nunca derruba o painel: em falha devolve lista vazia com o motivo."""
+    try:
+        return shipment_items(shipment_id)
+    except Exception as exc:  # pragma: no cover - depende do Postgres do Taskfy
+        return {"available": False, "error": str(exc), "found": False,
+                "shipment": None, "items": [], "total_count": 0, "returned_count": 0}
