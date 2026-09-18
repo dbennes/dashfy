@@ -104,10 +104,10 @@ python manage.py check --deploy
 
 ## 6. Rodar com Gunicorn
 
-O rastreamento de embarcacoes tambem precisa da chave privada `AISSTREAM_API_KEY`
-e de um processo separado `python manage.py listen_ais`. Aplique as migrations
-no PostgreSQL do DASHFY e configure o [servico AIS](docs/vessel-tracking.md)
-para continuar coletando posicoes mesmo sem o dashboard aberto.
+O rastreamento de embarcacoes usa importacao de relatorios por padrao. Nao
+precisa de chave AISStream nem de processo `listen_ais`. Aplique as migrations
+no PostgreSQL do DASHFY para armazenar navios e historico importado.
+A coleta automatica e opcional: consulte [o guia AIS](docs/vessel-tracking.md).
 
 Teste manual:
 
@@ -192,17 +192,28 @@ Se o `.env` do servidor ja tiver `AIS_VESSEL_MODEL_URL`, ajuste para
 `/static/models/vessel-hq.glb`. Um valor vazio desativa o modelo externo.
 
 Reinicie o servico web existente apos as migrations e o collectstatic.
-Se os servicos tiverem os nomes do exemplo deste documento:
+No Linux, se o servico tiver o nome do exemplo deste documento:
 
 ```bash
 sudo systemctl restart dashfy
-sudo systemctl restart dashfy-ais
-sudo systemctl status dashfy dashfy-ais --no-pager
+sudo systemctl status dashfy --no-pager
 ```
 
-Na primeira instalacao do coletor, configure a chave `AISSTREAM_API_KEY`
+Somente se optar pela coleta automatica, defina `AIS_COLLECTION_MODE=stream`,
+configure a chave `AISSTREAM_API_KEY`
 privadamente no servidor e instale `deploy/dashfy-ais.service`, ajustando
 usuario e caminhos. O servidor web sozinho nao inicia a coleta.
 Os dados locais (navios cadastrados e posicoes importadas) nao viajam com
 o codigo: mantenha os dados existentes no servidor ou importe um relatorio
 AIS pelo fluxo autenticado. Nao substitua o banco de producao pelo local.
+
+### Windows: manutencao e importacao
+
+No modo padrao (`AIS_COLLECTION_MODE=import`), nao inicie `listen_ais` e nao
+instale um servico de coleta. Cada importacao salva as observacoes e atualiza
+o historico. Sem novo relatorio, a ultima posicao permanece a mesma.
+
+`migrate`, `showmigrations`, `makemigrations`, `collectstatic` e `check` usam
+logs no terminal, sem abrir o arquivo `logs/dashfy.log` do servico web. Isso
+evita que a permissao desse arquivo bloqueie a manutencao por outro usuario.
+O servico web continua com sua configuracao de logs existente.

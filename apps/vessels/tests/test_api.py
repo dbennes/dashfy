@@ -13,6 +13,7 @@ from apps.vessels.models import AISListenerState, Vessel, VesselPosition
 
 
 @override_settings(
+    AIS_COLLECTION_MODE="stream",
     AISSTREAM_API_KEY="test-backend-key-never-public", AIS_RECENT_SECONDS=600,
     AIS_STALE_SECONDS=3600, AIS_HEARTBEAT_TIMEOUT_SECONDS=120,
     AIS_MAX_ACTIVE_VESSELS=200, AIS_MAX_TRACK_POINTS=5000,
@@ -244,6 +245,18 @@ class VesselAPITests(TestCase):
             response = self.client.get(reverse("vessels:api_status"))
         self.assertFalse(response.json()["collection"]["configured"])
         self.assertEqual(response.json()["collection"]["status"], "not_configured")
+
+    @override_settings(AIS_COLLECTION_MODE="import", AISSTREAM_API_KEY="")
+    def test_import_mode_needs_no_collector_or_key(self):
+        AISListenerState.objects.create(provider="aisstream", status="connected",
+                                       heartbeat_at=self.now - timedelta(days=2))
+        response = self.client.get(reverse("vessels:api_status"))
+        self.assertEqual(response.status_code, 200)
+        status = response.json()["collection"]
+        self.assertEqual(status["status"], "import")
+        self.assertTrue(status["configured"])
+        self.assertIsNone(status["last_heartbeat"])
+        self.assertEqual(status["last_error_code"], "")
 
     def test_database_outage_returns_json_error_instead_of_an_empty_track(self):
         with patch("apps.vessels.views.Vessel.objects.order_by", side_effect=DatabaseError("secret provider value")):

@@ -10,7 +10,7 @@
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
 <link href="{% static 'css/fabrication-s03.css' %}?v=20260916-s03-status-v13" rel="stylesheet">
 <link href="{% static 'vendor/leaflet/leaflet.css' %}" rel="stylesheet">
-<link href="{% static 'css/vessel-tracking.css' %}?v=20260918-ais-map-v17" rel="stylesheet">
+<link href="{% static 'css/vessel-tracking.css' %}?v=20260918-ais-map-v18" rel="stylesheet">
 <link href="{% static 'css/vessel-hologram.css' %}?v=20260918-dossier-v9" rel="stylesheet">
 {% endblock %}
 
@@ -1811,7 +1811,7 @@
 
 {% block extra_js %}
 <script src="{% static 'vendor/leaflet/leaflet.js' %}" defer></script>
-<script src="{% static 'js/vessel-tracking.js' %}?v=20260918-ais-map-v17" defer></script>
+<script src="{% static 'js/vessel-tracking.js' %}?v=20260918-ais-map-v18" defer></script>
 <script type="module" src="{% static 'js/vessel-hologram.js' %}?v=20260918-dossier-v11"></script>
 {{ block.super }}
 <script>
@@ -6215,7 +6215,7 @@
     var navMetaDefault = navMeta ? navMeta.innerHTML : '';
     var navMeta3d = '<span>Model · <b>Bonga North Project</b></span><span>·</span><span><b>Local GLB</b> · 3D hierarchy</span>';
     var navMetaFab = '<span>Source · <b>P6 schedule</b></span><span>·</span><span><b>SPDM</b> · fabrication packages</span>';
-    var navMetaVessels = '<span>Source · <b>AISStream</b></span><span>·</span><span><b>AIS</b> · received positions and stored history</span>';
+    var navMetaVessels = '<span>Source · <b>AIS reports</b></span><span>·</span><span><b>AIS</b> · received positions and stored history</span>';
     {% if show_tracking %}
     var navMetaTrk = '<span>Source · <b>Trackfy</b></span><span>·</span><span><b>Taskfy</b> · container shipments</span>';
     {% endif %}

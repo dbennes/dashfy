@@ -5,7 +5,17 @@ AISStream observations, an authenticated Django API and Leaflet 1.9.4 with
 OpenStreetMap tiles. There are no seeded vessels, simulated positions or
 predicted routes. Existing fabrication, skyline and rundown sources are independent.
 
-## Activate collection
+## Default operation: imported reports
+
+The default mode is `AIS_COLLECTION_MODE=import`. No AISStream key, listener
+process or service is required. Import a provider report to save positions and
+update the stored route; the browser reads that history from the database.
+No new positions are collected between imports. Migrations are still required.
+
+## Optional: activate automatic collection
+
+Set `AIS_COLLECTION_MODE=stream` only when automatic AIS collection is wanted.
+
 
 Use the existing DASHFY PostgreSQL database, not the DATAFY database. After
 updating the application on each server:

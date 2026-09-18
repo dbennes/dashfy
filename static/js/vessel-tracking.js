@@ -227,7 +227,8 @@
     function collectionStatus(collection) {
       collection = collection || {};
       var label, status = collection.status;
-      if (!collection.configured || status === "not_configured") label = "AIS collection is not configured. An administrator must connect AISStream on the server.";
+      if (status === "import") label = "Import mode · Saved positions and route history update when you import a report. No AIS collector is required.";
+      else if (!collection.configured || status === "not_configured") label = "AIS collection is not configured. An administrator must connect AISStream on the server.";
       else label = {
         connected: "AIS collector connected · Positions appear when a vessel is within reception coverage.",
         connecting: "AIS collector connecting…", reconnecting: "AIS collector reconnecting · Last received positions are retained.",
@@ -237,7 +238,7 @@
         configuration_error: "AIS collection needs an administrator to check the server configuration."
       }[status] || "AIS collector status is unavailable · Last received positions are retained.";
       text(query("collection-text"), label);
-      query("collection").dataset.state = status === "connected" && collection.configured ? "connected" : "warning";
+      query("collection").dataset.state = status === "import" ? "import" : status === "connected" && collection.configured ? "connected" : "warning";
       query("collection").title = collection.last_heartbeat ? "Collector heartbeat: " + utcLabel(collection.last_heartbeat) : "";
     }
     function popup(vessel) {
@@ -324,7 +325,7 @@
       query("map-empty").hidden = retained.size > 0;
       if (!retained.size) {
         text(query("map-empty-title"), state.vessels.length ? "No AIS positions yet" : "No vessels tracked");
-        text(query("map-empty-text"), state.vessels.length ? "The collector is waiting for a position from a tracked MMSI." : "Register a vessel by MMSI to begin collecting its track history.");
+        text(query("map-empty-text"), state.vessels.length ? "No position has been recorded for these vessels. Import a position report to begin." : "Register a vessel by MMSI to begin collecting its track history.");
       }
       var current = selectedVessel(), selected = current && position(current.last_position);
       var hasPorts = geofenceLayer && geofenceLayer.getBounds().isValid();

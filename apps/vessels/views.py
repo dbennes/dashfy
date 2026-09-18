@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone as dt_timezone
 import logging
+import os
 
 from django.conf import settings
 from django.db import DatabaseError, IntegrityError, transaction
@@ -40,6 +41,14 @@ _IMPORT_PREVIEW = 50
 
 
 def collection_status(*, now=None) -> dict:
+    mode = str(getattr(settings, "AIS_COLLECTION_MODE", os.environ.get("AIS_COLLECTION_MODE", "import"))).lower()
+    if mode != "stream":
+        return {
+            "mode": "import", "configured": True, "status": "import",
+            "last_heartbeat": None, "connected_at": None, "last_message_at": None,
+            "active_vessel_count": Vessel.objects.filter(is_active=True).count(),
+            "last_error_code": "",
+        }
     now = now or timezone.now()
     configured = bool(str(getattr(settings, "AISSTREAM_API_KEY", "") or "").strip())
     state = AISListenerState.objects.filter(provider="aisstream").first()

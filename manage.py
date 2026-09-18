@@ -20,6 +20,12 @@ def main() -> None:
             "available on your PYTHONPATH environment variable. "
             "Did you forget to activate a virtual environment?"
         ) from exc
+    # Maintenance may run under a different Windows account from the web service.
+    # It must not need write access to the service's rotating log file.
+    if len(sys.argv) > 1 and sys.argv[1] in {"migrate", "showmigrations", "makemigrations", "collectstatic", "check"}:
+        from django.conf import settings
+        from config.cli_logging import console_logging
+        settings.LOGGING = console_logging(settings.LOGGING)
     execute_from_command_line(sys.argv)
 
 
