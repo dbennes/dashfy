@@ -20,6 +20,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.decorators.cache import never_cache
 
 from apps.accounts.models import User
 from apps.accounts.permissions import has_module_permission
@@ -32,7 +33,7 @@ from apps.core.p6_import import import_p6_curves_workbook
 from apps.core.supply_snapshot_filters import normalized_supply_snapshot_filters
 from apps.exports.models import ExportLog
 from apps.core import real_sources
-from apps.core import ros_workbook
+from apps.core import ros_workbook, rundown_workbook
 
 from .models import Announcement, DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport
 
@@ -429,6 +430,14 @@ def home_view(request):
     )
     # Real fabrication sources and sample installation data share only the
     # chart contract; each mode/discipline retains its own dates and units.
+    source_rundown_modes = rundown_discipline_source.rundown_modes_safe(rundown)
+    try:
+        source_rundown_modes = rundown_workbook.overlay_modes(source_rundown_modes)
+    except DatabaseError:
+        logging.getLogger(__name__).exception("Unable to read imported rundown")
+        for group in source_rundown_modes.values():
+            for payload in group["disciplines"].values():
+                payload.update(available=False, error="Imported rundown storage is unavailable.")
     rundown_modes = {
         mode: {
             "label": group["label"],
@@ -437,7 +446,7 @@ def home_view(request):
                 for discipline, payload in group["disciplines"].items()
             },
         }
-        for mode, group in rundown_discipline_source.rundown_modes_safe(rundown).items()
+        for mode, group in source_rundown_modes.items()
     }
     rundown_disciplines = rundown_modes["fabrication"]["disciplines"]
     # A skyline ROS combina baseline e lookahead da Planilha1 e
@@ -648,6 +657,19 @@ def fabrication_po_pending_view(request, pk: int):
 def fabrication_expedite_view(request):
     """S03 · modal POs to expedite (mesmo JSON do SPDM)."""
     return JsonResponse(fabrication_source.fabrication_expedite_safe())
+
+
+@never_cache
+def model_review_view(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required", "login_url": "/accounts/login/?next=/%23s05"}, status=401)
+    from .model_review import review_payload
+    try:
+        return JsonResponse(review_payload())
+    except Exception:
+        logging.getLogger(__name__).exception("3D fabrication index unavailable")
+        return JsonResponse({"available": False, "drawings": [], "lines": [],
+                             "error": "Fabrication data unavailable. Please retry."}, status=503)
 
 
 @login_required
@@ -1418,9 +1440,11 @@ def refresh_datafy_supply_view(request):
     return redirect(target)
 
 
-@login_required
+@never_cache
 def model_node_glb(request, node_id: int):
     """Serve uma geometria GLB pequena para destacar um node da hierarquia original."""
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "authentication_required", "login_url": "/accounts/login/?next=/%23s05"}, status=401)
     try:
         path = selection_glb_path(node_id)
     except SelectionTooLarge as exc:

@@ -326,6 +326,20 @@ class DatafySupplySnapshot(TimestampedModel):
         return f"{self.source_database} suprimentos ({self.created_at:%d/%m/%Y %H:%M})"
 
 
+class RundownImport(TimestampedModel):
+    """Versioned manual rundown curves, independent from operational DATAFY."""
+    revision = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    base_revision = models.CharField(max_length=64, unique=True)
+    original_filename = models.CharField(max_length=255)
+    file_hash = models.CharField(max_length=64)
+    imported_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True)
+    payload = models.JSONField(default=dict)
+    metadata = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ["-pk"]
+
+
 class RosScheduleImport(TimestampedModel):
     """Accepted, append-only ROS schedules shared by Skyline and Piping rundown."""
 

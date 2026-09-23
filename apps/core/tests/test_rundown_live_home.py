@@ -61,6 +61,7 @@ class RundownLiveHomeTests(SimpleTestCase):
             "apps.core.skyline_aveon_source.aveon_skyline_safe",
             return_value=skyline_source._empty_payload(),
         ))
+        self.enterContext(patch("apps.core.views.rundown_workbook.overlay_modes", side_effect=lambda modes: modes))
         self.loader = self.enterContext(patch(
             "apps.core.rundown_discipline_source.rundown_modes_safe",
             return_value=self.modes,

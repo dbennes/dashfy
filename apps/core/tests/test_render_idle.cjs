@@ -12,6 +12,7 @@ function harness() {
     requestAnimationFrame(fn) { frames.set(++id, fn); return id; },
     cancelAnimationFrame(id) { frames.delete(id); },
     updateDatafyCallouts() {},
+    applyDisciplineVisibility() {},
     state: {viewerVisible: true, renderFrame: null, scene: {}, camera: {},
       renderer: {render() { renders++; }, dispose() {}}, controls: {update() {}}},
   };

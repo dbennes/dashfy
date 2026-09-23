@@ -1,0 +1,16 @@
+{
+  "nodes": 18,
+  "draws": 17,
+  "bytes": 12573896,
+  "source_meshes": {
+    "electrical": 4287,
+    "instrumentation": 16159,
+    "structural": 6391,
+    "piping": 7335,
+    "supports": 4626,
+    "equipment": 18054,
+    "telecom": 270,
+    "auxiliary": 307,
+    "other": 1
+  }
+}

@@ -19,7 +19,7 @@
   {% block vendor_css %}{% endblock %}
 
   <link href="{% static 'css/dashfy.css' %}?v=20260730-postgresql" rel="stylesheet">
-  <link href="{% static 'css/cockpit-v3.css' %}?v=20260731-s04-tracking" rel="stylesheet">
+  <link href="{% static 'css/cockpit-v3.css' %}?v=20260921-disciplines" rel="stylesheet">
 
   <style>
     :root {
@@ -246,7 +246,8 @@
 <script async src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <script async src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 {% block vendor_js %}{% endblock %}
-<script src="{% static 'js/dashfy.js' %}?v=20260918-render-on-demand"></script>
+<script src="{% static 'js/model-review.js' %}?v=20260921-tie-ins-piping"></script>
+<script src="{% static 'js/dashfy.js' %}?v=20260921-discipline-tree"></script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

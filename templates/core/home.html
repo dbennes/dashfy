@@ -8,7 +8,7 @@
 
 {% block extra_css %}
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
-<link href="{% static 'css/fabrication-s03.css' %}?v=20260916-s03-status-v13" rel="stylesheet">
+<link href="{% static 'css/fabrication-s03.css' %}?v=20260923-rundown-import" rel="stylesheet">
 <link href="{% static 'vendor/leaflet/leaflet.css' %}" rel="stylesheet">
 <link href="{% static 'css/vessel-tracking.css' %}?v=20260918-ais-map-v18" rel="stylesheet">
 <link href="{% static 'css/vessel-hologram.css' %}?v=20260918-dossier-v9" rel="stylesheet">
@@ -1248,6 +1248,10 @@
             <button type="button" data-rundown-mode="installation" aria-pressed="false" aria-controls="fabRundownChart fabRundownSummary">Installation</button>
           </div>
           <span class="fab-rundown-sample" id="fabRundownSample" role="status" hidden>Sample data</span>
+          <div class="fab-ros-actions">
+            <a class="ob-btn" href="{% url 'core:export_rundown' %}"><i class="bi bi-download" aria-hidden="true"></i>Export</a>
+            {% if user.is_admin %}<a class="ob-btn ob-btn-blue" href="{% url 'core:import_rundown' %}"><i class="bi bi-upload" aria-hidden="true"></i>Import</a>{% endif %}
+          </div>
           <div class="fab-rundown-discipline-control">
             <label for="fabRundownDiscipline">Discipline</label>
             <select id="fabRundownDiscipline" aria-controls="fabRundownChart fabRundownSummary">
@@ -1260,7 +1264,7 @@
         <div class="fab-rundown-head">
           <div class="fab-rundown-title">
             <span class="fab-rundown-kicker">Piping · ISO delivery plan</span>
-            <h3><i class="bi bi-graph-down-arrow"></i> <span id="fabRundownTitle">Piping ISO rundown (ROS)</span></h3>
+            <h3><i class="bi bi-graph-down-arrow"></i> <span id="fabRundownTitle">Piping ISO rundown</span></h3>
             <p>Daily spool releases and remaining balance · 60-day lookahead versus baseline</p>
           </div>
           <dl class="fab-rundown-kpis" aria-label="Rundown summary" aria-live="polite" aria-atomic="true">
@@ -1280,6 +1284,7 @@
               <dt>Zero-date gap</dt>
               <dd>{% if rundown.kpis.finish_variance_days > 0 %}+{% endif %}{{ rundown.kpis.finish_variance_days|default:0 }} <span>days</span></dd>
             </div>
+            <div data-rundown-actual hidden><dt>Reported progress</dt><dd id="fabRundownProgress">—</dd></div>
           </dl>
         </div>
         <div class="fab-rundown-chart">
@@ -1288,6 +1293,7 @@
                 <span class="fab-rundown-legend-label">Remaining</span>
                 <span class="fab-rundown-legend-item" data-rundown-lookahead><i class="fab-rundown-key is-line is-lookahead" aria-hidden="true"></i><span data-rundown-lookahead-label>Lookahead</span></span>
                 <span class="fab-rundown-legend-item"><i class="fab-rundown-key is-line is-baseline" aria-hidden="true"></i><span data-rundown-baseline-label>Baseline</span></span>
+                <span class="fab-rundown-legend-item" data-rundown-actual hidden><i class="fab-rundown-key is-line is-actual" aria-hidden="true"></i>Actual · end of day</span>
               </div>
               <div class="fab-rundown-legend-group">
                 <span class="fab-rundown-legend-label">Daily releases</span>
@@ -1746,7 +1752,7 @@
       <div class="rhs"><span class="pill">Progressive LOD</span></div>
     </div>
     <div class="card-body">
-      <section class="dx-project-consult" data-project-3d data-project-default-tab="model" data-model-autoload="true" data-model-auto-refine="false" data-model-url="{% static 'models/bonga-2-overview.glb' %}" data-model-detail-url="{% static 'models/bonga-2-refined-hq.glb' %}" data-model-hierarchy-url="{% static 'models/bonga-2-hierarchy.json' %}" data-model-selection-url="{% url 'core:model_node_glb' 0 %}" data-material-items-url="{% url 'core:material_items_3d' %}">
+      <section class="dx-project-consult" data-project-3d data-project-default-tab="model" data-model-autoload="true" data-model-auto-refine="true" data-model-url="{% static 'models/bonga-2-disciplines-fast.glb' %}?v=20260921-tie-ins-piping" data-model-detail-url="{% static 'models/bonga-2-disciplines-hq.glb' %}?v=20260921-tie-ins-piping" data-model-hierarchy-url="{% static 'models/bonga-2-hierarchy.json' %}" data-model-selection-url="{% url 'core:model_node_glb' 0 %}" data-material-items-url="{% url 'core:material_items_3d' %}" data-model-review-url="{% url 'core:model_review' %}">
         <div class="dx-project-consult-shell">
           <aside class="dx-project-tree-panel">
             <div class="dx-project-search">
@@ -1754,19 +1760,58 @@
               <input type="search" placeholder="Search by name, tag or node ID" data-project-query>
             </div>
             <div class="dx-project-lod-strip">
-              <span><strong>1.9 MB</strong><small>Fast preview</small></span>
-              <span><strong>46.9 MB</strong><small>HQ</small></span>
+              <span><strong>12.0 MB</strong><small>Initial model</small></span>
+              <span><strong>39.0 MB</strong><small>HQ</small></span>
               <span><strong>331 MB</strong><small>Source</small></span>
             </div>
             <div class="dx-project-tree-status" data-project-status>Local 3D hierarchy ready for review.</div>
+            <div class="dx-project-navigation" role="group" aria-label="Model tree organisation">
+              <button type="button" class="dx-project-selection-action" data-model-tree-mode="disciplines" aria-pressed="true">Disciplines</button>
+              <button type="button" class="dx-project-selection-action" data-model-tree-mode="original" aria-pressed="false">Original hierarchy</button>
+            </div>
             <div class="dx-project-tree-list" data-project-tree="model"></div>
           </aside>
           <div class="dx-project-viewer-panel">
+            <div class="dx-project-model-auth" data-model-auth-notice hidden role="alert">
+              Your session is no longer recognised. Sign in again to load drawings and 3D geometry.
+              <a class="dx-project-selection-action" href="{% url 'accounts:login' %}?next=/%23s05">Sign in again</a>
+            </div>
+            <div class="dx-project-navigation dx-project-appearance" role="group" aria-label="Model colours">
+              <button type="button" class="dx-project-selection-action" data-model-appearance="normal" aria-pressed="true" disabled>Normal</button>
+              <button type="button" class="dx-project-selection-action" data-model-appearance="progress" aria-pressed="false" disabled>Progress</button>
+              <details class="dx-model-disciplines" data-model-disciplines>
+                <summary class="dx-project-selection-action"><i class="bi bi-layers"></i> Visible disciplines <span data-model-discipline-count>Loading…</span></summary>
+                <div class="dx-model-disciplines-panel">
+                  <fieldset><legend>Show or hide in the model</legend><div class="dx-model-discipline-options" data-model-discipline-options></div></fieldset>
+                  <button type="button" class="dx-project-selection-action" data-model-discipline-all disabled>Show all disciplines</button>
+                </div>
+              </details>
+              <span data-model-review-status class="dx-project-review-status" role="status">Drawing and fabrication links</span>
+            </div>
+            <div class="dx-project-progress-legend" data-model-progress-legend hidden>
+              <span><i class="dx-project-progress-dot is-not_started"></i> Not started</span>
+              <span><i class="dx-project-progress-dot is-started"></i> Started</span>
+              <span><i class="dx-project-progress-dot is-completed"></i> Completed</span>
+              <small>Unlinked items stay grey · Piping fabrication</small>
+            </div>
+            <div class="dx-project-navigation" role="group" aria-label="3D navigation">
+              <button class="dx-project-selection-action" type="button" data-model-navigation="orbit" aria-pressed="true" title="Drag to orbit (R)"><i class="bi bi-arrow-repeat"></i> Rotate</button>
+              <button class="dx-project-selection-action" type="button" data-model-navigation="pan" aria-pressed="false" title="Drag to move sideways (P)"><i class="bi bi-arrows-move"></i> Pan</button>
+              <button class="dx-project-selection-action" type="button" data-model-focus disabled title="Focus selected item (F)"><i class="bi bi-crosshair"></i> Focus item</button>
+              <button class="dx-project-selection-action" type="button" data-model-surroundings aria-pressed="false" disabled title="Show solid nearby surfaces around the selected item"><i class="bi bi-bounding-box-circles"></i> Surroundings</button>
+              <button class="dx-project-selection-action" type="button" data-model-fit disabled title="Recover full model view (Home)"><i class="bi bi-bounding-box"></i> View all</button>
+            </div>
+            <label class="dx-project-surroundings-settings" data-model-surroundings-settings hidden>
+              <span>Nearby region</span>
+              <input type="range" min="1" max="5" step="0.25" value="2" data-model-surroundings-range aria-label="Size of the surrounding region">
+              <span>Small → Large · Solid surfaces</span>
+            </label>
+            <div class="dx-project-navigation-help">Tree: select and isolate · Click: select · Double-click: focus · Right drag: pan · Scroll: zoom at pointer · Touch: pinch to zoom</div>
             <div class="dx-project-viewer" data-model-canvas>
               <div class="dx-project-viewer-empty" data-model-empty>
                 <i class="bi bi-bounding-box"></i>
                 <strong>Preparing fast preview</strong>
-                <span>The viewer uses a lightweight LOD to open without blocking the rest of the dashboard.</span>
+                <span>The whole model refines automatically to HQ while you navigate.</span>
               </div>
             </div>
             <div class="dx-project-selection" data-project-selection>
@@ -1782,7 +1827,11 @@
                 </button>
                 <button class="dx-project-selection-action" type="button" data-model-clear disabled>
                   <i class="bi bi-x-lg"></i>
-                  <span>Clear</span>
+                  <span>Clear markings</span>
+                </button>
+                <button class="dx-project-selection-action" type="button" data-model-reset disabled title="Remove the selection and return to the full model">
+                  <i class="bi bi-arrow-counterclockwise"></i>
+                  <span>Reset selection</span>
                 </button>
               </div>
             </div>
@@ -4186,7 +4235,7 @@
         return;
       }
       var initialTickLimit = tickLimitFor(canvas.clientWidth || root.clientWidth || window.innerWidth);
-      var isRosPiping = mode === "fabrication" && source.discipline === "piping";
+      var isRosPiping = mode === "fabrication" && source.discipline === "piping" && source.managed_by !== "rundown_workbook";
       var remainingScaleMax = Math.max(1, Number(selectedPayload.kpis.scope_total) || 0);
       if (source.is_sample) remainingScaleMax = Math.ceil(remainingScaleMax * 1.1);
       try {
@@ -4194,6 +4243,12 @@
         type: "bar",
         data: {
           datasets: [
+            {
+              type: "line", label: "Actual remaining · end of day", metricKey: "actualRemaining",
+              data: points(data.actual_rundown || dates.map(function () { return null; })),
+              yAxisID: "yRemaining", borderColor: "#38bdf8", backgroundColor: "#38bdf8",
+              borderWidth: 2.5, pointRadius: 2, pointHoverRadius: 4, tension: 0, fill: false, spanGaps: false, order: 0
+            },
             {
               type: "line",
               label: (source.lookahead_label || "Lookahead") + " rundown",
@@ -4255,6 +4310,7 @@
               order: 3
             }
           ].filter(function (dataset) {
+            if (dataset.metricKey === "actualRemaining") return source.has_actual;
             return source.has_lookahead || dataset.metricKey.indexOf("lookahead") !== 0;
           })
         },
@@ -4402,6 +4458,8 @@
       data = selectedPayload.charts || {};
       unit = source.unit_label || "packages";
       var kpis = selectedPayload.kpis || {};
+      root.querySelectorAll('[data-rundown-actual]').forEach(function (node) { node.hidden = !source.has_actual; });
+      setText('#fabRundownProgress', kpis.actual_progress_pct == null ? '—' : Number(kpis.actual_progress_pct).toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%');
       var isInstallation = mode === "installation";
       var isPiping = key === "piping" && !isInstallation;
       var isSample = Boolean(source.is_sample);
@@ -4417,7 +4475,9 @@
       setText("#fabRundownTitle", source.title || (source.discipline_label + " rundown"));
       setText(".fab-rundown-kicker", isInstallation ? source.discipline_label + " · Installation plan"
         : isPiping ? "Piping · ISO delivery plan" : source.discipline_label + " · Fabrication plan");
-      setText(".fab-rundown-title p", isInstallation
+      setText(".fab-rundown-title p", source.managed_by === "rundown_workbook"
+        ? "Imported daily plan, forecast and reported progress · " + unit
+        : isInstallation
         ? "Daily installation completions and remaining balance · " + (source.lookahead_label || "Lookahead") + " versus " + (source.baseline_label || "baseline")
         : isPiping ? "Daily spool releases and remaining balance · 60-day lookahead versus baseline"
         : "Daily planned completions and remaining balance · " + (isAveon ? "AVEON" : "Imported") + " fabrication dates");
@@ -6230,28 +6290,30 @@
       else if (id === 's03') navMeta.innerHTML = navMetaFab;
       else navMeta.innerHTML = navMetaDefault;
     }
+    function sectionNavOffset(){
+      var bottom = 0;
+      document.querySelectorAll('.topbar, .filterbar, #c3-section-nav').forEach(function(bar){
+        var style = window.getComputedStyle(bar);
+        if (style.position !== 'sticky' && style.position !== 'fixed') return;
+        bottom = Math.max(bottom, (parseFloat(style.top) || 0) + bar.getBoundingClientRect().height);
+      });
+      return bottom + 4;
+    }
     tabs.forEach(function(t){
       t.addEventListener('click', function(e){
         e.preventDefault();
         var el = document.getElementById(t.dataset.target);
         if (!el) return;
-        if (t.dataset.target === 'vessel-tracking') {
-          // Let the browser resolve skipped content-visibility sections before
-          // positioning this anchor below the sticky cockpit navigation.
-          el.scrollIntoView({ block: 'start', behavior: 'smooth' });
-          activate(t.dataset.target);
-          return;
-        }
-        var y = el.getBoundingClientRect().top + window.scrollY - 124;
-        window.scrollTo({ top: y, behavior: 'smooth' });
+        var y = el.getBoundingClientRect().top + window.scrollY - sectionNavOffset();
+        window.scrollTo({ top: Math.max(0, y), behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' });
         activate(t.dataset.target);
       });
     });
     var secs = ['s00','s01','s02','s03'{% if show_tracking %},'s04'{% endif %},'vessel-tracking','s05'];
     window.addEventListener('scroll', function(){
-      var pos = window.scrollY + 200;
+      var pos = sectionNavOffset() + 2;
       var cur = secs[0];
-      for (var i=0;i<secs.length;i++){ var el = document.getElementById(secs[i]); if (el && el.offsetTop <= pos) cur = secs[i]; }
+      for (var i=0;i<secs.length;i++){ var el = document.getElementById(secs[i]); if (el && el.getBoundingClientRect().top <= pos) cur = secs[i]; }
       activate(cur);
     }, { passive: true });
 

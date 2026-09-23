@@ -966,7 +966,29 @@
     const emptyState = root.querySelector('[data-model-empty]');
     const loadButton = root.querySelector('[data-model-load]');
     const fitButton = root.querySelector('[data-model-fit]');
+    const focusButton = root.querySelector('[data-model-focus]');
+    const navigationButtons = Array.from(root.querySelectorAll('[data-model-navigation]'));
     const clearButton = root.querySelector('[data-model-clear]');
+    const resetButton = root.querySelector('[data-model-reset]');
+    const surroundingsButton = root.querySelector('[data-model-surroundings]');
+    const surroundingsRange = root.querySelector('[data-model-surroundings-range]');
+    const surroundingsSettings = root.querySelector('[data-model-surroundings-settings]');
+    const review = window.DashfyModelReview;
+    const disciplineOptions = root.querySelector('[data-model-discipline-options]');
+    const disciplineCount = root.querySelector('[data-model-discipline-count]');
+    const disciplineAll = root.querySelector('[data-model-discipline-all]');
+    const authNotice = root.querySelector('[data-model-auth-notice]');
+    const showModelAuthError = error => {
+      if (error?.code !== 'AUTH_REQUIRED') return false;
+      if (authNotice) authNotice.hidden = false;
+      setStatus(error.message);
+      if (reviewStatus) reviewStatus.textContent = error.message;
+      return true;
+    };
+    const appearanceButtons = Array.from(root.querySelectorAll('[data-model-appearance]'));
+    const progressLegend = root.querySelector('[data-model-progress-legend]');
+    const reviewStatus = root.querySelector('[data-model-review-status]');
+    const treeModeButtons = Array.from(root.querySelectorAll('[data-model-tree-mode]'));
     const isolateButton = root.querySelector('[data-model-isolate]');
     const tabs = Array.from(root.querySelectorAll('[data-project-tab]'));
     const normalize = value => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -987,6 +1009,7 @@
       hierarchy: root.dataset.modelHierarchyUrl || '',
       selection: root.dataset.modelSelectionUrl || '',
       materialItems: root.dataset.materialItemsUrl || '',
+      review: root.dataset.modelReviewUrl || '',
     };
     const defaultTab = root.dataset.projectDefaultTab || (wbsList ? 'wbs' : 'model');
     const setLoadButton = (disabled, html) => {
@@ -997,6 +1020,7 @@
     const setModelControlsEnabled = enabled => {
       if (fitButton) fitButton.disabled = !enabled;
       if (clearButton) clearButton.disabled = !enabled;
+      appearanceButtons.forEach(button => { button.disabled = !enabled; });
     };
     const state = {
       activeTab: defaultTab,
@@ -1024,10 +1048,27 @@
       datafyMaterialCollapsed: null,
       datafyRequestId: 0,
       isolateSelection: false,
+      surroundings: false,
+      surroundingsScale: 2,
+      surroundingsOriginals: [],
+      surroundingsMaterials: new Map(),
+      surroundingsHelper: null,
+      treeMode: 'disciplines',
+      reviewExpanded: new Set(),
+      reviewPayload: null,
+      reviewPromise: null,
+      appearance: 'normal',
+      hiddenDisciplines: new Set(),
+      appearanceRequest: 0,
+      progressLayer: null,
+      progressOriginals: [],
+      progressMaterials: new Map(),
       highlighted: [],
       selectionOverlay: null,
       selectionRequestId: 0,
       pointerDown: null,
+      navigationMode: 'orbit',
+      pickRequestId: 0,
       modelLoaded: false,
       modelRaycastMeshes: [],
       modelLoading: false,
@@ -1072,6 +1113,70 @@
       removeDatafyCallouts();
     };
     const selectedHierarchyNode = () => state.hierarchyById.get(state.selectedHierarchyId) || null;
+    const nodeIsDisciplineVisible = node => !review || !state.hiddenDisciplines.has(review.nodeDiscipline(node, state.hierarchyById));
+    const applyDisciplineVisibility = () => {
+      if (!review) return;
+      state.model?.traverse(child => {
+        if (!child.isMesh) return;
+        const discipline = review.objectDiscipline(child);
+        if (discipline) child.visible = !state.hiddenDisciplines.has(discipline);
+      });
+      [state.selectionOverlay, state.datafyOverlay].forEach(overlay => overlay?.traverse(child => {
+        if (!child.isMesh && !child.isLineSegments) return;
+        let owner = child;
+        while (owner && !owner.userData.hierarchyNodeId) owner = owner.parent;
+        const node = state.hierarchyById.get(owner?.userData.hierarchyNodeId) || selectedHierarchyNode();
+        child.visible = nodeIsDisciplineVisible(node);
+      }));
+      // The progress overlay consists exclusively of linked piping lines.
+      if (state.progressLayer) state.progressLayer.visible = state.appearance === 'progress' && !state.isolateSelection && !state.hiddenDisciplines.has('piping');
+      if (state.datafyCallouts) state.datafyCallouts.root.hidden = !nodeIsDisciplineVisible(state.datafyLineNode);
+      if (state.surroundingsHelper) state.surroundingsHelper.visible = nodeIsDisciplineVisible(selectedHierarchyNode());
+    };
+    const syncDisciplineControls = () => {
+      if (!disciplineOptions || !review) return;
+      const available = new Set();
+      state.model?.traverse(child => {
+        if (child.isMesh) { const id = review.objectDiscipline(child); if (id) available.add(id); }
+      });
+      disciplineOptions.querySelectorAll('input').forEach(input => {
+        input.disabled = !available.has(input.value);
+        input.checked = !state.hiddenDisciplines.has(input.value);
+      });
+      if (disciplineCount) disciplineCount.textContent = state.modelLoaded
+        ? `${[...available].filter(id => !state.hiddenDisciplines.has(id)).length}/${available.size}` : 'Loading…';
+      if (disciplineAll) disciplineAll.disabled = !available.size || !state.hiddenDisciplines.size;
+    };
+    if (disciplineOptions && review) {
+      disciplineOptions.innerHTML = review.visibilityDisciplines.map(discipline =>
+        `<label><input type="checkbox" value="${discipline.id}" checked disabled><span>${discipline.name}</span></label>`).join('');
+      disciplineOptions.addEventListener('change', event => {
+        const input = event.target.closest('input[type="checkbox"]');
+        if (!input || input.disabled) return;
+        if (input.checked) state.hiddenDisciplines.delete(input.value);
+        else state.hiddenDisciplines.add(input.value);
+        ++state.pickRequestId;
+        syncDisciplineControls();
+        renderOnce();
+        const name = review.visibilityDisciplines.find(item => item.id === input.value).name;
+        setStatus(`${name} ${input.checked ? 'shown' : 'hidden'}. ${state.hiddenDisciplines.size === review.visibilityDisciplines.length ? 'All disciplines hidden; use Show all disciplines to restore.' : 'Camera and selection preserved.'}`);
+      });
+      disciplineAll?.addEventListener('click', () => {
+        state.hiddenDisciplines.clear();
+        syncDisciplineControls();
+        renderOnce();
+        setStatus('All disciplines enabled.');
+      });
+      const disciplineMenu = root.querySelector('[data-model-disciplines]');
+      document.addEventListener('pointerdown', event => {
+        if (disciplineMenu?.open && !disciplineMenu.contains(event.target)) disciplineMenu.open = false;
+      });
+      disciplineMenu?.addEventListener('keydown', event => {
+        if (event.key !== 'Escape') return;
+        disciplineMenu.open = false;
+        disciplineMenu.querySelector('summary').focus();
+      });
+    }
     const datafyFocusNodeIds = () => {
       const ids = new Set();
       if (state.datafyLineNode?.id) ids.add(String(state.datafyLineNode.id));
@@ -1097,6 +1202,13 @@
       const node = selectedHierarchyNode();
       const hasSelection = !!node;
       const canIsolate = state.modelLoaded && hasSelection && (!!node.bbox || !!state.selectionOverlay);
+      if (surroundingsButton) {
+        surroundingsButton.disabled = !(state.modelLoaded && node?.bbox);
+        surroundingsButton.setAttribute('aria-pressed', String(state.surroundings));
+      }
+      if (surroundingsSettings) surroundingsSettings.hidden = !state.surroundings;
+      if (resetButton) resetButton.disabled = !hasSelection;
+      if (focusButton) focusButton.disabled = !(state.modelLoaded && node?.bbox);
       if (isolateButton) {
         isolateButton.disabled = !canIsolate;
         isolateButton.classList.toggle('is-active', state.isolateSelection);
@@ -1104,11 +1216,14 @@
         const label = isolateButton.querySelector('[data-model-isolate-label]');
         if (label) label.textContent = state.isolateSelection ? 'Show all' : 'Isolate selection';
       }
-      if (clearButton) clearButton.disabled = !(state.modelLoaded || hasSelection || state.isolateSelection);
+      if (clearButton) clearButton.disabled = !hasSelection;
     };
     const applyIsolationVisibility = (options = {}) => {
-      if (state.model) state.model.visible = !state.isolateSelection;
+      if (state.surroundings) updateSurroundings();
+      if (state.model) state.model.visible = state.surroundings || !state.isolateSelection;
       if (state.selectionOverlay) state.selectionOverlay.visible = true;
+      if (state.progressLayer) state.progressLayer.visible = state.appearance === 'progress' && !state.isolateSelection;
+      colorProgressSelection();
       root.classList.toggle('is-isolating-selection', state.isolateSelection);
       updateIsolationControls();
       if (options.render !== false) renderOnce();
@@ -1121,6 +1236,207 @@
         new state.THREE.Vector3(maxX, maxY, maxZ),
       );
     };
+    const restoreSurroundings = () => {
+      state.surroundingsOriginals.forEach(({ mesh, material }) => { mesh.material = material; });
+      state.surroundingsOriginals = [];
+      state.surroundingsMaterials.forEach(material => material.dispose());
+      state.surroundingsMaterials.clear();
+      if (state.surroundingsHelper) {
+        state.scene.remove(state.surroundingsHelper);
+        state.surroundingsHelper.geometry.dispose();
+        state.surroundingsHelper.material.dispose();
+        state.surroundingsHelper = null;
+      }
+      state.surroundings = false;
+    };
+    const updateSurroundings = () => {
+      const box = boxFromBbox(selectedHierarchyNode()?.bbox);
+      if (!box || !state.model) return;
+      const THREE = state.THREE;
+      const size = box.getSize(new THREE.Vector3());
+      // Keep a useful region even for tiny fittings or nearly flat objects.
+      const padding = Math.max(size.length() * 0.25, 1) * state.surroundingsScale;
+      box.expandByScalar(padding);
+      const planes = [
+        new THREE.Plane(new THREE.Vector3(1, 0, 0), -box.min.x),
+        new THREE.Plane(new THREE.Vector3(-1, 0, 0), box.max.x),
+        new THREE.Plane(new THREE.Vector3(0, 1, 0), -box.min.y),
+        new THREE.Plane(new THREE.Vector3(0, -1, 0), box.max.y),
+        new THREE.Plane(new THREE.Vector3(0, 0, 1), -box.min.z),
+        new THREE.Plane(new THREE.Vector3(0, 0, -1), box.max.z),
+      ];
+      if (!state.surroundingsOriginals.length) {
+        const contextMaterial = original => {
+          if (!state.surroundingsMaterials.has(original)) {
+            const material = original.clone();
+            // De-emphasize nearby objects with color, not see-through faces.
+            // Their outer surfaces must hide internal and rear geometry.
+            material.color?.set(0x708698);
+            material.emissive?.set(0x000000);
+            material.transparent = false;
+            material.opacity = 1;
+            material.alphaMap = null;
+            material.alphaTest = 0;
+            material.depthWrite = true;
+            material.depthTest = true;
+            material.side = THREE.FrontSide;
+            material.clippingPlanes = planes;
+            material.clipIntersection = false;
+            material.needsUpdate = true;
+            state.surroundingsMaterials.set(original, material);
+          }
+          return state.surroundingsMaterials.get(original);
+        };
+        state.model.traverse(mesh => {
+          if (!mesh.isMesh || !mesh.material) return;
+          state.surroundingsOriginals.push({ mesh, material: mesh.material });
+          mesh.material = Array.isArray(mesh.material) ? mesh.material.map(contextMaterial) : contextMaterial(mesh.material);
+        });
+      }
+      state.surroundingsMaterials.forEach(material => { material.clippingPlanes = planes; });
+      if (!state.surroundingsHelper) {
+        state.surroundingsHelper = new THREE.Box3Helper(box, 0x94b8ce);
+        state.surroundingsHelper.material.transparent = true;
+        state.surroundingsHelper.material.opacity = 0.35;
+        state.surroundingsHelper.material.depthWrite = false;
+        state.scene.add(state.surroundingsHelper);
+      } else {
+        state.surroundingsHelper.box.copy(box);
+      }
+    };
+    const setSurroundings = active => {
+      if (active && (!state.modelLoaded || !selectedHierarchyNode()?.bbox)) return;
+      if (active) {
+        state.surroundings = true;
+        state.isolateSelection = true;
+      } else {
+        restoreSurroundings();
+      }
+      applyIsolationVisibility();
+      setStatus(active ? 'Selected item highlighted; nearby surfaces shown solid in muted color.' : 'Surroundings hidden. Selection retained.');
+      // The overview simplifies fittings too aggressively for close inspection.
+      // Keep it visible while the existing detailed model loads on demand.
+      if (active && state.currentModelMode === 'overview' && modelUrls.detail && modelUrls.detail !== modelUrls.overview) {
+        loadModel('detail');
+      }
+    };
+    const loadReview = async () => {
+      if (!review || !modelUrls.review) return null;
+      if (state.reviewPayload?.available) return state.reviewPayload;
+      if (state.reviewPromise) return state.reviewPromise;
+      if (reviewStatus) reviewStatus.textContent = 'Loading drawing and fabrication links...';
+      state.reviewPromise = (async () => {
+        try {
+          const response = await fetch(modelUrls.review, {cache: 'no-store', credentials: 'same-origin'});
+          if (response.status === 401 || /\/accounts\/login\//.test(response.url || '')) throw review.authError();
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const payload = await response.json();
+          if (!payload.available) throw new Error('Unavailable');
+          if (authNotice) authNotice.hidden = true;
+          state.reviewPayload = payload;
+          if (reviewStatus) reviewStatus.textContent = `${payload.drawings.length} drawings · ${payload.lines.length} lines · DATAFY / SPDM`;
+          renderModelTree();
+          return payload;
+        } catch (error) {
+          state.reviewPayload = {available: false, drawings: [], lines: []};
+          if (!showModelAuthError(error) && reviewStatus) reviewStatus.textContent = 'Fabrication links unavailable. Choose Progress to retry.';
+          renderModelTree();
+          return null;
+        } finally {
+          state.reviewPromise = null;
+        }
+      })();
+      return state.reviewPromise;
+    };
+    const restoreProgressMaterials = () => {
+      state.progressOriginals.forEach(({mesh, material}) => { mesh.material = material; });
+      state.progressOriginals = [];
+      state.progressMaterials.forEach(material => material.dispose());
+      state.progressMaterials.clear();
+    };
+    const tintProgressBase = () => {
+      if (!state.model || state.progressOriginals.length) return;
+      const tint = original => {
+        if (!state.progressMaterials.has(original)) {
+          const material = original.clone();
+          material.color?.set(0x94a3b8);
+          material.emissive?.set(0x000000);
+          material.vertexColors = false;
+          material.map = null;
+          material.transparent = false;
+          material.opacity = 1;
+          material.depthWrite = true;
+          material.needsUpdate = true;
+          state.progressMaterials.set(original, material);
+        }
+        return state.progressMaterials.get(original);
+      };
+      state.model.traverse(mesh => {
+        if (!mesh.isMesh || !mesh.material) return;
+        state.progressOriginals.push({mesh, material: mesh.material});
+        mesh.material = Array.isArray(mesh.material) ? mesh.material.map(tint) : tint(mesh.material);
+      });
+    };
+    const colorProgressSelection = () => {
+      if (!state.selectionOverlay || !review) return;
+      const lineIndex = new Map((state.reviewPayload?.lines || []).map(line => [review.key(line.tag), line]));
+      state.selectionOverlay.traverse(child => {
+        if (!child.isMesh) return;
+        let node = state.hierarchyById.get(child.userData.hierarchyNodeId) || selectedHierarchyNode();
+        let line;
+        while (node && !line) {
+          line = lineIndex.get(review.key(node.name));
+          node = state.hierarchyById.get(node.parent);
+        }
+        (Array.isArray(child.material) ? child.material : [child.material]).forEach(material => {
+          if (!material?.color) return;
+          if (material.userData.reviewOriginalColor === undefined) {
+            material.userData.reviewOriginalColor = material.color.getHex();
+            material.userData.reviewOriginalEmissive = material.emissive?.getHex();
+          }
+          material.color.setHex(state.appearance === 'progress' ? review.colors[line?.status || 'unlinked'] : material.userData.reviewOriginalColor);
+          if (material.emissive) material.emissive.setHex(state.appearance === 'progress' ? 0 : material.userData.reviewOriginalEmissive || 0);
+        });
+      });
+    };
+    const setAppearance = async mode => {
+      if (!review) return;
+      const request = ++state.appearanceRequest;
+      const hadSurroundings = state.surroundings;
+      restoreSurroundings();
+      restoreProgressMaterials();
+      state.appearance = mode;
+      appearanceButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.modelAppearance === mode)));
+      if (progressLegend) progressLegend.hidden = mode !== 'progress';
+      if (mode === 'progress') tintProgressBase();
+      state.surroundings = hadSurroundings;
+      applyIsolationVisibility();
+      colorProgressSelection();
+      if (mode !== 'progress' || !state.modelLoaded) return;
+      const payload = await loadReview();
+      if (!payload || request !== state.appearanceRequest) return;
+      await loadHierarchy();
+      if (request !== state.appearanceRequest) return;
+      colorProgressSelection();
+      if (state.progressLayer) { applyIsolationVisibility(); return; }
+      const lines = review.matchLines(payload.lines, state.hierarchyItems);
+      const unmatched = lines.filter(line => !line.nodes.length).length;
+      try {
+        const result = await review.buildProgressLayer({
+          THREE: state.THREE, loader: state.loader, lines, selectionUrl: modelUrls.selection,
+          isCurrent: () => request === state.appearanceRequest,
+          onUpdate: (done, total) => { if (reviewStatus) reviewStatus.textContent = `Colouring fabrication lines: ${done}/${total}...`; },
+        });
+        if (request !== state.appearanceRequest) { disposeObject(result.group); return; }
+        state.progressLayer = result.group;
+        state.scene.add(result.group);
+        if (reviewStatus) reviewStatus.textContent = `${lines.length - unmatched}/${lines.length} lines matched · ${result.total - result.failures.length} coloured · ${unmatched} without exact 3D match${result.failures.length ? ` · ${result.failures.length} geometry unavailable` : ''}`;
+        applyIsolationVisibility();
+      } catch (error) {
+        if (request === state.appearanceRequest && showModelAuthError(error)) return;
+        if (request === state.appearanceRequest && reviewStatus) reviewStatus.textContent = 'Progress geometry unavailable. Switch to Normal and Progress to retry.';
+      }
+    };
     const setIsolationMode = (active, options = {}) => {
       const node = selectedHierarchyNode();
       if (active && (!state.modelLoaded || !node || (!node.bbox && !state.selectionOverlay))) {
@@ -1128,6 +1444,7 @@
         updateIsolationControls();
         return;
       }
+      if (!active) restoreSurroundings();
       state.isolateSelection = !!active;
       applyIsolationVisibility({ render: false });
       if (state.isolateSelection) {
@@ -1222,6 +1539,11 @@
         return;
       }
       const cap = 900;
+      if (review && state.treeMode === 'disciplines') {
+        modelList.innerHTML = review.renderTree({payload: state.reviewPayload || {available: false, drawings: [], lines: []},
+          hierarchy: state.hierarchyItems, expanded: state.reviewExpanded, selected: state.selectedHierarchyId, query: state.query});
+        return;
+      }
       if (state.supplyContext && state.datafyLineNode) {
         const nodes = Array.isArray(state.datafyComponentNodes) ? state.datafyComponentNodes : [];
         const tokens = (state.datafyComponentTokens?.length ? state.datafyComponentTokens : state.supplyContext.tokens || [])
@@ -1507,23 +1829,36 @@
       const size = box.getSize(new state.THREE.Vector3());
       const center = box.getCenter(new state.THREE.Vector3());
       const maxSize = Math.max(size.x, size.y, size.z) || 10;
-      const fitDistance = maxSize / (2 * Math.tan((Math.PI * state.camera.fov) / 360));
-      const distance = Math.max(fitDistance / Math.max(state.camera.aspect, 0.2), fitDistance) * margin;
-      state.camera.position.set(center.x + distance, center.y + distance * 0.55, center.z + distance);
-      state.camera.near = Math.max(distance / 1000, 0.01);
-      state.camera.far = Math.max(distance * 12, maxSize * 20, 1000);
+      const halfFov = (Math.PI * state.camera.fov) / 360;
+      const limitingFov = Math.min(halfFov, Math.atan(Math.tan(halfFov) * state.camera.aspect));
+      const distance = Math.max(size.length() / 2, 0.05) / Math.sin(limitingFov) * margin;
+      const direction = state.camera.position.clone().sub(state.controls.target);
+      if (direction.lengthSq() < 0.000001) direction.set(1, 0.55, 1);
+      direction.normalize();
+      // Flush residual damping before changing the pivot deliberately.
+      state.controls.enableDamping = false;
+      state.controls.update();
+      state.controls.enableDamping = true;
+      state.camera.position.copy(center).addScaledVector(direction, distance);
+      state.camera.near = Math.max(Math.min(distance / 1000, 0.01), 0.0001);
+      state.camera.far = Math.max(state.camera.far, distance * 12, maxSize * 20, 1000);
       state.camera.updateProjectionMatrix();
       state.controls.target.copy(center);
-      state.controls.maxDistance = Math.max(distance * 8, maxSize * 4);
+      state.controls.minDistance = state.camera.near * 2;
+      state.controls.maxDistance = Math.max(state.controls.maxDistance === Infinity ? 0 : state.controls.maxDistance, distance * 8, maxSize * 4);
       state.controls.update();
     };
     const frameModel = () => {
       if (!state.model || !state.THREE || !state.camera || !state.controls) return;
       const box = getFrameBox();
       if (!box) return;
-      frameBox(box, 0.66);
+      frameBox(box, 1.1);
     };
-    const highlightHierarchyNode = node => {
+    const focusSelection = () => {
+      const box = boxFromBbox(selectedHierarchyNode()?.bbox);
+      if (box) { frameBox(box, 1.2); renderOnce(); }
+    };
+    const highlightHierarchyNode = (node, options = {}) => {
       if (!state.THREE || !state.scene || !node?.bbox) {
         setStatus('Item has no selectable 3D volume in metadata.');
         return;
@@ -1559,15 +1894,17 @@
         }),
       );
       fill.userData.hierarchyNodeId = node.id;
+      fill.userData.selectionBounds = true;
       fill.position.copy(center);
       overlay.add(fill);
       const helper = new state.THREE.Box3Helper(box, selectColor.three);
       helper.userData.hierarchyNodeId = node.id;
+      helper.userData.selectionBounds = true;
       overlay.add(helper);
       state.scene.add(overlay);
       state.selectionOverlay = overlay;
       applyIsolationVisibility({ render: false });
-      frameBox(box, 1.55);
+      if (options.frame !== false) frameBox(box, 1.2);
       renderOnce();
       setStatus(state.isolateSelection ? `Isolated selection: ${node.name}` : `Selected and highlighted: ${node.name}`);
     };
@@ -1581,35 +1918,66 @@
       const requestId = state.selectionRequestId + 1;
       state.selectionRequestId = requestId;
       try {
-        const response = await fetch(url, { cache: 'force-cache' });
-        if (!response.ok) {
-          if (response.status === 413) {
-            setStatus(`Large group highlighted by volume: ${node.name}`);
-            return false;
+        // A drawing can contain several lines; combine their exact geometry only.
+        const targets = node.reviewNodeIds?.length
+          ? node.reviewNodeIds.map(id => state.hierarchyById.get(id)).filter(Boolean) : [node];
+        const scenes = [];
+        let gltf;
+        if (node.reviewNodeIds?.length) {
+          try {
+            for (const target of targets) {
+              const buffer = await review.fetchGeometry(selectionUrlFor(target));
+              const part = await new Promise((resolve, reject) => state.loader.parse(buffer, '', resolve, reject));
+              part.scene.userData.hierarchyNodeId = target.id;
+              scenes.push(part.scene);
+              if (requestId !== state.selectionRequestId) {
+                scenes.forEach(disposeObject);
+                return false;
+              }
+            }
+            const group = new state.THREE.Group();
+            scenes.forEach(scene => group.add(scene));
+            gltf = {scene: group};
+          } catch (error) {
+            scenes.forEach(disposeObject);
+            throw error;
           }
-          throw new Error(`HTTP ${response.status}`);
+        } else {
+          const buffer = await review.fetchGeometry(url);
+          if (requestId !== state.selectionRequestId) return false;
+          gltf = await new Promise((resolve, reject) => {
+            state.loader.parse(buffer, '', resolve, reject);
+          });
         }
-        const buffer = await response.arrayBuffer();
-        const gltf = await new Promise((resolve, reject) => {
-          state.loader.parse(buffer, '', resolve, reject);
-        });
         if (requestId !== state.selectionRequestId) {
           disposeObject(gltf.scene);
           return false;
         }
+        if (authNotice) authNotice.hidden = true;
         resetHighlights();
         const palette = options.palette || selectColor;
         gltf.scene.userData.hierarchyNodeId = node.id;
         gltf.scene.traverse(child => {
           if (!child.isMesh) return;
-          child.userData.hierarchyNodeId = node.id;
-          child.material = createOpaqueSelectionMaterial(child.material, palette, { weak: options.weak });
+          // Keep the identity of individual parts in an isolated line.
+          const candidates = (state.hierarchyByName.get(child.name) || []).filter(item => {
+            let ancestor = item;
+            while (ancestor) {
+              if (ancestor.id === node.id || node.reviewNodeIds?.includes(ancestor.id)) return true;
+              ancestor = state.hierarchyById.get(ancestor.parent);
+            }
+            return false;
+          });
+          let owner = child.parent;
+          while (owner && !owner.userData.hierarchyNodeId) owner = owner.parent;
+          child.userData.hierarchyNodeId = candidates.length === 1 ? candidates[0].id : owner?.userData.hierarchyNodeId || node.id;
+          child.material = createOpaqueSelectionMaterial(child.material, palette, { weak: options.weak, overlay: true });
           child.renderOrder = 2;
         });
         state.scene.add(gltf.scene);
         state.selectionOverlay = gltf.scene;
         applyIsolationVisibility({ render: false });
-        if (node.bbox) {
+        if (node.bbox && options.frame === true) {
           const [minX, minY, minZ, maxX, maxY, maxZ] = node.bbox;
           frameBox(new state.THREE.Box3(
             new state.THREE.Vector3(minX, minY, minZ),
@@ -1622,7 +1990,8 @@
         }
         return true;
       } catch (error) {
-        if (options.status !== false) {
+        if (requestId === state.selectionRequestId && showModelAuthError(error)) return false;
+        if (requestId === state.selectionRequestId && options.status !== false) {
           setStatus(`Volume highlighted; exact surface unavailable: ${error?.message || 'unknown error'}`);
         }
         return false;
@@ -2526,9 +2895,7 @@
         const url = selectionUrlFor(node);
         if (!url) continue;
         try {
-          const response = await fetch(url, { cache: 'force-cache' });
-          if (!response.ok) continue;
-          const buffer = await response.arrayBuffer();
+          const buffer = await review.fetchGeometry(url);
           const gltf = await new Promise((resolve, reject) => {
             state.loader.parse(buffer, '', resolve, reject);
           });
@@ -2552,6 +2919,7 @@
           });
           group.add(gltf.scene);
         } catch (error) {
+          if (showModelAuthError(error)) { disposeObject(group); return false; }
           // Keep the bounding boxes when exact component geometry is unavailable.
         }
       }
@@ -2562,13 +2930,13 @@
       renderOnce();
       return true;
     };
-    const renderDatafyFocusOverlays = (lineNode, componentNodes, componentTokens = [], matchTerm = '') => {
+    const renderDatafyFocusOverlays = (lineNode, componentNodes, componentTokens = [], matchTerm = '', options = {}) => {
       if (!state.modelLoaded || !lineNode?.bbox || !Array.isArray(componentNodes) || !componentNodes.length) return false;
       const focusNodes = componentNodes;
       const focusNodeId = String(lineNode.id || '');
       const componentLabel = componentTokens.length ? componentTokens.join('/') : 'component';
-      highlightHierarchyNode(lineNode);
-      setIsolationMode(true, { frame: true });
+      highlightHierarchyNode(lineNode, { frame: options.frame !== false });
+      setIsolationMode(true, { frame: options.frame !== false });
       createDatafyBoxOverlay(focusNodes);
       createDatafyCallouts(lineNode, focusNodes, componentTokens);
       loadSelectionGeometry(lineNode, { status: false })
@@ -2683,14 +3051,15 @@
       const pick = root => {
         if (!root) return null;
         const hits = state.raycaster.intersectObjects([root], true)
-          .filter(hit => objectIsEffectivelyVisible(hit.object));
+          .filter(hit => objectIsEffectivelyVisible(hit.object) && !hit.object.userData.selectionBounds);
         for (const hit of hits) {
-          const node = hierarchyNodeForObject(hit.object);
+          const range = hit.object.userData.progressRanges?.find(range => hit.faceIndex >= range.start && hit.faceIndex < range.end);
+          const node = range ? state.hierarchyById.get(range.nodeId) : hierarchyNodeForObject(hit.object);
           if (node?.bbox) return node;
         }
         return null;
       };
-      return pick(state.datafyOverlay) || pick(state.selectionOverlay);
+      return pick(state.datafyOverlay) || pick(state.selectionOverlay) || pick(state.progressLayer);
     };
     const findHierarchyNodeByMeshRay = () => {
       if (!state.model || !state.raycaster || !state.modelRaycastMeshes.length) return null;
@@ -2704,13 +3073,23 @@
       return null;
     };
     const findHierarchyNodeOnRay = (ray, options = {}) => {
-      const scopedItems = Array.isArray(options.items) && options.items.length ? options.items : state.hierarchyItems;
+      let scopedItems = state.hierarchyItems;
+      if (Array.isArray(options.items) && options.items.length) {
+        const scoped = new Map();
+        const visit = item => {
+          if (scoped.has(item.id)) return;
+          scoped.set(item.id, item);
+          hierarchyChildrenOf(item.id).forEach(visit);
+        };
+        options.items.forEach(visit);
+        scopedItems = Array.from(scoped.values());
+      }
       const pick = (meshOnly, padding) => {
         let bestNode = null;
         let bestScore = Number.POSITIVE_INFINITY;
         let bestVolume = Number.POSITIVE_INFINITY;
         scopedItems.forEach(item => {
-          if (!item.bbox || (meshOnly && !item.mesh)) return;
+          if (!item.bbox || (meshOnly && !item.mesh) || !nodeIsDisciplineVisible(item)) return;
           const distance = rayBboxDistance(ray, item.bbox, padding);
           if (!Number.isFinite(distance)) return;
           const volume = bboxVolume(item.bbox);
@@ -2736,6 +3115,17 @@
     const revealHierarchyNode = (node, source = 'tree') => {
       if (!node) return;
       state.selectedHierarchyId = node.id;
+      if (review && state.reviewPayload) {
+        const names = new Set();
+        let ancestor = node;
+        while (ancestor) { names.add(review.key(ancestor.name)); ancestor = state.hierarchyById.get(ancestor.parent); }
+        state.reviewPayload.drawings.forEach(doc => {
+          if (doc.lines.some(tag => names.has(review.key(tag)))) {
+            state.reviewExpanded.add(`discipline:${doc.discipline}`);
+            state.reviewExpanded.add(`drawing:${doc.id}`);
+          }
+        });
+      }
       let parentId = node.parent;
       while (parentId) {
         state.hierarchyExpanded.add(parentId);
@@ -2753,6 +3143,17 @@
     };
     const selectHierarchyNode = (node, source = 'tree', options = {}) => {
       if (!node) return;
+      if (!nodeIsDisciplineVisible(node)) {
+        setStatus('This discipline is hidden. Enable it in Visible disciplines to select this item.');
+        return;
+      }
+      ++state.selectionRequestId;
+      if (source === 'tree') {
+        // A new tree selection replaces the previous context, including Surroundings.
+        restoreSurroundings();
+        ++state.datafyRequestId;
+        state.isolateSelection = true;
+      }
       if (!options.preserveDatafyFocus) {
         clearDatafyFocus();
       }
@@ -2760,7 +3161,7 @@
       revealHierarchyNode(node, source);
       setSelection({
         label: node.name,
-        type: `${node.mesh ? 'Mesh' : 'Group'} - Node ${node.id}`,
+        type: node.reviewNodeIds ? `${node.reviewNodeIds.length} linked line(s)` : `${node.mesh ? 'Mesh' : 'Group'} - Node ${node.id}`,
         supplyContext: state.supplyContext,
       });
       if (!state.modelLoaded) {
@@ -2774,8 +3175,8 @@
         renderOnce();
         return;
       }
-      highlightHierarchyNode(node);
-      loadSelectionGeometry(node);
+      highlightHierarchyNode(node, { frame: source !== 'viewer' });
+      loadSelectionGeometry(node, { frame: false });
     };
     const supplyLineCandidates = value => {
       return String(value || '')
@@ -2968,11 +3369,12 @@
     root._focusSupplyLineIn3D = focusSupplyLineIn3D;
     const handleViewerClick = async event => {
       if (!state.modelLoaded || !state.camera || !state.renderer || !state.raycaster || !state.THREE) return;
+      const requestId = ++state.pickRequestId;
       if (!state.hierarchyLoaded) {
         setStatus('Loading hierarchy to identify the 3D click...');
         await loadHierarchy();
       }
-      if (!state.hierarchyLoaded) return;
+      if (!state.hierarchyLoaded || requestId !== state.pickRequestId) return;
       const rect = state.renderer.domElement.getBoundingClientRect();
       const pointer = new state.THREE.Vector2(
         ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1,
@@ -3004,6 +3406,7 @@
         supplyContext: preserveDatafyFocus ? state.supplyContext : null,
         skipModelHighlight: preserveDatafyFocus,
       });
+      if (event.focusSelection) focusSelection();
     };
     const indexModel = object => {
       const items = [];
@@ -3061,7 +3464,7 @@
         state.renderFrame = null;
       }
     };
-    const renderOnce = () => startRenderLoop();
+    const renderOnce = () => { applyDisciplineVisibility(); startRenderLoop(); };
     const requestIdle = callback => {
       if ('requestIdleCallback' in window) {
         window.requestIdleCallback(callback, { timeout: 2200 });
@@ -3086,6 +3489,66 @@
         loadModel('detail');
       });
     };
+    const setNavigationMode = mode => {
+      state.navigationMode = mode;
+      if (state.controls) {
+        state.controls.mouseButtons.LEFT = mode === 'pan' ? state.THREE.MOUSE.PAN : state.THREE.MOUSE.ROTATE;
+        state.controls.touches.ONE = mode === 'pan' ? state.THREE.TOUCH.PAN : state.THREE.TOUCH.ROTATE;
+      }
+      navigationButtons.forEach(button => button.setAttribute('aria-pressed', String(button.dataset.modelNavigation === mode)));
+      if (viewer) viewer.dataset.navigation = mode;
+    };
+    const bindViewerGestures = canvas => {
+      const pointers = new Set();
+      let lastTap = null;
+      const cancel = event => {
+        pointers.delete(event.pointerId);
+        state.pointerDown = null;
+        canvas.classList.remove('is-navigating');
+      };
+      canvas.addEventListener('pointerdown', event => {
+        ++state.pickRequestId;
+        pointers.add(event.pointerId);
+        canvas.focus({ preventScroll: true });
+        canvas.classList.add('is-navigating');
+        if (pointers.size !== 1 || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+          state.pointerDown = null;
+          lastTap = null;
+          return;
+        }
+        state.pointerDown = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, t: performance.now() };
+      });
+      canvas.addEventListener('pointermove', event => {
+        const down = state.pointerDown;
+        if (down && down.id === event.pointerId && Math.hypot(event.clientX - down.x, event.clientY - down.y) > 6) down.moved = true;
+      });
+      canvas.addEventListener('pointerup', event => {
+        const down = state.pointerDown;
+        cancel(event);
+        const now = performance.now();
+        if (!down || down.id !== event.pointerId || down.moved || now - down.t > 900 ||
+            Math.hypot(event.clientX - down.x, event.clientY - down.y) > 6) {
+          lastTap = null;
+          return;
+        }
+        const doubleTap = lastTap && now - lastTap.t < 350 && Math.hypot(event.clientX - lastTap.x, event.clientY - lastTap.y) < 12;
+        lastTap = doubleTap ? null : { x: event.clientX, y: event.clientY, t: now };
+        handleViewerClick({ clientX: event.clientX, clientY: event.clientY, focusSelection: !!doubleTap })
+          .catch(error => { console.warn('3D selection failed', error); setStatus('Selection unavailable. Please try again.'); });
+      });
+      canvas.addEventListener('pointercancel', cancel);
+      canvas.addEventListener('lostpointercapture', cancel);
+      canvas.addEventListener('keydown', event => {
+        if (event.ctrlKey || event.metaKey || event.altKey) return;
+        const key = event.key.toLowerCase();
+        if (!['f', 'home', 'escape', 'r', 'p'].includes(key)) return;
+        event.preventDefault();
+        if (key === 'f') focusSelection();
+        if (key === 'home') fitButton?.click();
+        if (key === 'escape') clearButton?.click();
+        if (key === 'r' || key === 'p') setNavigationMode(key === 'p' ? 'pan' : 'orbit');
+      });
+    };
     const ensureViewer = async () => {
       if (state.loader) return;
       const THREE = await import('three');
@@ -3096,7 +3559,8 @@
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x0f172a);
       const camera = new THREE.PerspectiveCamera(45, Math.max(viewer.clientWidth, 1) / Math.max(viewer.clientHeight, 1), 0.1, 100000);
-      const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'low-power' });
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'low-power' });
+      renderer.localClippingEnabled = true;
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
       renderer.setSize(viewer.clientWidth, viewer.clientHeight);
       viewer.innerHTML = '';
@@ -3107,26 +3571,23 @@
       scene.add(sun);
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
+      controls.dampingFactor = 0.16;
+      controls.rotateSpeed = 0.65;
+      controls.zoomSpeed = 0.85;
+      controls.zoomToCursor = true;
+      controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
       controls.addEventListener('change', renderOnce);
       controls.screenSpacePanning = true;
       const loader = new GLTFLoader();
       loader.setMeshoptDecoder(MeshoptDecoder);
       const raycaster = new THREE.Raycaster();
       renderer.domElement.style.touchAction = 'none';
-      renderer.domElement.addEventListener('pointerdown', event => {
-        state.pointerDown = { x: event.clientX, y: event.clientY, t: performance.now() };
-      });
-      renderer.domElement.addEventListener('pointerup', event => {
-        const down = state.pointerDown;
-        state.pointerDown = null;
-        if (!down) return;
-        const moved = Math.hypot(event.clientX - down.x, event.clientY - down.y);
-        const elapsed = performance.now() - down.t;
-        if (moved > 6 || elapsed > 900) return;
-        handleViewerClick(event);
-      });
+      renderer.domElement.tabIndex = 0;
+      renderer.domElement.setAttribute('aria-label', '3D model. Click to select; double-click or F to focus. Drag to orbit; right drag to pan; scroll to zoom. Home: overview.');
+      bindViewerGestures(renderer.domElement);
+      controls.listenToKeyEvents(renderer.domElement);
       Object.assign(state, { scene, camera, renderer, controls, loader, raycaster });
+      setNavigationMode(state.navigationMode);
       const observer = new ResizeObserver(() => {
         if (!state.renderer || !state.camera) return;
         state.camera.aspect = Math.max(viewer.clientWidth, 1) / Math.max(viewer.clientHeight, 1);
@@ -3159,6 +3620,10 @@
             setStatus(`Loading ${label}... ${pct}%`);
           }
         });
+        const replacingModel = state.modelLoaded;
+        const hadSurroundings = state.surroundings;
+        restoreSurroundings();
+        restoreProgressMaterials();
         resetHighlights();
         if (state.model) {
           state.scene.remove(state.model);
@@ -3172,22 +3637,26 @@
         setModelControlsEnabled(true);
         emptyState?.remove();
         indexModel(gltf.scene);
+        syncDisciplineControls();
+        if (state.appearance === 'progress') tintProgressBase();
+        state.surroundings = hadSurroundings;
         const selectedNode = state.hierarchyById.get(state.selectedHierarchyId);
         if (selectedNode?.bbox) {
           if (state.supplyContext && state.datafyLineNode?.id === selectedNode.id && state.datafyComponentNodes.length) {
-            renderDatafyFocusOverlays(selectedNode, state.datafyComponentNodes, state.datafyComponentTokens);
+            renderDatafyFocusOverlays(selectedNode, state.datafyComponentNodes, state.datafyComponentTokens, '', { frame: !isDetail });
           } else {
-            highlightHierarchyNode(selectedNode);
+            highlightHierarchyNode(selectedNode, { frame: !isDetail });
             loadSelectionGeometry(selectedNode);
           }
         } else {
           state.isolateSelection = false;
           applyIsolationVisibility({ render: false });
-          frameModel();
+          if (!isDetail || !replacingModel) frameModel();
         }
         updateIsolationControls();
         renderOnce();
         if (state.viewerVisible) startRenderLoop();
+        if (state.appearance === 'progress' && !state.progressLayer) setAppearance('progress');
         const elapsed = ((performance.now() - started) / 1000).toFixed(1);
         const itemLabel = state.modelItems.length === 1 ? 'indexed object' : 'indexed objects';
         const shouldAutoRefine = !isDetail
@@ -3240,12 +3709,38 @@
       highlightByTerms(node);
     });
     modelList?.addEventListener('click', event => {
+      const toggle = event.target.closest('[data-review-toggle]');
+      if (toggle) {
+        const id = toggle.dataset.reviewToggle;
+        state.reviewExpanded.has(id) ? state.reviewExpanded.delete(id) : state.reviewExpanded.add(id);
+        renderModelTree();
+        return;
+      }
+      const drawingButton = event.target.closest('[data-review-drawing]');
+      if (drawingButton) {
+        const doc = state.reviewPayload?.drawings.find(doc => doc.id === drawingButton.dataset.reviewDrawing);
+        if (doc && !doc.lines.length) {
+          state.reviewExpanded.add(`drawing:${doc.id}`);
+          renderModelTree();
+          setStatus(`${doc.name}: drawing registered; its 3D geometry is not linked yet.`);
+          return;
+        }
+        const node = doc && review.drawingSelection(doc, state.reviewPayload.lines, state.hierarchyItems);
+        if (!node) {
+          setStatus('This drawing does not have a complete exact 3D link. Expand its lines to inspect the available matches.');
+          return;
+        }
+        state.hierarchyById.set(node.id, node);
+        state.reviewExpanded.add(node.id);
+        selectHierarchyNode(node, 'tree');
+        return;
+      }
       const item = event.target.closest('[data-model-node-id]');
       if (!item) return;
       const node = state.hierarchyById.get(item.dataset.modelNodeId);
       if (!node) return;
       const children = hierarchyChildrenOf(node.id);
-      if (children.length && event.target.closest('.dx-project-tree-caret')) {
+      if (state.treeMode === 'original' && children.length && event.target.closest('.dx-project-tree-caret')) {
         state.hierarchyExpanded.has(node.id) ? state.hierarchyExpanded.delete(node.id) : state.hierarchyExpanded.add(node.id);
         renderModelTree();
         return;
@@ -3255,11 +3750,40 @@
     loadButton?.addEventListener('click', () => {
       loadModel(state.currentModelMode === 'overview' ? 'detail' : 'overview');
     });
-    fitButton?.addEventListener('click', frameModel);
+    navigationButtons.forEach(button => button.addEventListener('click', () => setNavigationMode(button.dataset.modelNavigation)));
+    appearanceButtons.forEach(button => button.addEventListener('click', () => setAppearance(button.dataset.modelAppearance)));
+    treeModeButtons.forEach(button => button.addEventListener('click', () => {
+      state.treeMode = button.dataset.modelTreeMode;
+      treeModeButtons.forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      renderModelTree();
+    }));
+    focusButton?.addEventListener('click', focusSelection);
+    fitButton?.addEventListener('click', () => {
+      if (state.isolateSelection) setIsolationMode(false, { frame: false });
+      frameModel();
+      renderOnce();
+    });
     isolateButton?.addEventListener('click', () => {
       setIsolationMode(!state.isolateSelection);
     });
+    surroundingsButton?.addEventListener('click', () => setSurroundings(!state.surroundings));
+    surroundingsRange?.addEventListener('input', () => {
+      state.surroundingsScale = Number(surroundingsRange.value) || 2;
+      if (state.surroundings) { updateSurroundings(); renderOnce(); }
+    });
     clearButton?.addEventListener('click', () => {
+      const node = selectedHierarchyNode();
+      if (!node) return;
+      ++state.pickRequestId;
+      ++state.datafyRequestId;
+      // Remove the material annotations, retaining the selected geometry and camera.
+      state.isolateSelection = true;
+      selectHierarchyNode(node, 'viewer');
+      setStatus(`Markings cleared. Selection retained: ${node.name}`);
+    });
+    resetButton?.addEventListener('click', () => {
+      ++state.pickRequestId;
+      restoreSurroundings();
       state.isolateSelection = false;
       state.selectionRequestId += 1;
       if (state.model) state.model.visible = true;
@@ -3283,6 +3807,7 @@
     const activateViewer = () => {
       if (document.hidden) return;
       state.viewerVisible = true;
+      if (!state.reviewPayload && !state.reviewPromise) loadReview();
       if (state.modelLoaded) startRenderLoop();
       if (state.pendingDetail && state.currentModelMode === 'overview' && !state.modelLoading) {
         state.pendingDetail = false;

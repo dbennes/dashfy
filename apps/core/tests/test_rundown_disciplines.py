@@ -32,7 +32,7 @@ class RundownDisciplineTests(SimpleTestCase):
         self.assertEqual(piping["kpis"]["scope_total"], 607)
         self.assertEqual(piping["source"]["unit"], "spools")
         self.assertEqual(piping["source"]["workbook"], original["source"]["workbook"])
-        self.assertEqual(piping["source"]["title"], "Piping ISO rundown (ROS)")
+        self.assertEqual(piping["source"]["title"], "Piping ISO rundown")
         self.assertEqual(piping["source"]["notice"], "")
         self.assertEqual(piping["source"]["source_label"], "Runddown!T1:X75 · reconciled schedule · snapshot 02 Sep 26")
 

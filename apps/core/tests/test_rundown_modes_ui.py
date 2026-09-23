@@ -79,7 +79,7 @@ class RundownModesUITests(SimpleTestCase):
             }
             const root = new Element(), nodes = {}, ids = {}, queries = [];
             const selectors = [
-              '#fabRundownTitle', '#fabRundownSample', '#fabRundownEmpty',
+              '#fabRundownProgress', '#fabRundownTitle', '#fabRundownSample', '#fabRundownEmpty',
               '#fabRundownDataDate', '#fabRundownNotice', '#fabRundownSummary',
               '.fab-rundown-kicker', '.fab-rundown-title p', '.is-scope', '.is-scope dd',
               '.is-baseline', '.is-baseline dt', '.is-baseline dd', '.is-lookahead',
@@ -94,7 +94,7 @@ class RundownModesUITests(SimpleTestCase):
               const button = new Element(); button.dataset.rundownMode = mode; return button;
             });
             const groups = {};
-            ['[data-rundown-lookahead]', '[data-rundown-baseline-label]',
+            ['[data-rundown-actual]', '[data-rundown-lookahead]', '[data-rundown-baseline-label]',
              '[data-rundown-lookahead-label]', '.fab-rundown-legend-label'].forEach(selector => {
               groups[selector] = [new Element(), new Element()];
             });
@@ -187,6 +187,27 @@ class RundownModesUITests(SimpleTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
+
+    def test_imported_actual_progress_is_visible_and_clears_when_switching(self):
+        result = self.run_controller(r"""
+          const piping = modes.fabrication.disciplines.piping;
+          piping.source.has_actual = true;
+          piping.kpis.actual_progress_pct = 30;
+          piping.charts.actual_rundown = [7, null];
+          ids.fabRundownModes.textContent = JSON.stringify(modes);
+          fabRundownInit(); visibleCallback();
+          const actual = state();
+          const progress = nodes['#fabRundownProgress'].textContent;
+          const shown = groups['[data-rundown-actual]'].every(node => !node.hidden);
+          chooseMode('installation');
+          console.log(JSON.stringify({actual, progress, shown, next:state(), hidden:groups['[data-rundown-actual]'].every(node=>node.hidden)}));
+        """)
+        self.assertEqual(result["progress"], "30%")
+        self.assertTrue(result["shown"])
+        actual = next(ds for ds in result["actual"]["datasets"] if ds["metricKey"] == "actualRemaining")
+        self.assertEqual([point["y"] for point in actual["data"]], [7, None])
+        self.assertTrue(result["hidden"])
+        self.assertFalse(any(ds["metricKey"] == "actualRemaining" for ds in result["next"]["datasets"]))
 
     def assert_skyline_untouched(self, state):
         self.assertTrue(state["skylineUnchanged"])

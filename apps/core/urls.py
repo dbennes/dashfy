@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views, ros_views
+from . import views, ros_views, rundown_views
 
 app_name = "core"
 
@@ -23,5 +23,8 @@ urlpatterns = [
     path("fabrication/expedite/", views.fabrication_expedite_view, name="fabrication_expedite"),
     path("fabrication/ros/export/", ros_views.export_ros_view, name="export_ros"),
     path("fabrication/ros/import/", ros_views.import_ros_view, name="import_ros"),
+    path("fabrication/rundown/export/", rundown_views.export_rundown, name="export_rundown"),
+    path("fabrication/rundown/import/", rundown_views.import_rundown, name="import_rundown"),
     path("model-node/<int:node_id>.glb", views.model_node_glb, name="model_node_glb"),
+    path("model-review/", views.model_review_view, name="model_review"),
 ]

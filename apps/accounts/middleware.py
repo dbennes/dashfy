@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import resolve_url
 from django.utils import timezone
 
@@ -22,6 +22,10 @@ class LoginRequiredMiddleware:
         path = request.path_info.lstrip("/")
         if not request.user.is_authenticated and not any(p.match(path) for p in self.exempt):
             login_url = resolve_url(settings.LOGIN_URL)
+            if path.startswith("model-node/") or path == "model-review/":
+                response = JsonResponse({"error": "authentication_required", "login_url": f"{login_url}?{urlencode({'next': '/#s05'})}"}, status=401)
+                response["Cache-Control"] = "no-store, private"
+                return response
             target = f"{login_url}?{urlencode({'next': request.get_full_path()})}"
             return HttpResponseRedirect(target)
         if request.user.is_authenticated:

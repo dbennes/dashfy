@@ -65,7 +65,7 @@ def _piping_payload(payload: dict) -> dict:
         provenance.append(f'snapshot {original_source["snapshot_label"]}')
     original_source.update({
         "discipline": "piping", "discipline_label": "Piping",
-        "title": "Piping ISO rundown (ROS)", "unit": "spools", "unit_label": "spools",
+        "title": "Piping ISO rundown", "unit": "spools", "unit_label": "spools",
         "baseline_label": "Baseline", "lookahead_label": "Lookahead", "has_lookahead": True,
         "source_label": " · ".join(provenance), "notice": "",
     })

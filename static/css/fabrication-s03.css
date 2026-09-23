@@ -371,6 +371,13 @@
   border-left: 1px solid var(--fb-border-subtle);
 }
 .cockpit-v3 #s03 .fab-rundown-kpis > div:first-child { border-left: 0; }
+.cockpit-v3 #s03 .fab-rundown-kpis:has([data-rundown-actual]:not([hidden])) { grid-template-columns: repeat(5, minmax(74px, auto)); }
+.cockpit-v3 #s03 [data-rundown-actual][hidden] { display: none; }
+.cockpit-v3 #s03 #fabRundownProgress { color: var(--fb-info); }
+.cockpit-v3 #s03 .fab-rundown-key.is-line.is-actual::before { background: #38bdf8; border-color: #38bdf8; }
+@media (max-width: 760px) {
+  .cockpit-v3 #s03 .fab-rundown-kpis:has([data-rundown-actual]:not([hidden])) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .cockpit-v3 #s03 .fab-rundown-kpis dt {
   margin: 0 0 2px;
   color: var(--fb-fg-subtle);
