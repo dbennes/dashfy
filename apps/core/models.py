@@ -340,6 +340,41 @@ class RundownImport(TimestampedModel):
         ordering = ["-pk"]
 
 
+class SectionNote(TimestampedModel):
+    """Shared section observation; original content and authorship are retained."""
+    project = models.CharField(max_length=40, default="BN-EPC1", editable=False)
+    client = models.ForeignKey("accounts.Client", on_delete=models.PROTECT, null=True, blank=True)
+    section = models.CharField(max_length=8)
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    author_name = models.CharField(max_length=300)
+    note_date = models.DateField()
+    body = models.TextField(max_length=4000)
+    due_date = models.DateField(null=True, blank=True)
+    information_only = models.BooleanField(default=False)
+    status = models.CharField(max_length=12, default="pending", choices=[
+        ("pending", "Pendente"), ("resolved", "Sanado"), ("cancelled", "Cancelado")])
+    version = models.PositiveIntegerField(default=1)
+    context = models.JSONField(default=dict, blank=True)
+    request_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        indexes = [models.Index(fields=["project", "client", "section"])]
+
+
+class SectionNoteEvent(models.Model):
+    """Append-only history of creation and every subsequent status change."""
+    note = models.ForeignKey(SectionNote, on_delete=models.PROTECT, related_name="events")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    actor_name = models.CharField(max_length=300)
+    created_at = models.DateTimeField(auto_now_add=True)
+    previous_status = models.CharField(max_length=12, blank=True)
+    status = models.CharField(max_length=12)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+
 class RosScheduleImport(TimestampedModel):
     """Accepted, append-only ROS schedules shared by Skyline and Piping rundown."""
 

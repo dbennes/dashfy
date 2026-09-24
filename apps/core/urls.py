@@ -1,10 +1,13 @@
 from django.urls import path
 
-from . import views, ros_views, rundown_views
+from . import views, ros_views, rundown_views, section_notes
 
 app_name = "core"
 
 urlpatterns = [
+    path("section-notes/", section_notes.notes, name="section_notes"),
+    path("section-notes/<int:pk>/status/", section_notes.change_status, name="section_note_status"),
+    path("section-notes/minutes.xlsx", section_notes.export_minutes, name="section_minutes"),
     path("", views.home_view, name="home"),
     path("aveon-material-availability/", views.aveon_material_availability_view, name="aveon_material_availability"),
     path("search/", views.search_view, name="search"),

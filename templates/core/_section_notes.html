@@ -1,0 +1,18 @@
+<dialog id="sectionNotesDialog" class="sn-dialog" aria-labelledby="snTitle" data-api="{% url 'core:section_notes' %}" data-status-url="{% url 'core:section_note_status' 0 %}" data-user="{{ user }}">
+  <header class="sn-dialog-head"><div><span class="sn-eyebrow">ACOMPANHAMENTO DA SEÇÃO</span><h2 id="snTitle">Comentários</h2></div><button type="button" class="sn-button" data-sn-close aria-label="Fechar comentários"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
+  <nav class="sn-tabs" aria-label="Comentários da seção"><button type="button" class="sn-button" data-sn-tab="new">Registrar comentário</button><button type="button" class="sn-button" data-sn-tab="history">Histórico</button></nav>
+  <p class="sn-message" data-sn-message role="status" aria-live="polite"></p>
+  <form data-sn-form>
+    {% csrf_token %}
+    <div class="sn-fields"><label>Data da nota<input type="date" name="date" required></label><label>Registrado por<input name="author" value="{{ user }}" readonly></label></div>
+    <label class="sn-note-label">Nota sobre o cenário atual<textarea name="body" rows="5" maxlength="4000" required placeholder="Descreva a situação e o que precisa ser acompanhado."></textarea></label>
+    <div class="sn-fields"><label>Previsão de conclusão<input type="date" name="due_date" required></label><label class="sn-check"><input type="checkbox" name="information_only">Somente informação — sem prazo</label></div>
+    <p class="sn-help">Registrado como Pendente. As alterações de status ficam no histórico, com nome, data e hora.</p>
+    <footer class="sn-footer"><button type="submit" class="sn-button sn-primary">Salvar comentário</button></footer>
+  </form>
+  <div data-sn-history hidden>
+    <div class="sn-history-tools"><label>Status <select data-sn-filter><option value="all">Todos</option><option value="pending">Pendente</option><option value="resolved">Sanado</option><option value="cancelled">Cancelado</option></select></label><button type="button" class="sn-button" data-sn-refresh><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Atualizar</button></div>
+    <div data-sn-list></div>
+    <footer class="sn-pagination"><button type="button" class="sn-button" data-sn-prev>Anterior</button><span data-sn-page></span><button type="button" class="sn-button" data-sn-next>Próxima</button></footer>
+  </div>
+</dialog>

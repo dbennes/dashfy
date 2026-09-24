@@ -7,6 +7,7 @@
 {% block project_horiz %}{{ manager.p6.kpis.start_label|default:"31/05/24" }} → {{ manager.p6.kpis.finish_label|default:"30/06/27" }}{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/section-notes.css' %}?v=20260924">
 <link rel="stylesheet" href="{% static 'css/rundown-import.css' %}?v=20260924">
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
 <link href="{% static 'css/fabrication-s03.css' %}?v=20260923-rundown-import" rel="stylesheet">
@@ -52,6 +53,8 @@
 {% endblock %}
 
 {% block content %}
+<div class="sn-export"><span>Comentários e decisões de todas as seções</span><a class="sn-button" href="{% url 'core:section_minutes' %}"><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Exportar ata</a></div>
+
 
 {# ===== FILTERBAR (sticky) ===== #}
 <form method="get" class="filterbar is-mobile-filter-ready" id="filters-bar" data-c3-filterbar data-c3-auto-submit>
@@ -1860,6 +1863,9 @@
 {% endblock %}
 
 {% block extra_js %}
+{% include 'core/_section_notes.html' %}
+<script src="{% static 'js/section-notes.js' %}?v=20260924" defer></script>
+
 {% if user.is_admin %}
 <dialog id="rundownImportDialog" aria-labelledby="rundownImportTitle">
   <div class="rundown-modal-head"><h2 id="rundownImportTitle">Import rundown</h2><button type="button" class="ob-btn" data-rundown-import-close aria-label="Close import">Close</button></div>
