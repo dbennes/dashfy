@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
-from zipfile import ZipFile, BadZipFile
+from zipfile import BadZipFile
 from xml.etree.ElementTree import ParseError
 
 from django.core import signing
@@ -16,6 +16,7 @@ from openpyxl import load_workbook
 import xlsxwriter
 
 from .models import RundownImport
+from .rundown_xlsx import compact_workbook
 
 DISCIPLINES = {"piping": "Piping", "electrical": "Electrical", "structural": "Structural"}
 MODES = {"fabrication": "Fabrication", "installation": "Installation"}
@@ -80,7 +81,7 @@ def export_workbook(current):
              "Set Include on import to YES for sheets to update. NO leaves the current view unchanged. Set Scope and Data date.",
              "Edit columns A–D from row 10. Add/remove dates as needed; each date must be unique. Blank actual means not reported; 0 means zero completed that day.",
              "Actual daily is the quantity completed ON THAT DAY, not cumulative. Actual cannot be reported after Data date. Totals cannot exceed Scope.",
-             "Grey columns are reference calculations and are recalculated on import. Do not enter Excel formulas in yellow cells.",
+             "Grey columns are recalculated on import. Formulas in yellow cells use results saved by Excel: recalculate and save before uploading. Auxiliary columns after H are ignored.",
              "Baseline/lookahead balances are at the start of the day. Actual remaining and Progress % are at the end of the reported day.",
              "Sample Installation data is deliberately exported as empty templates. Fill with real data and choose YES to replace a sample view.",
              "Import previews changes before applying. Only the latest export can be applied; export again if another user or a source updated the data.",
@@ -173,15 +174,7 @@ def validate_table(table, title):
 
 def parse_workbook(content, current):
     try:
-        with ZipFile(BytesIO(content)) as archive:
-            entries = archive.infolist()
-            expanded_bytes = sum(item.file_size for item in entries)
-            if expanded_bytes > 50 * 1024 * 1024:
-                raise ValueError(f"Workbook expands to {expanded_bytes / (1024 * 1024):.1f} MB (limit: 50 MB). "
-                                 "Export a fresh workbook and paste only your edited values into it.")
-            if len(entries) > 200:
-                raise ValueError(f"Workbook contains {len(entries)} internal files (limit: 200). "
-                                 "Export a fresh workbook and paste only your edited values into it.")
+        content = compact_workbook(content)
         book = load_workbook(BytesIO(content), read_only=True, data_only=False, keep_links=False)
     except (BadZipFile, OSError, KeyError, ParseError) as exc:
         raise ValueError("Choose a valid exported .xlsx workbook.") from exc

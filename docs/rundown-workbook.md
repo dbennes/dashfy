@@ -12,6 +12,9 @@ included. Each row is a daily quantity feeding the chart, not an individual ISO.
    zero is a reported zero. Rows can be added, deleted or reordered.
 4. Balances and cumulative progress percentages are calculated from the quantities.
    Grey Excel formula columns are for reference and are recalculated by the importer.
+   Formulas in editable fields use the calculated results saved by Excel. Recalculate
+   and save before uploading; the server does not execute formulas. Missing cached
+   results and Excel errors are rejected. Auxiliary columns after H are ignored.
 5. An administrator opens **Import** in the rundown toolbar. The modal lets them
    upload, review changed sheets/fields and select **Apply changes** without
    leaving the dashboard. The chart refreshes while keeping the selected mode and
@@ -50,9 +53,13 @@ Migration: `core.0008_rundownimport`. Restart the application after deployment.
 Regression tests: `test_rundown_workbook`, `test_rundown_modes_ui`,
 `test_rundown_live_home`, `test_rundown_modes`, `test_rundown_disciplines`.
 
-The upload limit is 10 MiB compressed, 50 MiB expanded and 200 internal ZIP entries.
-Errors distinguish expanded size from entry count and report the measured value.
-A fresh export with edited values pasted into it removes unnecessary Excel objects.
+The upload limit is 10 MiB compressed, 256 MiB raw expanded XML and 200 internal
+ZIP entries. Worksheets are processed one row at a time, discarding empty formatted
+cells and auxiliary columns after H. Dimensions are rebuilt from retained cells,
+so formatting through Excel's final row does not count as imported daily rows.
+The retained workbook data still has a 50 MiB limit. No change is made to the
+user's original file. Dates, quantities, scope, identity and revision are validated
+after compaction, including values obtained from saved formula results.
 The preview log records uploaded byte count and SHA-256 to identify the exact file
 without logging its data. A valid unchanged workbook reports no changes and is not saved.
 The modal/diagnostic update adds no migration beyond the existing core.0008.

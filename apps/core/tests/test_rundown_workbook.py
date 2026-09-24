@@ -157,3 +157,64 @@ class RundownWorkbookTests(TestCase):
             with self.assertRaisesRegex(ValueError, message):
                 wb.parse_workbook(stream.getvalue(), self.current)
         self.assertFalse(RundownImport.objects.exists())
+
+    def rewrite_sheet_xml(self, callback):
+        from zipfile import ZipFile, ZIP_DEFLATED
+        stream = BytesIO()
+        with ZipFile(BytesIO(self.content)) as source, ZipFile(stream, "w", ZIP_DEFLATED) as target:
+            for item in source.infolist():
+                value = source.read(item)
+                if item.filename == "xl/worksheets/sheet2.xml":
+                    value = callback(value)
+                target.writestr(item.filename, value)
+        return stream.getvalue()
+
+    def test_empty_excel_last_row_and_auxiliary_columns_are_ignored(self):
+        from openpyxl.styles import PatternFill
+        def change(book):
+            sheet = book["Piping - Fabrication"]
+            sheet["A1048576"].fill = PatternFill("solid", fgColor="FFFF00")
+            sheet["N1048576"].fill = PatternFill("solid", fgColor="FFFF00")
+            sheet["I10"] = 123
+            sheet["D10"] = 2
+        parsed = wb.parse_workbook(self.edit(change), self.current)
+        self.assertEqual(parsed["changes"][0]["actual"], 2)
+        self.assertEqual(parsed["updates"]["fabrication:piping"]["rows"][0][3], 2)
+
+    def test_saved_formula_results_are_validated_including_blank_and_zero(self):
+        from xml.etree import ElementTree as ET
+        ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+        def change(raw, actual=2):
+            root = ET.fromstring(raw)
+            row = root.find(f"{ns}sheetData/{ns}row[@r='10']")
+            for address, value, kind in [("B10", "10", "n"), ("C10", "", "str"), ("D10", str(actual), "n")]:
+                cell = row.find(f"{ns}c[@r='{address}']")
+                if cell is None:
+                    cell = ET.SubElement(row, ns+"c", r=address)
+                cell.clear()
+                cell.attrib.update(r=address, t=kind)
+                ET.SubElement(cell, ns+"f").text = '_xlfn.XLOOKUP(A10,I10:I20,J10:J20,"")'
+                ET.SubElement(cell, ns+"v").text = value
+            return ET.tostring(root)
+        for actual in (0, 2):
+            parsed = wb.parse_workbook(self.rewrite_sheet_xml(lambda raw: change(raw, actual)), self.current)
+            self.assertEqual(parsed["updates"]["fabrication:piping"]["rows"][0][1:], [10, None, actual])
+        with self.assertRaisesRegex(ValueError, "exceeds"):
+            wb.parse_workbook(self.rewrite_sheet_xml(lambda raw: change(raw, 11)), self.current)
+
+    def test_large_empty_formatting_is_compacted_but_raw_limit_still_applies(self):
+        from apps.core import rundown_xlsx
+        # A large worksheet expansion made entirely of empty formatting. The
+        # compacted workbook must round-trip without creating an import record.
+        padding = b'<row r="1048576"><c r="A1048576" s="1"/>' + b" " * (51 * 1024 * 1024) + b"</row>"
+        content = self.rewrite_sheet_xml(lambda raw: raw.replace(b"</sheetData>", padding+b"</sheetData>"))
+        self.assertEqual(wb.parse_workbook(content, self.current)["updates"], {})
+        with patch.object(rundown_xlsx, "MAX_EXPANDED", 1024):
+            with self.assertRaisesRegex(ValueError, "expands"):
+                wb.parse_workbook(content, self.current)
+        self.assertFalse(RundownImport.objects.exists())
+
+    def test_xml_document_types_are_rejected(self):
+        content = self.rewrite_sheet_xml(lambda raw: raw.replace(b"<worksheet", b'<!DOCTYPE worksheet [<!ENTITY x "unsafe">]><worksheet', 1))
+        with self.assertRaisesRegex(ValueError, "document type"):
+            wb.parse_workbook(content, self.current)
