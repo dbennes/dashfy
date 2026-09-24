@@ -1,0 +1,46 @@
+<div data-rundown-import-content>
+  <article class="fab-rundown-card">
+    <header class="fab-rundown-head">
+      <div class="fab-rundown-title"><h3>Import rundown</h3><p>Update daily plans and actual progress for each discipline and mode.</p></div>
+      <div class="fab-ros-actions">
+        {% if not modal %}<a class="ob-btn" href="{% url 'core:home' %}#s03">Back to dashboard</a>{% endif %}
+        <a class="ob-btn ob-btn-blue" href="{% url 'core:export_rundown' %}"><i class="bi bi-download" aria-hidden="true"></i>Export workbook</a>
+      </div>
+    </header>
+    <div class="fab-ros-body">
+      <p>One sheet per discipline and mode: Piping, Electrical and Structural × Fabrication and Installation. Edit the yellow cells, including daily completed quantities. Balances and progress percentages are recalculated on import.</p>
+      <p>Sample views export as empty templates. Set “Include on import” to YES for sheets to update. Changes feed the rundown card; DATAFY package records are managed separately.</p>
+      {% if error %}<p class="fab-ros-alert is-error" role="alert">{{ error }}</p>{% endif %}
+      {% if unchanged %}<p class="fab-ros-alert" role="status">No changes found in the enabled sheets.</p>{% endif %}
+      {% if preview %}
+      <h4>Review changes · {{ filename }}</h4>
+      <div class="fab-ros-table-wrap" tabindex="0" role="region" aria-label="Rundown changes">
+        <table class="fab-ros-table"><thead><tr><th>Sheet</th><th>Previous scope</th><th>Updated scope</th><th>Daily rows</th><th>Completed</th><th>Data date</th></tr></thead>
+          <tbody>{% for change in preview.changes %}<tr><td>{{ change.sheet }}</td><td>{{ change.before_scope }}</td><td>{{ change.scope }}</td><td>{{ change.rows }}</td><td>{{ change.actual|default_if_none:"Unreported" }}</td><td>{{ change.data_date }}</td></tr>{% endfor %}</tbody>
+        </table>
+      </div>
+      <p>{{ preview.detail_count }} field changes. Showing the first {{ preview.details|length }}.</p>
+      <div class="fab-ros-table-wrap" tabindex="0" role="region" aria-label="Changed dates and quantities">
+        <table class="fab-ros-table"><thead><tr><th>Sheet</th><th>Date</th><th>Field</th><th>Previous</th><th>Updated</th></tr></thead><tbody>
+          {% for change in preview.details %}<tr><td>{{ change.sheet }}</td><td>{{ change.day }}</td><td>{{ change.field }}</td><td>{{ change.before|default_if_none:"Unreported" }}</td><td>{{ change.after|default_if_none:"Unreported" }}</td></tr>{% endfor %}
+        </tbody></table>
+      </div>
+      <form action="{% url 'core:import_rundown' %}" method="post" class="fab-ros-actions">{% csrf_token %}<input type="hidden" name="action" value="apply"><input type="hidden" name="preview_token" value="{{ preview_token }}">
+        <button class="ob-btn ob-btn-blue" type="submit">Apply changes</button><a class="ob-btn" data-rundown-reset href="{% url 'core:import_rundown' %}">Cancel</a>
+      </form>
+      {% else %}
+      <form action="{% url 'core:import_rundown' %}" method="post" enctype="multipart/form-data" class="fab-ros-upload">{% csrf_token %}<input type="hidden" name="action" value="preview">
+        <label for="rundownFile">Updated rundown workbook (.xlsx)</label>
+        <div class="fab-ros-actions"><input id="rundownFile" name="rundown_file" type="file" accept=".xlsx" required aria-describedby="rundownFileHint"><button class="ob-btn ob-btn-blue" type="submit">Preview changes</button></div>
+        <small id="rundownFileHint">Use the latest export. Maximum 10 MB. Invalid dates, duplicate days, excess quantities and future actual progress are rejected before saving.</small>
+      </form>
+      {% endif %}
+    </div>
+  </article>
+  <article class="fab-rundown-card">
+    <header class="fab-rundown-head"><div class="fab-rundown-title"><h3>Import history</h3><p>Latest 10 accepted updates.</p></div></header>
+    <div class="fab-ros-table-wrap" tabindex="0" role="region" aria-label="Import history"><table class="fab-ros-table"><thead><tr><th>Imported</th><th>By</th><th>Workbook</th></tr></thead>
+      <tbody>{% for batch in history %}<tr><td>{{ batch.created_at|date:"d M Y H:i" }}</td><td>{{ batch.imported_by|default:"—" }}</td><td>{{ batch.original_filename }}</td></tr>{% empty %}<tr><td colspan="3">No rundown workbooks imported yet.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </article>
+</div>

@@ -7,6 +7,7 @@
 {% block project_horiz %}{{ manager.p6.kpis.start_label|default:"31/05/24" }} → {{ manager.p6.kpis.finish_label|default:"30/06/27" }}{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/rundown-import.css' %}?v=20260924">
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
 <link href="{% static 'css/fabrication-s03.css' %}?v=20260923-rundown-import" rel="stylesheet">
 <link href="{% static 'vendor/leaflet/leaflet.css' %}" rel="stylesheet">
@@ -1250,7 +1251,7 @@
           <span class="fab-rundown-sample" id="fabRundownSample" role="status" hidden>Sample data</span>
           <div class="fab-ros-actions">
             <a class="ob-btn" href="{% url 'core:export_rundown' %}"><i class="bi bi-download" aria-hidden="true"></i>Export</a>
-            {% if user.is_admin %}<a class="ob-btn ob-btn-blue" href="{% url 'core:import_rundown' %}"><i class="bi bi-upload" aria-hidden="true"></i>Import</a>{% endif %}
+            {% if user.is_admin %}<a class="ob-btn ob-btn-blue" data-rundown-import-open href="{% url 'core:import_rundown' %}"><i class="bi bi-upload" aria-hidden="true"></i>Import</a>{% endif %}
           </div>
           <div class="fab-rundown-discipline-control">
             <label for="fabRundownDiscipline">Discipline</label>
@@ -1859,6 +1860,14 @@
 {% endblock %}
 
 {% block extra_js %}
+{% if user.is_admin %}
+<dialog id="rundownImportDialog" aria-labelledby="rundownImportTitle">
+  <div class="rundown-modal-head"><h2 id="rundownImportTitle">Import rundown</h2><button type="button" class="ob-btn" data-rundown-import-close aria-label="Close import">Close</button></div>
+  <p data-rundown-import-status role="status" aria-live="polite"></p>
+  <div data-rundown-import-body></div>
+</dialog>
+<script src="{% static 'js/rundown-import.js' %}?v=20260924" defer></script>
+{% endif %}
 <script src="{% static 'vendor/leaflet/leaflet.js' %}" defer></script>
 <script src="{% static 'js/vessel-tracking.js' %}?v=20260918-ais-map-v18" defer></script>
 <script type="module" src="{% static 'js/vessel-hologram.js' %}?v=20260918-dossier-v11"></script>
@@ -4534,6 +4543,13 @@
       button.addEventListener("click", function () { selectMode(button.dataset.rundownMode); });
     });
     if (selector) selector.addEventListener("change", function () { selectDiscipline(selector.value); });
+    root.addEventListener("rundown:updated", function (event) {
+      Object.keys(event.detail || {}).forEach(function (key) {
+        var parts = key.split(":");
+        if (modes[parts[0]]) modes[parts[0]].disciplines[parts[1]] = event.detail[key];
+      });
+      selectMode(mode);
+    });
     selectMode("fabrication");
     c3WhenVisible(root, function () {
       canRender = true;

@@ -6,7 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.core import signing
 from django.core.exceptions import PermissionDenied
 from django.db import DatabaseError
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods
@@ -39,7 +39,8 @@ def export_rundown(request):
 def import_rundown(request):
     if not request.user.is_admin:
         raise PermissionDenied("Only administrators can update rundown data.")
-    context, status = {}, 200
+    modal = request.headers.get("X-Rundown-Modal") == "1"
+    context, status = {"modal": modal}, 200
     try:
         context["history"] = list(RundownImport.objects.select_related("imported_by")[:10])
         if request.method == "POST":
@@ -52,6 +53,13 @@ def import_rundown(request):
                 if preview["user_id"] != request.user.pk:
                     raise ValueError("Upload and review the workbook using your own account.")
                 batch = workbook.apply_import(preview["parsed"], preview["filename"], preview["hash"], request.user)
+                if modal:
+                    payloads = {key: workbook.chart_payload(key, table, batch.original_filename)
+                                for key, table in batch.payload.items()} if batch else {}
+                    response = JsonResponse({"ok": True, "payloads": payloads,
+                        "message": "Rundown updated, including reported progress." if batch else "No changes to apply."})
+                    response["Cache-Control"] = "no-store"
+                    return response
                 messages.success(request, "Rundown updated, including reported progress." if batch else "No changes to apply.")
                 return redirect(reverse("core:home")+"#s03")
             if action != "preview":
@@ -64,6 +72,7 @@ def import_rundown(request):
             content = upload.read(MAX_BYTES+1)
             if len(content) > MAX_BYTES:
                 raise ValueError("Maximum file size is 10 MB.")
+            logger.info("Rundown preview upload: bytes=%s sha256=%s", len(content), hashlib.sha256(content).hexdigest())
             parsed = workbook.parse_workbook(content, workbook.current_state())
             context["unchanged"] = not parsed["changes"]
             if parsed["changes"]:
@@ -76,6 +85,6 @@ def import_rundown(request):
         logger.exception("Unable to import rundown")
         context["error"], status = "Rundown storage is unavailable. No update was applied.", 503
         context["history"] = []
-    response = render(request, "core/rundown_import.html", context, status=status)
+    response = render(request, "core/_rundown_import_content.html" if modal else "core/rundown_import.html", context, status=status)
     response["Cache-Control"] = "no-store"
     return response

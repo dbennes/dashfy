@@ -123,3 +123,37 @@ class RundownWorkbookTests(TestCase):
         csrf_client = Client(enforce_csrf_checks=True)
         csrf_client.force_login(self.admin)
         self.assertEqual(csrf_client.post(url, {"action": "apply", "preview_token": token}).status_code, 403)
+
+    def test_modal_preview_apply_and_errors_stay_in_dashboard(self):
+        url = reverse("core:import_rundown")
+        headers = {"HTTP_X_RUNDOWN_MODAL": "1"}
+        response = self.client.get(url, **headers)
+        self.assertContains(response, "data-rundown-import-content")
+        self.assertNotContains(response, "<!DOCTYPE", html=False)
+        self.assertNotContains(response, "Back to dashboard")
+        response = self.client.post(url, {}, **headers)
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Choose the exported", status_code=400)
+        content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 2))
+        response = self.client.post(url, {"rundown_file": SimpleUploadedFile("updated.xlsx", content)}, **headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(RundownImport.objects.exists())
+        response = self.client.post(url, {"action": "apply", "preview_token": response.context["preview_token"]}, **headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        payload = response.json()["payloads"]["fabrication:piping"]
+        self.assertEqual(payload["kpis"]["actual_progress_pct"], 20)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(RundownImport.objects.count(), 1)
+        self.assertContains(self.client.get(url, **headers), "updated.xlsx")
+
+    def test_zip_limits_report_size_and_entry_count_separately(self):
+        from zipfile import ZipFile, ZIP_DEFLATED
+        for extra_count, extra_size, message in [(201, 1, "internal files"), (1, 51 * 1024 * 1024, "limit: 50 MB")]:
+            stream = BytesIO(self.content)
+            with ZipFile(stream, "a", compression=ZIP_DEFLATED) as archive:
+                for index in range(extra_count):
+                    archive.writestr(f"extra{index}.txt", b" " * extra_size)
+            with self.assertRaisesRegex(ValueError, message):
+                wb.parse_workbook(stream.getvalue(), self.current)
+        self.assertFalse(RundownImport.objects.exists())

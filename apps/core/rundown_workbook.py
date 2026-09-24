@@ -174,8 +174,14 @@ def validate_table(table, title):
 def parse_workbook(content, current):
     try:
         with ZipFile(BytesIO(content)) as archive:
-            if sum(item.file_size for item in archive.infolist()) > 50 * 1024 * 1024 or len(archive.infolist()) > 200:
-                raise ValueError("Workbook is too large when decompressed.")
+            entries = archive.infolist()
+            expanded_bytes = sum(item.file_size for item in entries)
+            if expanded_bytes > 50 * 1024 * 1024:
+                raise ValueError(f"Workbook expands to {expanded_bytes / (1024 * 1024):.1f} MB (limit: 50 MB). "
+                                 "Export a fresh workbook and paste only your edited values into it.")
+            if len(entries) > 200:
+                raise ValueError(f"Workbook contains {len(entries)} internal files (limit: 200). "
+                                 "Export a fresh workbook and paste only your edited values into it.")
         book = load_workbook(BytesIO(content), read_only=True, data_only=False, keep_links=False)
     except (BadZipFile, OSError, KeyError, ParseError) as exc:
         raise ValueError("Choose a valid exported .xlsx workbook.") from exc

@@ -322,3 +322,16 @@ class RundownModesUITests(SimpleTestCase):
         for key in ('remainingMax', 'remainingStep', 'dailyMax', 'dailyStep'):
             self.assertEqual(restored[key], real[key])
         self.assertEqual(real['remainingMax'], 700)
+
+    def test_import_refresh_preserves_selected_mode_and_discipline(self):
+        updated = self.run_controller("""
+            fabRundownInit(); visibleCallback(); chooseMode('installation'); chooseDiscipline('electrical');
+            const payload = JSON.parse(JSON.stringify(modes.installation.disciplines.electrical));
+            payload.kpis.scope_total = 99;
+            root.listeners['rundown:updated'].forEach(fn => fn({detail: {'installation:electrical': payload}}));
+            console.log(JSON.stringify(state()));
+        """)
+        self.assertEqual(updated["mode"], "installation")
+        self.assertEqual(updated["selected"], "electrical")
+        self.assertEqual(updated["scope"], "99 circuits")
+        self.assert_skyline_untouched(updated)

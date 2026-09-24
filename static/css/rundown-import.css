@@ -1,0 +1,23 @@
+html.rundown-modal-open { overflow: hidden; }
+#s03 #rundownImportDialog {
+  width: min(1080px, calc(100vw - 32px)); max-width: none;
+  max-height: calc(100dvh - 32px); box-sizing: border-box;
+  padding: 20px; color: var(--fb-fg, #f4f6f9);
+  background: var(--fb-bg-elev, #0f1115);
+  border: 1px solid var(--fb-border, #30343b); border-radius: 10px;
+  box-shadow: 0 24px 80px #0008; overflow: auto;
+}
+#s03 #rundownImportDialog::backdrop { background: #0009; }
+#s03 #rundownImportDialog .rundown-modal-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+#s03 #rundownImportDialog h2 { margin: 0; font-size: 18px; }
+#s03 #rundownImportDialog [data-rundown-import-status]:empty { display: none; }
+#s03 #rundownImportDialog [data-rundown-import-status] { padding: 12px 0; }
+#s03 #rundownImportDialog .fab-rundown-card { margin-top: 16px; min-width: 0; height: auto; min-height: 0; }
+#s03 #rundownImportDialog .fab-ros-body p { overflow-wrap: anywhere; }
+#s03 #rundownImportDialog input[type=file] { max-width: 100%; min-width: 0; }
+#s03 #rundownImportDialog .fab-ros-actions { flex-wrap: wrap; }
+#s03 #rundownImportDialog button:disabled { opacity: .55; cursor: wait; }
+@media(max-width: 600px) {
+  #s03 #rundownImportDialog { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); padding: 12px; }
+  #s03 #rundownImportDialog .fab-rundown-head { flex-wrap: wrap; gap: 8px; }
+}
