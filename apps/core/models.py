@@ -345,6 +345,7 @@ class SectionNote(TimestampedModel):
     project = models.CharField(max_length=40, default="BN-EPC1", editable=False)
     client = models.ForeignKey("accounts.Client", on_delete=models.PROTECT, null=True, blank=True)
     section = models.CharField(max_length=8)
+    panel = models.CharField(max_length=64, blank=True, default="", db_index=True)
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
     author_name = models.CharField(max_length=300)
     note_date = models.DateField()

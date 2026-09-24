@@ -2,9 +2,15 @@
   "use strict";
   const dialog = document.getElementById("sectionNotesDialog");
   if (!dialog || !dialog.showModal) return;
-  const labels = {s00:"Planning", s01:"Engineering", s02:"Supply", s03:"Fabrication", s04:"Logistics", s05:"3D model"};
+  const legacyLabels = {s00:"Planning", s01:"Engineering", s02:"Supply", s03:"Fabrication", s04:"Logistics", s05:"3D model"};
+  const panels = new Map(Array.from(document.querySelectorAll("[data-note-panel]"), node => [node.dataset.notePanel, node]));
+  const labels = {...legacyLabels, ...Object.fromEntries(Array.from(panels, ([key,node]) => [key,node.dataset.noteLabel]))};
+  const legacyButton = document.querySelector("[data-sn-legacy]");
+  const legacySelect = dialog.querySelector("[data-sn-legacy-select]");
+  const legacyLabel = dialog.querySelector("[data-sn-legacy-label]");
+  function scopeParams() { return panels.has(section) ? {panel:section} : {section}; }
   const statuses = {pending:"Pending", resolved:"Resolved", cancelled:"Cancelled"};
-  const contextLabels = {date_from:"From",date_to:"To",discipline:"Discipline",campaign:"Campaign",contract_week:"Week"};
+  const contextLabels = {date_from:"From",date_to:"To",discipline:"Discipline",campaign:"Campaign",contract_week:"Week",panel_mode:"Mode",panel_discipline:"Discipline",vessel:"Vessel"};
   const form = dialog.querySelector("[data-sn-form]");
   const history = dialog.querySelector("[data-sn-history]");
   const list = dialog.querySelector("[data-sn-list]");
@@ -52,6 +58,14 @@
   async function summary() {
     try {
       const data = await api(dialog.dataset.api); today = data.today;
+      if (legacyButton) {
+        const previous = Object.entries(legacyLabels).filter(([key]) => data.sections[key] && data.sections[key].total);
+        legacyButton.hidden = !previous.length;
+        const selected = legacySelect.value;
+        legacySelect.replaceChildren();
+        previous.forEach(([key,label]) => {const option=el("option",label);option.value=key;legacySelect.append(option);});
+        if(previous.some(([key])=>key===selected)) legacySelect.value=selected;
+      }
       for (const [key, record] of Object.entries(data.sections)) {
         const bar = bars[key]; if (!bar) continue;
         bar.count.textContent = String(record.total);
@@ -101,7 +115,7 @@
     details.append(events);article.append(details);return article;
   }
   async function loadHistory() {
-    const data=await api(dialog.dataset.api+"?"+new URLSearchParams({section,status:filter.value,page}));
+    const data=await api(dialog.dataset.api+"?"+new URLSearchParams({...scopeParams(),status:filter.value,page}));
     list.replaceChildren();
     data.notes.forEach(note=>list.append(renderNote(note)));
     if(!data.notes.length) list.append(el("p","No records match this filter.","sn-help"));
@@ -114,6 +128,10 @@
   function open(key,mode,source) {
     if(busy) return;
     section=key;opener=source;page=1;filter.value="all";message.textContent="";
+    const legacy = !panels.has(key);
+    legacyLabel.hidden = !legacy;
+    dialog.querySelector('[data-sn-tab="new"]').hidden = legacy;
+    if(legacy) { mode="history"; legacySelect.value=key; }
     document.getElementById("snTitle").textContent=labels[key];
     form.reset();requestId=uuid();form.elements.due_date.disabled=false;form.elements.due_date.required=true;
     form.elements.date.value=today || new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
@@ -122,21 +140,17 @@
     if(mode==="history") run(async()=>{message.textContent="Loading records…";await loadHistory();message.textContent="";});
     else form.elements.body.focus();
   }
-  Object.entries(labels).forEach(([key,label])=>{
-    const target=document.getElementById(key);if(!target)return;
+  panels.forEach((target,key)=>{
+    const label=labels[key];
     const bar=el("div",undefined,"sn-bar");bar.setAttribute("aria-label","Comments for "+label);
     const add=button("",()=>open(key,"new",add));
-    const icon=el("i",undefined,"bi bi-exclamation-circle");icon.setAttribute("aria-hidden","true");add.prepend(icon);add.title="Add comment";add.setAttribute("aria-label","Add comment · "+label);
+    const icon=el("i",undefined,"bi bi-exclamation-circle-fill");icon.setAttribute("aria-hidden","true");add.prepend(icon);add.title="Add comment";add.setAttribute("aria-label","Add comment · "+label);
     const view=button("History",()=>open(key,"history",view));view.setAttribute("aria-label","View comments · "+label);
-    const count=el("span","…","sn-bar-count"),people=el("div",undefined,"sn-people");people.setAttribute("aria-label","People who commented in this section");
-    view.append(count);
-    bar.append(add,view,people);
-    const header=target.querySelector(".section-head, .fab-page-header");
-    const slot=header && (header.querySelector(".c3-source-actions, .head-actions") || header.querySelector(".meta") || header);
-    if(slot && slot.classList.contains("head-actions")) slot.prepend(bar);
-    else if(slot) slot.append(bar); else target.prepend(bar);
-    bars[key]={count,people};
+    const count=el("span","…","sn-bar-count"),people=el("div",undefined,"sn-people");people.setAttribute("aria-label","People who commented on this panel");
+    view.append(count);bar.append(add,view,people);target.append(bar);bars[key]={count,people};
   });
+  if(legacyButton) legacyButton.addEventListener("click",()=>{if(legacySelect.value)open(legacySelect.value,"history",legacyButton);});
+  legacySelect.addEventListener("change",()=>run(async()=>{section=legacySelect.value;page=1;document.getElementById("snTitle").textContent=labels[section];await loadHistory();}));
   form.elements.information_only.addEventListener("change",()=>{
     form.elements.due_date.disabled=form.elements.information_only.checked;
     form.elements.due_date.required=!form.elements.information_only.checked;
@@ -144,7 +158,17 @@
   form.addEventListener("submit",event=>{event.preventDefault();run(async()=>{
     message.textContent="Saving comment…";
     const context=Object.fromEntries(new URLSearchParams(location.search));
-    await api(dialog.dataset.api,{section,request_id:requestId,date:form.elements.date.value,body:form.elements.body.value,
+    const panelNode=panels.get(section);
+    const card=panelNode && panelNode.closest("[data-fab-rundown], [data-fab-skyline]");
+    if(card) {
+      context.panel_mode=card.dataset.rundownMode || card.dataset.skylineMode || "fabrication";
+      const selector=card.querySelector("select");
+      context.panel_discipline=card.dataset.rundownDiscipline || (selector && selector.value) || "";
+    }
+    if(section.startsWith("vessel-")) {
+      const vessel=document.querySelector("[data-vt-name]");if(vessel)context.vessel=vessel.textContent;
+    }
+    await api(dialog.dataset.api,{...scopeParams(),request_id:requestId,date:form.elements.date.value,body:form.elements.body.value,
       due_date:form.elements.information_only.checked ? null : form.elements.due_date.value,information_only:form.elements.information_only.checked,context});
     form.reset();requestId=uuid();tab("history");filter.value="all";page=1;
     await loadHistory();message.textContent="Comment saved under your name.";await summary();

@@ -1,7 +1,13 @@
 .sn-export { display:flex; justify-content:flex-end; align-items:center; gap:12px; padding:10px 20px; border-bottom:1px solid var(--line-2); background:var(--bg-1); color:var(--fg-2); font-size:11px; }
+.sn-export [hidden] { display:none; }
+.cockpit-v3 .sn-rail { display:flex; flex:0 0 auto; width:100%; min-width:0; justify-content:flex-end; align-items:center; padding:5px 10px; box-sizing:border-box; border-bottom:1px solid var(--line-2); background:var(--bg-1); }
 .sn-bar { display:inline-flex; flex:0 0 auto; width:max-content; max-width:100%; vertical-align:middle; align-items:center; gap:4px; margin:0; padding:3px 4px; border:1px solid var(--line-2); border-radius:var(--r-3,4px); background:transparent; color:var(--fg-2); font:11px var(--font-sans); text-transform:none; letter-spacing:normal; }
 .sn-bar .sn-button { min-height:24px; padding:3px 6px; border-color:transparent; background:transparent; }
 .sn-bar .sn-button:hover { background:var(--bg-hover); }
+.cockpit-v3 .sn-rail .sn-bar { margin-left:auto; border-color:var(--signal-amber-line); background:var(--signal-amber-dim); color:var(--signal-amber); }
+.cockpit-v3 .sn-rail .sn-button,.cockpit-v3 .sn-rail .sn-bar-count { color:var(--signal-amber); }
+.cockpit-v3 .sn-rail .sn-button:hover { background:var(--signal-amber-dim); }
+.sn-rail .bi-exclamation-circle-fill { font-size:15px; }
 .cockpit-v3 .section-head .sn-bar { width:max-content; flex:0 0 auto; align-items:center; grid-column:1 / -1; justify-self:start; }
 .sn-button { display:inline-flex; justify-content:center; align-items:center; gap:6px; min-height:30px; padding:5px 10px; border:1px solid var(--line-3); border-radius:var(--r-3,4px); background:var(--bg-2); color:var(--fg-1); font:500 11px var(--font-sans); cursor:pointer; text-decoration:none; }
 .sn-button:hover { background:var(--bg-3); color:var(--fg-0); }

@@ -122,3 +122,42 @@ class SectionNotesTests(TestCase):
         client = Client(enforce_csrf_checks=True)
         client.force_login(self.user)
         self.assertEqual(client.post(self.url, self.data, content_type="application/json").status_code, 403)
+
+    def test_panel_comments_and_authors_are_isolated_from_sibling_and_legacy(self):
+        legacy = self.create().json()["note"]
+        rundown = self.create(panel="piping-rundown", request_id=str(uuid4())).json()["note"]
+        self.client.force_login(self.other)
+        skyline = self.create(panel="wooden-box-skyline", request_id=str(uuid4())).json()["note"]
+        self.assertEqual(rundown["panel"], "piping-rundown")
+        self.assertEqual(skyline["panel"], "wooden-box-skyline")
+        for key, expected in [("piping-rundown",rundown), ("wooden-box-skyline",skyline)]:
+            records = self.client.get(self.url, {"panel":key}).json()["notes"]
+            self.assertEqual([note["id"] for note in records], [expected["id"]])
+        self.assertEqual([n["id"] for n in self.client.get(self.url, {"section":"s03"}).json()["notes"]], [legacy["id"]])
+        self.status(rundown["id"], "resolved", 1)
+        summary = self.client.get(self.url).json()["sections"]
+        self.assertEqual(summary["piping-rundown"]["pending"], 0)
+        self.assertEqual(summary["wooden-box-skyline"]["pending"], 1)
+        self.assertEqual(summary["s03"]["total"], 1)
+        self.assertEqual(summary["piping-rundown"]["people"][0]["name"], "Ana Silva")
+        self.assertEqual(summary["wooden-box-skyline"]["people"][0]["name"], "bruno")
+        self.assertEqual(self.create(panel="nonexistent", request_id=str(uuid4())).status_code, 400)
+        self.assertEqual(self.create(panel="vessel-map", request_id=str(uuid4())).status_code, 400)
+        vessel = self.create(panel="vessel-map", section="ais", request_id=str(uuid4())).json()["note"]
+        self.assertEqual(vessel["panel"], "vessel-map")
+        book = load_workbook(BytesIO(self.client.get(reverse("core:section_minutes")).content))
+        labels = [book.active.cell(row,2).value for row in range(6,book.active.max_row+1)]
+        self.assertIn("Fabrication / Piping ISO rundown", labels)
+        self.assertIn("Fabrication / Wooden Box skyline", labels)
+        book.close()
+
+    def test_each_registered_panel_has_one_explicit_template_anchor(self):
+        import re
+        from pathlib import Path
+        from django.conf import settings
+        from apps.core.section_notes import PANELS
+        html = "\n".join((Path(settings.BASE_DIR)/name).read_text(encoding="utf-8") for name in
+                         ("templates/core/home.html", "templates/vessels/_dashboard.html"))
+        keys = re.findall(r'data-note-panel="([^"]+)"', html)
+        self.assertCountEqual(keys, PANELS)
+        self.assertEqual(len(keys), len(set(keys)))

@@ -1,6 +1,7 @@
 <section class="section vt-section" id="vessel-tracking" data-vessel-tracking data-api-base="/vessels/api/"
          data-vessel-model="{{ vessel_tracking_config.vessel_model_url|default:'' }}"
          data-mini-tile="{{ vessel_tracking_config.tile_url|default:'' }}" aria-labelledby="vt-heading">
+<div class="sn-rail" data-note-panel="vessel-tracking" data-note-label="Vessel tracking"></div>
   <header class="section-head vt-header">
     <div class="vt-heading">
       <span class="vt-kicker">MARINE OPERATIONS · AIS</span>
@@ -30,11 +31,13 @@
   <div class="vt-alert" data-vt-error hidden role="alert"><span data-vt-error-text></span><button type="button" class="vt-button" data-vt-retry>Retry</button></div>
   <div class="vt-workspace">
     <div class="vt-fleet" aria-labelledby="vt-fleet-heading">
+<div class="sn-rail" data-note-panel="vessel-fleet" data-note-label="Vessel fleet"></div>
       <div class="vt-panel-heading"><h3 id="vt-fleet-heading">Fleet</h3><span data-vt-fleet-count>—</span></div>
       <label class="vt-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" data-vt-search placeholder="Find name or MMSI" aria-label="Find vessel by name or MMSI" autocomplete="off"></label>
       <div class="vt-fleet-list" data-vt-fleet aria-label="Tracked vessels"><p class="vt-empty-copy">Loading vessels…</p></div>
     </div>
     <div class="vt-details" aria-labelledby="vt-detail-name">
+<div class="sn-rail" data-note-panel="vessel-details" data-note-label="Selected vessel details"></div>
       <div class="vt-detail-heading"><div><span class="vt-kicker">SELECTED VESSEL</span><h3 id="vt-detail-name" data-vt-name>Select a vessel</h3></div><button class="vt-button" type="button" data-vt-edit hidden>Edit</button></div>
       <div class="vt-identity"><span data-vt-identity>MMSI —</span><span class="vt-status" data-vt-status data-status="NO_RECENT_AIS">NO RECENT AIS</span></div>
       <p class="vt-last-seen" data-vt-last-seen>Last AIS position: —</p>
@@ -55,6 +58,7 @@
       <p class="vt-data-note">Arrival is recorded inside the port radius; a newer position outside records departure. Journey status follows the last received position. On a regular route, the next port switches after arrival. ETA is shown only for a reported destination.</p>
     </div>
     <div class="vt-map-panel">
+<div class="sn-rail" data-note-panel="vessel-map" data-note-label="Vessel positions and route"></div>
       <div class="vt-map-toolbar">
         <span class="vt-track-key"><span aria-hidden="true"></span> REAL TRACK <small>Stored AIS positions</small></span>
         <div class="vt-map-actions"><label class="vt-follow"><input type="checkbox" data-vt-follow checked> Follow selected</label><label class="vt-follow"><input type="checkbox" data-vt-scroll checked> Zoom with mouse wheel</label><button type="button" class="vt-button" data-vt-zoom-vessel disabled><i class="bi bi-zoom-in" aria-hidden="true"></i> Zoom to vessel</button><button type="button" class="vt-button" data-vt-containers-open><i class="bi bi-box-seam" aria-hidden="true"></i> Containers</button><button type="button" class="vt-button" data-vt-fit disabled><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Fit map</button><button type="button" class="vt-button" data-vt-export-track disabled><i class="bi bi-download" aria-hidden="true"></i> Export track</button></div>

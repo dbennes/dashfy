@@ -1,11 +1,22 @@
 # Section comments and minutes
 
-Each dashboard section (S00–S05) has a small comment control grouped with its
-existing header actions, rather than a full-width bar. The **!** button opens
-the form; **History** lists its records, filters status and paginates 20 at a
-time. Initials represent distinct comment authors, not live online presence.
-The dashboard header exports **DASHFY_Minutes.xlsx**, containing one worksheet with
-all visible comments and status events in chronological order.
+Each individual chart, table and vessel panel has its own comment history.
+The amber **! / History** control sits on a separate row immediately above that
+panel, aligned to the right on desktop and mobile. It does not share the chart's
+header action row. There are 25 stable panel identifiers, including Piping ISO
+rundown, Wooden Box skyline, fabrication charts, supply tables, shipment charts,
+3D review, vessel tracking, fleet, details and the vessel map.
+
+**!** opens the form; **History** lists only that panel's records with status filters
+and 20 records per page. Initials and counts belong exclusively to that panel.
+The top **Export minutes** action exports all visible comments in a single sheet,
+identifying both the parent section and the panel for each event.
+
+Existing section-level records are retained with an empty panel. The top
+**Previous section comments** button appears only when those records exist and
+allows reviewing/updating them. They are never assigned to a chart by inference.
+The export includes them as **Previous section comments**. New panel records
+use a validated stable panel key, independent of display names or DOM order.
 
 Authenticated colleagues in the same client scope can create comments and change
 their status. Internal users without a client share the internal scope. Client
@@ -39,7 +50,7 @@ python manage.py migrate --database default
 python manage.py collectstatic --noinput
 ```
 
-Restart the application. Migration: **core.0009_section_notes**. No external
+Restart the application. Migrations: **core.0009_section_notes** and **core.0010_section_note_panel**. No external
 database or listener service is required.
 
 Validation: `python manage.py test apps.core.tests.test_section_notes

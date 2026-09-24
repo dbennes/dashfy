@@ -1,6 +1,7 @@
 <dialog id="sectionNotesDialog" class="sn-dialog" aria-labelledby="snTitle" data-api="{% url 'core:section_notes' %}" data-status-url="{% url 'core:section_note_status' 0 %}" data-user="{{ user }}">
-  <header class="sn-dialog-head"><div><span class="sn-eyebrow">SECTION FOLLOW-UP</span><h2 id="snTitle">Comments</h2></div><button type="button" class="sn-button" data-sn-close aria-label="Close comments"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
-  <nav class="sn-tabs" aria-label="Section comments"><button type="button" class="sn-button" data-sn-tab="new">Add comment</button><button type="button" class="sn-button" data-sn-tab="history">History</button></nav>
+  <header class="sn-dialog-head"><div><span class="sn-eyebrow">PANEL FOLLOW-UP</span><h2 id="snTitle">Comments</h2></div><button type="button" class="sn-button" data-sn-close aria-label="Close comments"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header>
+  <label data-sn-legacy-label hidden>Previous section<select data-sn-legacy-select></select></label>
+  <nav class="sn-tabs" aria-label="Panel comments"><button type="button" class="sn-button" data-sn-tab="new">Add comment</button><button type="button" class="sn-button" data-sn-tab="history">History</button></nav>
   <p class="sn-message" data-sn-message role="status" aria-live="polite"></p>
   <form data-sn-form>
     {% csrf_token %}
