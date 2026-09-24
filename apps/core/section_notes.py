@@ -213,24 +213,30 @@ def export_minutes(request):
         styles[cancelled] = book.add_format({"text_wrap": True, "valign": "top", "font_size": 10,
             "font_color": "#7C8592" if cancelled else "#172033", "font_strikeout": cancelled})
     sheet.merge_range("A1:N1", "DASHFY | BN-EPC1 | FOLLOW-UP MINUTES", title)
-    sheet.merge_range("A2:N2", "Comments and status changes across all sections · one row per event", subtitle)
+    sheet.merge_range("A2:N2", "Comments across all panels · one row per comment · status history included", subtitle)
     now = timezone.localtime()
     sheet.merge_range("A3:N3", f"Generated on {now:%d/%m/%Y %H:%M %Z} · {request.user}", subtitle)
     headers = ["Record", "Section / Panel", "Note date", "Created at", "Author", "Note", "Type", "Due date",
-               "Current status", "Event at", "Changed by", "Previous status", "Recorded status", "Context"]
-    records = SectionNoteEvent.objects.filter(note__in=scope(request.user)).select_related("note").order_by("created_at", "pk")
+               "Current status", "Last updated", "Updated by", "Status changes", "Status history", "Context"]
+    records = scope(request.user).prefetch_related("events").order_by("created_at", "pk")
     row = 5
-    for event in records.iterator(chunk_size=500):
-        note = event.note
+    for note in records.iterator(chunk_size=500):
+        events = list(note.events.all())
+        latest = events[-1] if events else None
+        history = "\n".join(
+            f"{timezone.localtime(event.created_at):%d/%m/%Y %H:%M:%S %Z} | {event.actor_name} | "
+            f"{STATUSES.get(event.previous_status, 'Created')} -> {STATUSES[event.status]}"
+            for event in events
+        )
         panel_label = PANELS.get(note.panel, ("", "Previous section comments"))[1]
         values = [note.pk, SECTIONS.get(note.section, note.section)+" / "+panel_label, note.note_date.isoformat(),
                   timezone.localtime(note.created_at).strftime("%d/%m/%Y %H:%M:%S %Z"), note.author_name, note.body,
                   "Information" if note.information_only else "Follow-up", note.due_date.isoformat() if note.due_date else "—",
-                  STATUSES[note.status], timezone.localtime(event.created_at).strftime("%d/%m/%Y %H:%M:%S %Z"),
-                  event.actor_name, STATUSES.get(event.previous_status, "Created"), STATUSES[event.status],
+                  STATUSES[note.status], timezone.localtime(latest.created_at if latest else note.created_at).strftime("%d/%m/%Y %H:%M:%S %Z"),
+                  latest.actor_name if latest else note.author_name, sum(bool(event.previous_status) for event in events), history,
                   "; ".join(f"{k}: {v}" for k, v in note.context.items())]
         sheet.write_row(row, 0, values, styles[note.status == "cancelled"])
-        sheet.set_row(row, 60)
+        sheet.set_row(row, min(180, max(60, len(events)*30)))
         row += 1
     if row > 5:
         sheet.add_table(4, 0, row-1, 13, {"name": "FollowUpMinutes", "style": "Table Style Medium 2",
@@ -242,6 +248,7 @@ def export_minutes(request):
     sheet.set_column("B:E", 23)
     sheet.set_column("F:F", 65)
     sheet.set_column("G:N", 24)
+    sheet.set_column("M:M", 75)
     sheet.freeze_panes(5, 2)
     sheet.set_landscape()
     sheet.set_paper(9)

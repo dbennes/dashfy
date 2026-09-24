@@ -110,10 +110,37 @@ class SectionNotesTests(TestCase):
         book = load_workbook(BytesIO(response.content))
         self.assertEqual(book.sheetnames, ["Follow-up minutes"])
         sheet = book.active
-        self.assertEqual(sheet.max_row, 8)
+        self.assertEqual(sheet.max_row, 6)
         self.assertEqual(sheet["F6"].data_type, "s")
         self.assertTrue(sheet["F6"].font.strike)
-        self.assertEqual([sheet.cell(row,13).value for row in (6,7,8)], ["Pending", "Resolved", "Cancelled"])
+        self.assertEqual(sheet["I6"].value, "Cancelled")
+        self.assertEqual(sheet["L6"].value, 2)
+        history = sheet["M6"].value.splitlines()
+        self.assertEqual(len(history), 3)
+        for line, change in zip(history, ["Created -> Pending", "Pending -> Resolved", "Resolved -> Cancelled"]):
+            self.assertIn(change, line)
+            self.assertIn("Ana Silva", line)
+        self.assertEqual(SectionNoteEvent.objects.count(), 3)
+        book.close()
+
+    def test_minutes_keep_distinct_comments_with_identical_text_once_each(self):
+        first = self.create(panel="piping-rundown").json()["note"]
+        second = self.create(panel="wooden-box-skyline", request_id=str(uuid4())).json()["note"]
+        self.client.force_login(self.other)
+        self.status(first["id"], "resolved", 1)
+        self.status(first["id"], "pending", 2)
+        self.status(first["id"], "resolved", 3)
+        book = load_workbook(BytesIO(self.client.get(reverse("core:section_minutes")).content))
+        sheet = book.active
+        self.assertEqual(sheet.max_row, 7)
+        self.assertEqual([sheet.cell(row,1).value for row in (6,7)], [first["id"], second["id"]])
+        self.assertEqual(sheet["F6"].value, sheet["F7"].value)
+        self.assertEqual(sheet["I6"].value, "Resolved")
+        self.assertEqual(sheet["I7"].value, "Pending")
+        self.assertEqual(sheet["K6"].value, "bruno")
+        self.assertEqual(sheet["L6"].value, 3)
+        self.assertEqual(len(sheet["M6"].value.splitlines()), 4)
+        self.assertEqual(sheet["L7"].value, 0)
         book.close()
 
     def test_authentication_and_csrf_are_required(self):

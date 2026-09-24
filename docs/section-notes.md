@@ -10,7 +10,7 @@ rundown, Wooden Box skyline, fabrication charts, supply tables, shipment charts,
 **!** opens the form; **History** lists only that panel's records with status filters
 and 20 records per page. Initials and counts belong exclusively to that panel.
 The top **Export minutes** action exports all visible comments in a single sheet,
-identifying both the parent section and the panel for each event.
+identifying both the parent section and the panel for each comment.
 
 Existing section-level records are retained with an empty panel. The top
 **Previous section comments** button appears only when those records exist and
@@ -36,8 +36,11 @@ visible with faded, struck-through text. Changing a cancelled record back to
 Pending is also audited. Optimistic versions reject concurrent stale changes;
 creation request IDs prevent duplicate records when a request is retried.
 
-The export has one row per event, with the note, author, dates, current status,
-previous/event status and actor. It includes cancelled records, preserves names
+The export has exactly one row per comment ID, with the note, author, dates,
+current status, last update, latest actor and number of status changes. The
+**Status history** column contains the creation and all status transitions, each
+with its timestamp and actor. Distinct comments with identical text remain
+separate records; status changes never duplicate the comment row. It includes cancelled records, preserves names
 after user removal, freezes headers and adds table filters. User text is written
 as literal text, never Excel formulas or links. Timestamps identify the configured
 server timezone; browser timestamps display in the user's local timezone.
