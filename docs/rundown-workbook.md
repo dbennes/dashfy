@@ -63,3 +63,8 @@ after compaction, including values obtained from saved formula results.
 The preview log records uploaded byte count and SHA-256 to identify the exact file
 without logging its data. A valid unchanged workbook reports no changes and is not saved.
 The modal/diagnostic update adds no migration beyond the existing core.0008.
+
+The vertical chart marker is **Today**, based on the browser calendar day. It
+advances at midnight and checks again when the window regains focus. The axis
+includes today even outside the source schedule range. The separate **Data date**
+badge retains the workbook snapshot date; curves and quantities are unchanged.

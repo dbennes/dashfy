@@ -108,12 +108,12 @@ class SectionNotesTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Cache-Control"], "no-store")
         book = load_workbook(BytesIO(response.content))
-        self.assertEqual(book.sheetnames, ["Ata de acompanhamento"])
+        self.assertEqual(book.sheetnames, ["Follow-up minutes"])
         sheet = book.active
         self.assertEqual(sheet.max_row, 8)
         self.assertEqual(sheet["F6"].data_type, "s")
         self.assertTrue(sheet["F6"].font.strike)
-        self.assertEqual([sheet.cell(row,13).value for row in (6,7,8)], ["Pendente", "Sanado", "Cancelado"])
+        self.assertEqual([sheet.cell(row,13).value for row in (6,7,8)], ["Pending", "Resolved", "Cancelled"])
         book.close()
 
     def test_authentication_and_csrf_are_required(self):

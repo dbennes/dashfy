@@ -2,9 +2,9 @@
   "use strict";
   const dialog = document.getElementById("sectionNotesDialog");
   if (!dialog || !dialog.showModal) return;
-  const labels = {s00:"Planejamento", s01:"Engenharia", s02:"Suprimentos", s03:"Fabricação", s04:"Logística", s05:"Modelo 3D"};
-  const statuses = {pending:"Pendente", resolved:"Sanado", cancelled:"Cancelado"};
-  const contextLabels = {date_from:"De",date_to:"Até",discipline:"Disciplina",campaign:"Campanha",contract_week:"Semana"};
+  const labels = {s00:"Planning", s01:"Engineering", s02:"Supply", s03:"Fabrication", s04:"Logistics", s05:"3D model"};
+  const statuses = {pending:"Pending", resolved:"Resolved", cancelled:"Cancelled"};
+  const contextLabels = {date_from:"From",date_to:"To",discipline:"Discipline",campaign:"Campaign",contract_week:"Week"};
   const form = dialog.querySelector("[data-sn-form]");
   const history = dialog.querySelector("[data-sn-history]");
   const list = dialog.querySelector("[data-sn-list]");
@@ -28,17 +28,17 @@
     return [h.slice(0,8),h.slice(8,12),h.slice(12,16),h.slice(16,20),h.slice(20)].join("-");
   }
   function dateText(value, time) {
-    if (!value) return "Sem prazo";
-    return new Date(time ? value : value+"T12:00:00").toLocaleString("pt-BR", time ? {dateStyle:"short",timeStyle:"short"} : {dateStyle:"short"});
+    if (!value) return "No due date";
+    return new Date(time ? value : value+"T12:00:00").toLocaleString("en-GB", time ? {dateStyle:"short",timeStyle:"short"} : {dateStyle:"short"});
   }
   async function api(url, data) {
     const response = await fetch(url, {method:data ? "POST":"GET", credentials:"same-origin", cache:"no-store",
       headers:data ? {"Content-Type":"application/json", "X-CSRFToken":form.elements.csrfmiddlewaretoken.value} : {},
       body:data ? JSON.stringify(data) : undefined});
     if (response.redirected || !(response.headers.get("Content-Type") || "").includes("application/json"))
-      throw Error("Sessão expirada ou serviço indisponível. Recarregue a página e entre novamente.");
+      throw Error("Your session expired or the service is unavailable. Reload the page and sign in again.");
     const result = await response.json();
-    if (!response.ok) throw Error(result.error || "Não foi possível concluir. Tente novamente.");
+    if (!response.ok) throw Error(result.error || "Unable to complete the request. Please try again.");
     return result;
   }
   async function run(work) {
@@ -54,7 +54,9 @@
       const data = await api(dialog.dataset.api); today = data.today;
       for (const [key, record] of Object.entries(data.sections)) {
         const bar = bars[key]; if (!bar) continue;
-        bar.count.textContent = record.total ? `${record.pending} pendência(s) · ${record.total} registro(s)` : "Nenhum registro";
+        bar.count.textContent = String(record.total);
+        bar.count.title = `${record.pending} pending · ${record.total} records`;
+        bar.count.setAttribute("aria-label", bar.count.title);
         bar.people.replaceChildren();
         record.people.slice(0,5).forEach(person => {
           const names = person.name.trim().split(/\s+/);
@@ -67,7 +69,7 @@
           extra.title=record.people.slice(5).map(p=>p.name).join(", ");extra.tabIndex=0;extra.setAttribute("aria-label",extra.title);bar.people.append(extra);
         }
       }
-    } catch (_error) { Object.values(bars).forEach(bar => {bar.count.textContent="Histórico indisponível";}); }
+    } catch (_error) { Object.values(bars).forEach(bar => {bar.count.textContent="!";bar.count.title="History unavailable";}); }
   }
   function tab(mode) {
     form.hidden = mode !== "new"; history.hidden = mode !== "history";
@@ -77,37 +79,37 @@
     const article=el("article",undefined,"sn-entry "+note.status);
     const head=el("div",undefined,"sn-entry-head");
     head.append(el("strong",note.author),el("span",statuses[note.status],"sn-badge "+note.status));
-    if(note.information_only) head.append(el("span","Somente informação","sn-badge"));
+    if(note.information_only) head.append(el("span","Information only","sn-badge"));
     article.append(head,el("p",note.body,"sn-body"));
     const meta=el("div",undefined,"sn-entry-meta");
-    meta.append(el("span","Data: "+dateText(note.date)),el("span","Criado: "+dateText(note.created_at,true)),el("span","Previsão: "+dateText(note.due_date)));
+    meta.append(el("span","Date: "+dateText(note.date)),el("span","Created: "+dateText(note.created_at,true)),el("span","Due: "+dateText(note.due_date)));
     article.append(meta);
     if(Object.keys(note.context).length) article.append(el("p",Object.entries(note.context).map(([k,v])=>(contextLabels[k]||k)+": "+v).join(" · "),"sn-context"));
     const actions=el("div",undefined,"sn-status-form"),label=el("label","Status"),select=el("select");
-    select.setAttribute("aria-label","Status do comentário de "+note.author);
+    select.setAttribute("aria-label","Comment status for "+note.author);
     Object.entries(statuses).forEach(([key,value])=>{const opt=el("option",value);opt.value=key;select.append(opt);});
     select.value=note.status;label.append(select);
-    actions.append(label,button("Salvar status",()=>run(async()=>{
-      message.textContent="Salvando alteração…";
+    actions.append(label,button("Save status",()=>run(async()=>{
+      message.textContent="Saving changes…";
       await api(dialog.dataset.statusUrl.replace("/0/","/"+note.id+"/"),{status:select.value,version:note.version});
-      await loadHistory(); message.textContent="Status atualizado. Autor, data e hora registrados."; await summary();
+      await loadHistory(); message.textContent="Status updated. Author, date and time recorded."; await summary();
     })));
     article.append(actions);
     const details=el("details"),events=el("ol");
-    details.append(el("summary","Histórico de alterações · "+note.events.length));
-    note.events.forEach(event=>events.append(el("li",`${dateText(event.at,true)} · ${event.actor} · ${event.from ? statuses[event.from]+" → "+statuses[event.to] : "Criou o registro como "+statuses[event.to]}`)));
+    details.append(el("summary","Change history · "+note.events.length));
+    note.events.forEach(event=>events.append(el("li",`${dateText(event.at,true)} · ${event.actor} · ${event.from ? statuses[event.from]+" → "+statuses[event.to] : "Created as "+statuses[event.to]}`)));
     details.append(events);article.append(details);return article;
   }
   async function loadHistory() {
     const data=await api(dialog.dataset.api+"?"+new URLSearchParams({section,status:filter.value,page}));
     list.replaceChildren();
     data.notes.forEach(note=>list.append(renderNote(note)));
-    if(!data.notes.length) list.append(el("p","Nenhum registro para este filtro.","sn-help"));
+    if(!data.notes.length) list.append(el("p","No records match this filter.","sn-help"));
     // Replace pagination buttons so busy-state restoration cannot overwrite their new state.
-    const previous=button("Anterior",()=>run(async()=>{page--;await loadHistory();}));previous.dataset.snPrev="";previous.disabled=page<=1;
-    const next=button("Próxima",()=>run(async()=>{page++;await loadHistory();}));next.dataset.snNext="";next.disabled=!data.has_next;
+    const previous=button("Previous",()=>run(async()=>{page--;await loadHistory();}));previous.dataset.snPrev="";previous.disabled=page<=1;
+    const next=button("Next",()=>run(async()=>{page++;await loadHistory();}));next.dataset.snNext="";next.disabled=!data.has_next;
     dialog.querySelector("[data-sn-prev]").replaceWith(previous);dialog.querySelector("[data-sn-next]").replaceWith(next);
-    dialog.querySelector("[data-sn-page]").textContent=`Página ${page} · ${data.total} registro(s)`;
+    dialog.querySelector("[data-sn-page]").textContent=`Page ${page} · ${data.total} records`;
   }
   function open(key,mode,source) {
     if(busy) return;
@@ -117,29 +119,35 @@
     form.elements.date.value=today || new Date(Date.now()-new Date().getTimezoneOffset()*60000).toISOString().slice(0,10);
     form.elements.date.max=form.elements.date.value;
     tab(mode);dialog.showModal();document.documentElement.classList.add("sn-modal-open");
-    if(mode==="history") run(async()=>{message.textContent="Carregando registros…";await loadHistory();message.textContent="";});
+    if(mode==="history") run(async()=>{message.textContent="Loading records…";await loadHistory();message.textContent="";});
     else form.elements.body.focus();
   }
   Object.entries(labels).forEach(([key,label])=>{
     const target=document.getElementById(key);if(!target)return;
-    const bar=el("div",undefined,"sn-bar");bar.setAttribute("aria-label","Comentários de "+label);
-    const add=button(" Registrar",()=>open(key,"new",add));
-    const icon=el("i",undefined,"bi bi-exclamation-circle");icon.setAttribute("aria-hidden","true");add.prepend(icon);add.setAttribute("aria-label","Registrar comentário · "+label);
-    const view=button("Histórico",()=>open(key,"history",view));view.setAttribute("aria-label","Ver comentários · "+label);
-    const count=el("span","Carregando registros…","sn-bar-count"),people=el("div",undefined,"sn-people");people.setAttribute("aria-label","Pessoas que comentaram nesta seção");
-    bar.append(add,view,count,people);target.prepend(bar);bars[key]={count,people};
+    const bar=el("div",undefined,"sn-bar");bar.setAttribute("aria-label","Comments for "+label);
+    const add=button("",()=>open(key,"new",add));
+    const icon=el("i",undefined,"bi bi-exclamation-circle");icon.setAttribute("aria-hidden","true");add.prepend(icon);add.title="Add comment";add.setAttribute("aria-label","Add comment · "+label);
+    const view=button("History",()=>open(key,"history",view));view.setAttribute("aria-label","View comments · "+label);
+    const count=el("span","…","sn-bar-count"),people=el("div",undefined,"sn-people");people.setAttribute("aria-label","People who commented in this section");
+    view.append(count);
+    bar.append(add,view,people);
+    const header=target.querySelector(".section-head, .fab-page-header");
+    const slot=header && (header.querySelector(".c3-source-actions, .head-actions") || header.querySelector(".meta") || header);
+    if(slot && slot.classList.contains("head-actions")) slot.prepend(bar);
+    else if(slot) slot.append(bar); else target.prepend(bar);
+    bars[key]={count,people};
   });
   form.elements.information_only.addEventListener("change",()=>{
     form.elements.due_date.disabled=form.elements.information_only.checked;
     form.elements.due_date.required=!form.elements.information_only.checked;
   });
   form.addEventListener("submit",event=>{event.preventDefault();run(async()=>{
-    message.textContent="Salvando comentário…";
+    message.textContent="Saving comment…";
     const context=Object.fromEntries(new URLSearchParams(location.search));
     await api(dialog.dataset.api,{section,request_id:requestId,date:form.elements.date.value,body:form.elements.body.value,
       due_date:form.elements.information_only.checked ? null : form.elements.due_date.value,information_only:form.elements.information_only.checked,context});
     form.reset();requestId=uuid();tab("history");filter.value="all";page=1;
-    await loadHistory();message.textContent="Comentário registrado em seu nome.";await summary();
+    await loadHistory();message.textContent="Comment saved under your name.";await summary();
   });});
   dialog.querySelectorAll("[data-sn-tab]").forEach(node=>node.addEventListener("click",()=>{
     if(busy)return;message.textContent="";tab(node.dataset.snTab);

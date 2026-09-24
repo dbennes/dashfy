@@ -54,6 +54,41 @@ def rundown_modes_fixture():
 
 
 class RundownModesUITests(SimpleTestCase):
+    def test_today_marker_advances_without_changing_snapshot_or_curves(self):
+        result = self.run_controller("""
+            const RealDate = Date;
+            let now = new RealDate(2026, 8, 24, 12).getTime();
+            globalThis.Date = class extends RealDate {
+              constructor(...args) { super(...(args.length ? args : [now])); }
+            };
+            let onFocus, onMidnight;
+            window.addEventListener = (name, fn) => { if(name === 'focus') onFocus = fn; };
+            window.setTimeout = fn => { onMidnight = fn; };
+            fabRundownInit(); visibleCallback();
+            const config = liveChart.config;
+            const initial = root.dataset.todayDate;
+            const before = JSON.stringify(config.data.datasets);
+            let marker, label, updates = 0;
+            const ctx = new Proxy({}, {get: (_target,key) => key === 'measureText' ? () => ({width:120}) : (...args) => {if(key === 'fillText') label=args[0];}});
+            const mock = {ctx, chartArea:{left:0,right:1000,top:0,bottom:300},scales:{x:{getPixelForValue(value){marker=value;return 100;}}}};
+            const plugin = config.plugins.find(p => p.id === 'fabRundownDataDate');
+            plugin.beforeDatasetsDraw(mock); plugin.afterDatasetsDraw(mock);
+            liveChart.options = config.options;
+            liveChart.update = () => updates++;
+            now = new RealDate(2026,8,25,12).getTime(); onMidnight(); onFocus();
+            console.log(JSON.stringify({initial,next:root.dataset.todayDate,marker,label,updates,
+              max:config.options.scales.x.max,snapshot:root.dataset.snapshotDate,
+              unchanged:before===JSON.stringify(config.data.datasets)}));
+        """)
+        self.assertEqual(result["initial"], "2026-09-24")
+        self.assertEqual(result["next"], "2026-09-25")
+        self.assertEqual(result["snapshot"], "2026-09-15")
+        self.assertEqual(result["marker"], 1790208000000)
+        self.assertIn("TODAY", result["label"])
+        self.assertEqual(result["updates"], 1)
+        self.assertTrue(result["unchanged"])
+        self.assertGreater(result["max"], result["marker"])
+
     def run_controller(self, scenario):
         node = shutil.which("node")
         if not node:

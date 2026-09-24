@@ -7,7 +7,7 @@
 {% block project_horiz %}{{ manager.p6.kpis.start_label|default:"31/05/24" }} → {{ manager.p6.kpis.finish_label|default:"30/06/27" }}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/section-notes.css' %}?v=20260924">
+<link rel="stylesheet" href="{% static 'css/section-notes.css' %}?v=20260924-compact">
 <link rel="stylesheet" href="{% static 'css/rundown-import.css' %}?v=20260924">
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
 <link href="{% static 'css/fabrication-s03.css' %}?v=20260923-rundown-import" rel="stylesheet">
@@ -53,7 +53,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="sn-export"><span>Comentários e decisões de todas as seções</span><a class="sn-button" href="{% url 'core:section_minutes' %}"><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Exportar ata</a></div>
+<div class="sn-export"><span>Comments and decisions across all sections</span><a class="sn-button" href="{% url 'core:section_minutes' %}"><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Export minutes</a></div>
 
 
 {# ===== FILTERBAR (sticky) ===== #}
@@ -1864,7 +1864,7 @@
 
 {% block extra_js %}
 {% include 'core/_section_notes.html' %}
-<script src="{% static 'js/section-notes.js' %}?v=20260924" defer></script>
+<script src="{% static 'js/section-notes.js' %}?v=20260924-compact" defer></script>
 
 {% if user.is_admin %}
 <dialog id="rundownImportDialog" aria-labelledby="rundownImportTitle">
@@ -4154,7 +4154,11 @@
     var dataDate = new Intl.DateTimeFormat("en-GB", {
       day: "2-digit", month: "short", year: "2-digit", timeZone: "UTC"
     });
-    var snapshotTimestamp = NaN;
+    var todayTimestamp = NaN;
+    function currentDayTimestamp() {
+      var now = new Date();
+      return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    }
     var rootStyle = window.getComputedStyle(root);
     function cssColor(name, fallback) {
       return rootStyle.getPropertyValue(name).trim() || fallback;
@@ -4194,9 +4198,9 @@
     var dataDatePlugin = {
       id: "fabRundownDataDate",
       beforeDatasetsDraw: function (chart) {
-        if (isNaN(snapshotTimestamp) || !chart.scales.x) return;
+        if (isNaN(todayTimestamp) || !chart.scales.x) return;
         var area = chart.chartArea;
-        var x = chart.scales.x.getPixelForValue(snapshotTimestamp);
+        var x = chart.scales.x.getPixelForValue(todayTimestamp);
         if (!area || x < area.left || x > area.right) return;
         var ctx = chart.ctx;
         ctx.save();
@@ -4211,12 +4215,12 @@
         ctx.restore();
       },
       afterDatasetsDraw: function (chart) {
-        if (isNaN(snapshotTimestamp) || !chart.scales.x) return;
+        if (isNaN(todayTimestamp) || !chart.scales.x) return;
         var area = chart.chartArea;
-        var x = chart.scales.x.getPixelForValue(snapshotTimestamp);
+        var x = chart.scales.x.getPixelForValue(todayTimestamp);
         if (!area || x < area.left || x > area.right) return;
         var ctx = chart.ctx;
-        var label = "DATA DATE · " + dataDate.format(new Date(snapshotTimestamp)).toUpperCase();
+        var label = "TODAY · " + dataDate.format(new Date(todayTimestamp)).toUpperCase();
         ctx.save();
         ctx.font = "600 8px 'JetBrains Mono', monospace";
         var labelWidth = Math.ceil(ctx.measureText(label).width) + 10;
@@ -4382,8 +4386,8 @@
           scales: {
             x: {
               type: "linear",
-              min: timestamps[0],
-              max: timestamps[timestamps.length - 1],
+              min: Math.min(timestamps[0], todayTimestamp),
+              max: Math.max(timestamps[timestamps.length - 1], todayTimestamp),
               offset: true,
               grid: { display: false },
               border: { color: palette.border },
@@ -4483,7 +4487,8 @@
       var hasLookahead = available && source.has_lookahead;
       dates = Array.isArray(data.dates) ? data.dates : [];
       timestamps = dates.map(function (value) { return Date.parse(value + "T00:00:00Z"); });
-      snapshotTimestamp = Date.parse((source.snapshot_date || "") + "T00:00:00Z");
+      todayTimestamp = currentDayTimestamp();
+      root.dataset.todayDate = new Date(todayTimestamp).toISOString().slice(0, 10);
       root.dataset.snapshotDate = source.snapshot_date || "";
       root.dataset.rundownDiscipline = key;
       root.dataset.rundownMode = mode;
@@ -4557,6 +4562,24 @@
       selectMode(mode);
     });
     selectMode("fabrication");
+    function refreshTodayMarker() {
+      var next = currentDayTimestamp();
+      if (next === todayTimestamp) return;
+      todayTimestamp = next;
+      root.dataset.todayDate = new Date(next).toISOString().slice(0, 10);
+      if (chart && timestamps.length) {
+        chart.options.scales.x.min = Math.min(timestamps[0], next);
+        chart.options.scales.x.max = Math.max(timestamps[timestamps.length - 1], next);
+        chart.update("none");
+      }
+    }
+    function scheduleNextDay() {
+      var now = new Date();
+      var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      window.setTimeout(function () { refreshTodayMarker(); scheduleNextDay(); }, midnight - now + 1000);
+    }
+    if (window.setTimeout) scheduleNextDay();
+    if (window.addEventListener) window.addEventListener("focus", refreshTodayMarker);
     c3WhenVisible(root, function () {
       canRender = true;
       renderRundown();
