@@ -34,6 +34,7 @@ from apps.core.supply_snapshot_filters import normalized_supply_snapshot_filters
 from apps.exports.models import ExportLog
 from apps.core import real_sources
 from apps.core import ros_workbook, rundown_workbook
+from apps.core.response_timing import ResponseTiming
 
 from .models import Announcement, DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport
 
@@ -357,6 +358,7 @@ def _supply_scope_view(manager, scope_key: str):
 @login_required
 def home_view(request):
     """Cockpit gerencial consumindo somente bases reais integradas."""
+    timing = ResponseTiming()
     user = request.user
 
     modules = [
@@ -411,12 +413,15 @@ def home_view(request):
     ).count()
     total_users = User.objects.filter(is_active=True).count()
     dashboard_filters = _dashboard_filters_from_request(request)
+    timing.mark("account")
     manager = real_sources.management_dashboard(dashboard_filters)
+    timing.mark("management")
     charts_payload = manager.get("charts", {})
     # S03 · Fabrication progress — tudo lido direto do PostgreSQL do
     # DATAFY/SPDM (pacotes P6, progresso datado e cobertura de PO por item,
     # com o mesmo motor de status da S02).
     fabrication = fabrication_source.fabrication_progress_safe()
+    timing.mark("fabrication")
     # Read a single accepted ROS revision for both charts. A database failure
     # must not silently replace an imported schedule with the original file.
     try:
@@ -449,6 +454,7 @@ def home_view(request):
         for mode, group in source_rundown_modes.items()
     }
     rundown_disciplines = rundown_modes["fabrication"]["disciplines"]
+    timing.mark("rundown")
     # A skyline ROS combina baseline e lookahead da Planilha1 e
     # falha de forma independente para preservar a Fabricacao e a curva.
     skyline = (
@@ -456,7 +462,9 @@ def home_view(request):
         if ros_schedule else skyline_source._empty_payload("The current ROS schedule is unavailable.")
     )
     skyline_source.attach_live_material_readiness(skyline)
+    timing.mark("skyline_materials")
     aveon_skyline = skyline_aveon_source.aveon_skyline_safe(skyline)
+    timing.mark("aveon")
     installation_skyline = skyline_installation_source.installation_skyline_sample(skyline)
     # Both date views use the same live material evidence and physical scope.
     # Keep the shared material map in fabSkylineData rather than duplicating it.
@@ -474,6 +482,7 @@ def home_view(request):
     # publicacao. Desligada, a home tambem evita consultar o Taskfy.
     show_tracking = settings.DASHFY_SHOW_TRACKING
     tracking = tracking_source.tracking_dashboard_safe() if show_tracking else None
+    timing.mark("tracking")
 
     context = {
         "modules": modules,
@@ -528,7 +537,10 @@ def home_view(request):
             "now": now,
         },
     }
-    return render(request, "core/home.html", context)
+    timing.mark("serialization")
+    response = render(request, "core/home.html", context)
+    timing.mark("template")
+    return timing.attach(response)
 
 
 def _aveon_material_payload():

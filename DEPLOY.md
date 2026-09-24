@@ -250,3 +250,31 @@ Reinicie o processo/servico web existente. A primeira leitura apos reinicio ou
 expiracao ainda consulta as fontes; o cache local nao e compartilhado entre
 processos. Valide no servidor a abertura inicial e a navegacao com varios
 usuarios, pois os tempos locais nao representam a rede e o banco de producao.
+
+### Resposta HTML e diagnostico de producao
+
+O middleware `django.middleware.gzip.GZipMiddleware` deve estar presente logo
+apos `whitenoise.middleware.WhiteNoiseMiddleware` em `MIDDLEWARE`. WhiteNoise
+comprime arquivos estaticos, mas nao o HTML gerado pelo Django. O cockpit
+inclui tabelas e dados de previsao e pode ultrapassar 9 MB sem compressao.
+O middleware negocia gzip com o navegador, preserva o conteudo e usa a protecao
+padrao do Django para respostas comprimidas. Clientes sem gzip continuam
+recebendo o HTML original.
+
+Em 24/09/2026, o teste autenticado no servidor mediu 36,5 s numa recarga:
+17,8 s ate o primeiro byte e 18,3 s recebendo 9,37 MB de HTML sem compressao.
+A primeira abertura chegou a 79,7 s na mesma conexao. Na base local, o HTML
+de 8,67 MB comprimiu para 401 KB. A reducao de bytes nao e uma medicao do
+tempo de resposta de producao apos a atualizacao.
+
+Depois do pull e reinicio, confira no navegador, em Network, a resposta do
+documento `/`: `Content-Encoding: gzip` e `Vary` contendo `Accept-Encoding`.
+O cabecalho `Server-Timing` separa account, management, fabrication, rundown,
+skyline_materials, aveon, tracking, serialization e template. Os valores sao
+milissegundos e nao incluem detalhes de conexao, consultas ou dados pessoais.
+Eles permitem distinguir demora das fontes, renderizacao e transferencia.
+
+Plotly e carregado somente nas paginas Datafy/Taskfy que o utilizam. O
+cockpit e o login nao baixam Plotly nem ECharts. Esta correcao nao requer
+migrations. Se `config/settings.py` tiver alteracoes locais no servidor,
+preserve-as e confirme que a linha do middleware novo foi incorporada.
