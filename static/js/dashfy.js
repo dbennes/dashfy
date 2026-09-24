@@ -1686,13 +1686,13 @@
       })();
       return state.hierarchyPromise;
     };
-    const setActiveTab = tab => {
+    const setActiveTab = (tab, load = true) => {
       if (tab === 'wbs' && !wbsList) tab = 'model';
       state.activeTab = tab;
       tabs.forEach(button => button.classList.toggle('is-active', button.dataset.projectTab === tab));
       wbsList?.classList.toggle('is-active', tab === 'wbs');
       modelList?.classList.toggle('is-active', tab === 'model');
-      if (tab === 'model') loadHierarchy();
+      if (tab === 'model' && load) loadHierarchy();
     };
     const resetHighlights = () => {
       state.highlighted.forEach(item => { item.mesh.material = item.material; });
@@ -3803,10 +3803,13 @@
     });
     renderWbs();
     renderModelTree();
-    setActiveTab(defaultTab);
+    // Only initialise tab styling here. The hierarchy is several MB and
+    // should not compete with the dashboard before this panel is visible.
+    setActiveTab(defaultTab, false);
     const activateViewer = () => {
       if (document.hidden) return;
       state.viewerVisible = true;
+      if (state.activeTab === 'model') loadHierarchy();
       if (!state.reviewPayload && !state.reviewPromise) loadReview();
       if (state.modelLoaded) startRenderLoop();
       if (state.pendingDetail && state.currentModelMode === 'overview' && !state.modelLoading) {

@@ -243,7 +243,7 @@ STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 if not DEBUG:
-    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    STATICFILES_STORAGE = "config.static_storage.DashboardStaticStorage"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
@@ -278,6 +278,7 @@ REST_FRAMEWORK = {
 # Cache + Celery
 # ------------------------------------------------------------------
 REDIS_URL = env("REDIS_URL", "redis://localhost:6379/0")
+DASHFY_SOURCE_CACHE_SECONDS = max(0, int(env("DASHFY_SOURCE_CACHE_SECONDS", "45")))
 
 CACHES = {
     "default": {

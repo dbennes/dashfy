@@ -161,7 +161,10 @@ class RosWorkbookViewTests(TestCase):
         live["aveon"].assert_called_once()
         self.assertEqual(live["aveon"].call_args.args[0]["kpis"]["scope_spools"], 608)
         self.assertEqual(live["disciplines"].call_args.args[0]["kpis"]["scope_total"], 608)
-        self.assertEqual(home.context["rundown_disciplines"]["structural"]["source"], live["structural"]["source"])
+        rendered_source = home.context["rundown_disciplines"]["structural"]["source"]
+        self.assertEqual({key: rendered_source[key] for key in live["structural"]["source"]},
+                         live["structural"]["source"])
+        self.assertEqual(rendered_source["mode"], "fabrication")
         self.assertContains(home, self.import_url)
         self.assertContains(home, self.export_url)
 

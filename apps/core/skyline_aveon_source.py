@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from . import fabrication_source as fabrication
 from . import real_sources
+from .dashboard_cache import cached_dashboard_source
 from .skyline_material_source import line_identity
 from .skyline_source import _empty_payload, _week_ending_friday
 from .skyline_progress_source import confirmed_actual_finish, is_complete, package_progress
@@ -358,11 +359,17 @@ def build_aveon_skyline(ros_payload: dict, packages: list[dict], progress_entrie
     return payload
 
 
-def aveon_skyline(ros_payload: dict) -> dict:
-    as_of = _date(ros_payload.get("source", {}).get("as_of_date")) or timezone.localdate()
+@cached_dashboard_source("aveon-rows")
+def _aveon_rows(as_of):
     with real_sources._datafy_conn() as conn:
         packages = real_sources._rows(conn.cursor(), _PACKAGES_SQL)
         progress_entries = real_sources._rows(conn.cursor(), _PROGRESS_SQL, (as_of,))
+    return packages, progress_entries
+
+
+def aveon_skyline(ros_payload: dict) -> dict:
+    as_of = _date(ros_payload.get("source", {}).get("as_of_date")) or timezone.localdate()
+    packages, progress_entries = _aveon_rows(as_of)
     return build_aveon_skyline(ros_payload, packages, progress_entries)
 
 

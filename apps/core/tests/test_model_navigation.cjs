@@ -5,6 +5,30 @@ const vm = require('node:vm');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../../../static/js/dashfy.js'), 'utf8');
 
+test('initial tab does not fetch hierarchy; visible panel and explicit tabs do', () => {
+  let loads = 0;
+  const context = {state: {}, tabs: [], wbsList: null, modelList: null,
+    loadHierarchy: () => loads++};
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('    const setActiveTab ='),
+    source.indexOf('    const resetHighlights =')) + '\nthis.select = setActiveTab;', context);
+  context.select('model', false);
+  assert.equal(loads, 0);
+  context.select('model');
+  assert.equal(loads, 1);
+  assert.match(source, /setActiveTab\(defaultTab, false\)/);
+  const activation = source.slice(source.indexOf('    const activateViewer ='),
+    source.indexOf('    const deactivateViewer ='));
+  Object.assign(context, {document: {hidden: false}, loadReview() {}, root: {dataset: {}},
+    startRenderLoop() {}, loadModel() {}});
+  vm.runInContext(activation + '\nthis.activate = activateViewer;', context);
+  context.activate();
+  assert.equal(loads, 2);
+  context.document.hidden = true;
+  context.activate();
+  assert.equal(loads, 2);
+});
+
 function gestures() {
   const listeners = {}, picks = [], actions = [];
   let now = 100;

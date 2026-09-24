@@ -217,3 +217,36 @@ o historico. Sem novo relatorio, a ultima posicao permanece a mesma.
 logs no terminal, sem abrir o arquivo `logs/dashfy.log` do servico web. Isso
 evita que a permissao desse arquivo bloqueie a manutencao por outro usuario.
 O servico web continua com sua configuracao de logs existente.
+
+### Desempenho do dashboard (24 setembro 2026)
+
+As consultas de fabricacao, pacotes estruturais e progresso AVEON reutilizam
+resultados por 45 segundos em cada processo web. Requisicoes simultaneas no
+mesmo processo compartilham a primeira leitura. Falhas nao sao armazenadas;
+permissoes, comentarios e dados pessoais nao entram nesse cache. O cache e
+separado por data de corte e dia atual. `DASHFY_SOURCE_CACHE_SECONDS=0` no
+`.env` desativa essa reutilizacao para diagnostico. Alteracoes feitas no
+DATAFY podem levar ate 45 segundos para aparecer numa nova consulta ao DASHFY.
+ROS e Rundown importados continuam lidos na requisicao, fora desse cache.
+
+A arvore 3D so e carregada quando o painel fica visivel ou o usuario a solicita.
+A rotacao automatica e os controles de navegacao continuam disponiveis.
+
+O storage de producao passa a ser `config.static_storage.DashboardStaticStorage`.
+Ele preserva manifestos, hashes e arquivos originais, usando Brotli nivel 4 e
+gzip nivel 6 para evitar a compressao maxima muito lenta dos GLBs. Os arquivos
+comprimidos podem ficar um pouco maiores. Caso o servidor tenha sobrescrito
+`STATICFILES_STORAGE` localmente, confira se usa essa classe apos o pull.
+
+Esta atualizacao nao cria migrations nem exige novas dependencias:
+
+```powershell
+git pull --ff-only
+python manage.py collectstatic --noinput
+python manage.py check
+```
+
+Reinicie o processo/servico web existente. A primeira leitura apos reinicio ou
+expiracao ainda consulta as fontes; o cache local nao e compartilhado entre
+processos. Valide no servidor a abertura inicial e a navegacao com varios
+usuarios, pois os tempos locais nao representam a rede e o banco de producao.

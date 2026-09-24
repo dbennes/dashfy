@@ -382,7 +382,7 @@ def apply_ros_import(parsed: dict[str, Any], filename: str, file_hash: str, file
             batch = RosScheduleImport.objects.create(
                 revision=revision, base_revision=current["revision"], original_filename=filename,
                 file_hash=file_hash, file_size=file_size,
-                imported_by=user if user is not None and user.is_authenticated else None,
+                imported_by_id=user.pk if user is not None and user.is_authenticated else None,
                 snapshot_date=date.fromisoformat(parsed["snapshot_date"]),
                 payload={"skyline": skyline, "rundown": rundown},
                 metadata={"changes": deepcopy(parsed["changes"]), "changed_rows": parsed["changed_rows"], "row_count": len(skyline["rows"]), "scope_spools": sum(row[3] for row in skyline["rows"])},

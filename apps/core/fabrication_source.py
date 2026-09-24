@@ -27,6 +27,8 @@ from datetime import date as date_cls, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
+from .dashboard_cache import cached_dashboard_source
+
 # (key, rotulo curto, rotulo completo, peso de fallback) — igual a SPDM.
 STAGES: list[tuple[str, str, str, int]] = [
     ("prefabrication", "PreFab", "Prefabrication", 15),
@@ -1168,6 +1170,7 @@ def _charts_payload(
     }
 
 
+@cached_dashboard_source("fabrication-progress")
 def fabrication_progress() -> dict:
     """Payload da S03: KPIs, arvore WBS + linhas, graficos e import P6.
 

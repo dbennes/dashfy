@@ -18,6 +18,7 @@ from typing import Any
 from django.utils import timezone
 
 from . import real_sources
+from .dashboard_cache import cached_dashboard_source
 from .rundown_source import _empty_payload, fabrication_rundown
 
 logger = logging.getLogger(__name__)
@@ -183,10 +184,14 @@ def structural_rundown(packages: list[dict]) -> dict:
     return payload
 
 
-def rundown_disciplines(piping_payload: dict) -> dict[str, dict]:
+@cached_dashboard_source("structural-packages")
+def _structural_packages():
     with real_sources._datafy_conn() as conn:
-        packages = real_sources._rows(conn.cursor(), _STRUCTURAL_PACKAGES_SQL)
-    return {"piping": _piping_payload(piping_payload), "structural": structural_rundown(packages)}
+        return real_sources._rows(conn.cursor(), _STRUCTURAL_PACKAGES_SQL)
+
+
+def rundown_disciplines(piping_payload: dict) -> dict[str, dict]:
+    return {"piping": _piping_payload(piping_payload), "structural": structural_rundown(_structural_packages())}
 
 
 def rundown_disciplines_safe(piping_payload: dict) -> dict[str, dict]:

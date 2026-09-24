@@ -36,6 +36,9 @@ class SkylineLiveHomeTests(SimpleTestCase):
         self.request.user = User(username="unsaved-skyline-test", role=User.Role.ADMIN)
         self.request.session = {}
         self.mocks = self.enterContext(ExitStack())
+        self.mocks.enter_context(patch(
+            "apps.core.views.rundown_workbook.overlay_modes", side_effect=lambda modes: modes,
+        ))
         self.mocks.enter_context(
             patch("apps.core.views.Announcement.objects.filter", return_value=[])
         )
