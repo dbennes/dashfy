@@ -1,4 +1,6 @@
+{% load static %}
 <section class="section vt-section" id="vessel-tracking" data-vessel-tracking data-api-base="/vessels/api/"
+         data-leaflet-url="{% static 'vendor/leaflet/leaflet.js' %}?v=1.9.4-map-retry"
          data-vessel-model="{{ vessel_tracking_config.vessel_model_url|default:'' }}"
          data-mini-tile="{{ vessel_tracking_config.tile_url|default:'' }}" aria-labelledby="vt-heading">
 <div class="sn-rail" data-note-panel="vessel-tracking" data-note-label="Vessel tracking"></div>
@@ -81,7 +83,7 @@
       </svg>
       <div class="vt-map-frame">
         <div class="vt-map" data-vt-map aria-label="Vessel positions, port arrival areas and recorded AIS track"></div>
-        <div class="vt-map-empty" data-vt-map-empty><i class="bi bi-compass" aria-hidden="true"></i><strong data-vt-map-empty-title>No AIS positions yet</strong><span data-vt-map-empty-text>Received positions will appear on the map.</span></div>
+        <div class="vt-map-empty" data-vt-map-empty role="status"><i class="bi bi-compass" aria-hidden="true"></i><strong data-vt-map-empty-title>Loading map…</strong><span data-vt-map-empty-text>Preparing the map and stored positions.</span><button type="button" class="vt-button" data-vt-map-retry hidden>Retry map</button></div>
         <div class="vt-containers" data-vt-containers hidden role="dialog" aria-label="Trackfy containers and open shipments">
           <div class="vt-containers-head">
             <div><span class="vt-kicker">TRACKFY · CONTAINERS</span><strong data-vt-containers-summary>Loading containers…</strong></div>

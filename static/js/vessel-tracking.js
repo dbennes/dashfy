@@ -192,6 +192,30 @@
   if (typeof module === "object" && module.exports) module.exports = helpers;
   if (!global.document) return;
 
+  var mapLibraryPromise = null;
+  function loadMapLibrary(url) {
+    if (global.L && typeof global.L.map === "function") return Promise.resolve();
+    if (mapLibraryPromise) return mapLibraryPromise;
+    mapLibraryPromise = new Promise(function (resolve, reject) {
+      var script = global.document.createElement("script"), timer;
+      function finish(error) {
+        global.clearTimeout(timer);
+        script.onload = script.onerror = null;
+        if (error) { script.remove(); reject(error); }
+        else resolve();
+      }
+      script.src = url;
+      script.async = true;
+      script.onload = function () {
+        finish(global.L && typeof global.L.map === "function" ? null : new Error("Map library did not initialise."));
+      };
+      script.onerror = function () { finish(new Error("Map library could not be downloaded.")); };
+      timer = global.setTimeout(function () { finish(new Error("Map library download timed out.")); }, 15000);
+      global.document.head.appendChild(script);
+    }).finally(function () { mapLibraryPromise = null; });
+    return mapLibraryPromise;
+  }
+
   function init(root) {
     if (root.dataset.vtInitialized) return;
     root.dataset.vtInitialized = "1";
@@ -209,6 +233,7 @@
     var pollMs = Math.min(30, Math.max(10, number(config.poll_seconds) || 20)) * 1000;
     var base = root.dataset.apiBase || "/vessels/api/";
     var map = null, tiles = null, markers = new Map(), lineLayer = null, geofenceLayer = null;
+    var mapLoading = false, trackData = null;
     var state = { vessels: [], selected: null, canManage: false, range: "all", custom: {}, points: [],
       active: false, visible: false, busy: false, timer: null, controllers: new Set(), generation: 0,
       historyController: null, editing: null, saving: false, mapFitted: false, loaded: false, refreshQueued: false,
@@ -284,13 +309,24 @@
       wrap.appendChild(element("span", "vt-boat-dot"));
       return global.L.divIcon({ html: wrap, className: "vt-boat-icon", iconSize: [28, 28], iconAnchor: [14, 14], popupAnchor: [0, -16] });
     }
-    function ensureMap() {
+    async function ensureMap() {
       if (map) { map.invalidateSize({ pan: false }); return; }
-      if (!global.L) {
+      if (mapLoading) return;
+      mapLoading = true;
+      query("map-retry").hidden = true;
+      text(query("map-empty-title"), "Loading map…");
+      text(query("map-empty-text"), "Preparing the map. Vessel details remain available.");
+      try {
+        await loadMapLibrary(root.dataset.leafletUrl);
+      } catch (error) {
+        mapLoading = false;
         text(query("map-empty-title"), "Map unavailable");
-        text(query("map-empty-text"), "The map library could not load. Vessel details are still available.");
+        text(query("map-empty-text"), "The map could not load. Retry without leaving this page.");
+        query("map-retry").hidden = false;
         return;
       }
+      mapLoading = false;
+      if (!state.active) return;
       map = global.L.map(query("map"), { center: [4, 5], zoom: 5, minZoom: 2, preferCanvas: true, scrollWheelZoom: true, zoomAnimation: false, markerZoomAnimation: false });
       var tileUrl = typeof config.tile_url === "string" && config.tile_url.indexOf("https://") === 0 ? config.tile_url : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
       // Attribution is a fixed public-source link; no API or vessel text is inserted as HTML.
@@ -311,6 +347,8 @@
       syncWheelZoom();
       global.L.control.scale({ imperial: false }).addTo(map);
       global.requestAnimationFrame(function () { map.invalidateSize({ pan: false }); });
+      renderMarkers();
+      if (trackData) renderTrack(trackData);
     }
     function renderMarkers() {
       if (!map) return;
@@ -416,6 +454,7 @@
       query("zoom-vessel").disabled = !position((vessel || {}).last_position);
     }
     function clearTrack() {
+      trackData = null;
       state.points = [];
       if (lineLayer) { lineLayer.remove(); lineLayer = null; }
       var node = query("endpoints");
@@ -498,6 +537,7 @@
     }
     function renderTrack(data) {
       clearTrack();
+      trackData = data;
       state.points = trackPoints(data.positions);
       var runs = trackRuns(state.points), now = Date.now();
       if (map && state.points.length) {
@@ -1027,6 +1067,7 @@
     query("containers-search").addEventListener("input", renderContainers);
     query("follow").addEventListener("change", function () { if (query("follow").checked) renderMarkers(); });
     query("retry").addEventListener("click", function () { ensureMap(); refresh(); });
+    query("map-retry").addEventListener("click", ensureMap);
     query("add").addEventListener("click", function () { openForm(null); });
     query("export").addEventListener("click", function () {
       exportCsv(query("export"), "vessels/export/", "fleet-positions-" + utcStamp() + ".csv");

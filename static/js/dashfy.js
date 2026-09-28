@@ -3658,9 +3658,11 @@
       try {
         await ensureViewer();
         const gltf = await state.loader.loadAsync(url, event => {
-          if (event.total) {
-            const pct = Math.round((event.loaded / event.total) * 100);
-            setStatus(`Loading ${label}... ${pct}%`);
+          // Three counts decoded bytes, but Content-Length can describe the
+          // compressed response. A percentage from those values is invalid.
+          if (Number.isFinite(event.loaded) && event.loaded > 0) {
+            const mb = (event.loaded / (1024 * 1024)).toFixed(1);
+            setStatus(`Loading ${label}... ${mb} MB received`);
           }
         });
         const replacingModel = state.modelLoaded;

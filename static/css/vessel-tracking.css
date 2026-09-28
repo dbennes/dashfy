@@ -88,6 +88,7 @@
 .vt-map-empty > i { color: var(--signal-cyan); font-size: 24px; }
 .vt-map-empty strong { font: 600 13px var(--font-sans); }
 .vt-map-empty > span { color: var(--fg-2); font-size: 11px; line-height: 1.5; }
+.vt-map-empty > button { pointer-events: auto; justify-self: center; }
 .vt-tile-error { position: absolute; z-index: 501; left: 10px; right: 10px; top: 10px; background: var(--bg-1); border: 1px solid var(--signal-amber-line); color: var(--signal-amber); padding: 8px; font-size: 11px; border-radius: 3px; pointer-events: none; }
 .vt-map-footer { flex-shrink: 0; padding: 9px 12px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 14px; color: var(--fg-2); font: 10px var(--font-sans); border-top: 1px solid var(--line-2); min-height: 35px; }
 .vt-empty-copy { padding: 12px 6px; margin: 0; color: var(--fg-2); font-size: 11px; line-height: 1.6; }
