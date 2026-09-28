@@ -1250,8 +1250,10 @@ table.dataTable thead th {
   animation: c3-shell-reveal .22s ease-out both;
 }
 @keyframes c3-shell-reveal {
-  from { opacity: 0; filter: blur(2px); }
-  to { opacity: 1; filter: blur(0); }
+  /* A filter creates a containing block for nested fixed modals, even at
+     blur(0). Keep the reveal opacity-only so overlays stay in the viewport. */
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .c3-boot {

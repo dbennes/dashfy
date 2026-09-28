@@ -301,7 +301,7 @@ function initDossier(root) {
   const base = root.dataset.apiBase || "/vessels/api/";
   const modelUrl = root.dataset.vesselModel || "";
   const state = { open: false, vessel: null, containers: [], activeBox: null,
-                activeShipment: null, items: [], restoreFocus: null };
+                activeShipment: null, items: [], restoreFocus: null, restoreOverflow: "" };
   let hologram = null;
 
   async function api(path) {
@@ -583,7 +583,10 @@ function initDossier(root) {
   function open(vessel) {
     if (!vessel) return;
     state.vessel = vessel;
-    state.restoreFocus = document.activeElement;
+    if (!state.open) {
+      state.restoreFocus = document.activeElement;
+      state.restoreOverflow = document.body.style.overflow;
+    }
     q("name").textContent = vessel.name || "Unnamed vessel";
     q("subtitle").textContent = `MMSI ${vessel.mmsi}`;
     const status = q("status");
@@ -600,7 +603,7 @@ function initDossier(root) {
     state.open = true;
     document.body.style.overflow = "hidden";
     startHologram();
-    q("close").focus();
+    q("close").focus({ preventScroll: true });
     loadContainers();
   }
 
@@ -618,10 +621,10 @@ function initDossier(root) {
     if (!state.open) return;
     state.open = false;
     overlay.hidden = true;
-    document.body.style.overflow = "";
+    document.body.style.overflow = state.restoreOverflow;
     hologram?.stop();
     hologram = null;
-    state.restoreFocus?.focus?.();
+    state.restoreFocus?.focus?.({ preventScroll: true });
   }
 
   function csvCell(value) {

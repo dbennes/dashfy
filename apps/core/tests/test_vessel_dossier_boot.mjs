@@ -54,7 +54,7 @@ function makeElement(name = "div") {
     appendChild(child) { this.children.push(child); return child; },
     replaceChildren(...children) { this.children = children; },
     remove() {},
-    focus() {},
+    focus(options) { this.focusOptions = options; },
     setAttribute() {},
     getAttribute: () => null,
     querySelector: () => null,
@@ -123,6 +123,9 @@ const VESSEL = {
    the first DOM. */
 test("the dossier initialises and opens when the map asks for it", async () => {
   const dom = install();
+  const opener = makeElement("button");
+  dom.document.activeElement = opener;
+  dom.document.body.style.overflow = "auto";
   // A ReferenceError here means something is called but no longer defined.
   await import(pathToFileURL(MODULE).href);
 
@@ -135,6 +138,11 @@ test("the dossier initialises and opens when the map asks for it", async () => {
   assert.equal(dom.nodes.get("overlay").hidden, false, "the overlay must be revealed");
   assert.equal(dom.nodes.get("name").textContent, "EASTERN URSINIA");
   assert.match(dom.nodes.get("subtitle").textContent, /636023616/);
+  assert.deepEqual(dom.nodes.get("close").focusOptions, { preventScroll: true });
+  assert.equal(dom.document.body.style.overflow, "hidden");
+  // Updating an already-open dossier must not replace the original opener
+  // or remember the modal's own scroll lock as the page's previous state.
+  dom.document.activeElement = dom.nodes.get("close");
 
   const facts = () => Object.fromEntries(dom.nodes.get("facts").children.map(
     cell => [cell.children[0].textContent, cell.children[1].textContent]));
@@ -167,6 +175,10 @@ test("the dossier initialises and opens when the map asks for it", async () => {
   } }));
   assert.equal(facts()["Destination"], "BONGA NORTH");
   assert.equal(facts()["ETA"], "—", "an ETA declared for another target is not a regular-route ETA");
+  dom.nodes.get("close").dispatchEvent(new dom.FakeEvent("click"));
+  assert.equal(dom.nodes.get("overlay").hidden, true);
+  assert.equal(dom.document.body.style.overflow, "auto");
+  assert.deepEqual(opener.focusOptions, { preventScroll: true });
 });
 
 test("every data-vh hook the module queries exists in the template", () => {
