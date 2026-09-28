@@ -2,6 +2,20 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const ui = require('../../../static/js/vessel-tracking.js');
 
+test('water paths retain channel bends and fade old history independently of AIS sampling gaps', () => {
+  const now = Date.parse('2026-09-28T12:00:00Z');
+  const older = [[4.794, 6.942], [4.71, 7.02], [4.615, 7.168]];
+  const recent = [[4.615, 7.168], [4.542, 7.203]];
+  const route = {kind: 'estimated_water_route', segments: [
+    {timestamp: '2026-09-18T15:07:00Z', coordinates: older},
+    {timestamp: '2026-09-28T11:00:00Z', coordinates: recent},
+    {timestamp: 'invalid', coordinates: recent},
+    {timestamp: '2026-09-28T11:00:00Z', coordinates: [[200, 7], [4, 7]]},
+  ]};
+  assert.deepEqual(ui.waterRouteParts(route, now), {older: [older], recent: [recent]});
+  assert.deepEqual(ui.waterRouteParts(null, now), {older: [], recent: []});
+});
+
 function point(latitude, longitude, timestamp, extra = {}) {
   return {latitude, longitude, timestamp, source: 'AIS', ...extra};
 }

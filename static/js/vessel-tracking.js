@@ -118,6 +118,18 @@
       opacity: old ? .55 : .85, dashArray: "3 6", lineCap: "round",
       smoothFactor: 0, interactive: false };
   }
+  function waterRouteParts(route, now) {
+    var result = { older: [], recent: [] };
+    if (!route || route.kind !== "estimated_water_route" || !Array.isArray(route.segments)) return result;
+    route.segments.forEach(function (segment) {
+      var time = timestamp(segment.timestamp), coordinates = segment.coordinates;
+      if (time === null || !Array.isArray(coordinates) || coordinates.length < 2 || !coordinates.every(function (pair) {
+        return Array.isArray(pair) && pair.length === 2 && Number.isFinite(pair[0]) && Number.isFinite(pair[1]) && Math.abs(pair[0]) <= 90 && Math.abs(pair[1]) <= 180;
+      })) return;
+      result[time < now - 86400000 ? "older" : "recent"].push(coordinates);
+    });
+    return result;
+  }
   function customRange(start, end) {
     function utc(value) {
       if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value || "")) return null;
@@ -187,7 +199,7 @@
 
   var helpers = { number: number, measurement: measurement, timestamp: timestamp, utcLabel: utcLabel,
     ageLabel: ageLabel, etaLabel: etaLabel, position: position, bearing: bearing,
-    trackPoints: trackPoints, trackParts: trackParts, trackRuns: trackRuns, trackStyle: trackStyle, customRange: customRange, apiError: apiError,
+    trackPoints: trackPoints, trackParts: trackParts, trackRuns: trackRuns, trackStyle: trackStyle, waterRouteParts: waterRouteParts, customRange: customRange, apiError: apiError,
     attachmentName: attachmentName, geofence: geofence, voyageDisplay: voyageDisplay };
   if (typeof module === "object" && module.exports) module.exports = helpers;
   if (!global.document) return;
@@ -539,33 +551,27 @@
       clearTrack();
       trackData = data;
       state.points = trackPoints(data.positions);
-      var runs = trackRuns(state.points), now = Date.now();
+      var now = Date.now(), routes = waterRouteParts(data.water_route, now);
       if (map && state.points.length) {
         query("map-empty").hidden = true;
         lineLayer = global.L.layerGroup().addTo(map);
-        runs.forEach(function (part) {
-          // At most two paths per run: batch by age instead of creating a layer
-          // per observation. Draw recent segments last, above the older history.
-          var older = [], recent = [];
-          for (var i = 1; i < part.length; i += 1) {
-            var segment = [[part[i - 1].latitude, part[i - 1].longitude], [part[i].latitude, part[i].longitude]];
-            (part[i].time < now - 86400000 ? older : recent).push(segment);
-          }
-          if (older.length) global.L.polyline(older, trackStyle(now - 86400001, now)).addTo(lineLayer);
-          if (recent.length) global.L.polyline(recent, trackStyle(now, now)).addTo(lineLayer);
-          if (part.length === 1) {
-            var style = trackStyle(part[0].time, now);
-            global.L.circleMarker([part[0].latitude, part[0].longitude], {
-              radius: 2.5, weight: 1, color: style.color, opacity: style.opacity,
-              fillColor: style.color, fillOpacity: style.opacity, interactive: false
-            }).addTo(lineLayer);
-          }
+        // Water-constrained estimates are a separate layer from measured AIS
+        // fixes. Never fall back to a straight line through unverified terrain.
+        if (routes.older.length) global.L.polyline(routes.older, trackStyle(now - 86400001, now)).addTo(lineLayer);
+        if (routes.recent.length) global.L.polyline(routes.recent, trackStyle(now, now)).addTo(lineLayer);
+        state.points.forEach(function (point) {
+          var style = trackStyle(point.time, now);
+          global.L.circleMarker([point.latitude, point.longitude], {
+            radius: 2, weight: .7, color: style.color, opacity: style.opacity,
+            fillColor: style.color, fillOpacity: style.opacity, interactive: true
+          }).bindTooltip("Recorded AIS position · " + utcLabel(point.timestamp)).addTo(lineLayer);
         });
         drawEndpoints();
       }
       var total = number(data.total_count), count = state.points.length;
-      var gaps = Math.max(0, runs.length - 1);
-      var label = count ? count.toLocaleString("en-GB") + (data.simplified && total !== null ? " of " + total.toLocaleString("en-GB") : "") + " stored positions" + (data.simplified ? " · Sampled history" : "") + " · Light grey: older than 24 h" + (gaps ? " · " + gaps + " gaps (route unknown)" : "") : "No stored AIS positions in this period.";
+      var gaps = number(data.water_route && data.water_route.unresolved) || 0;
+      var pending = number(data.water_route && data.water_route.pending) || 0;
+      var label = count ? count.toLocaleString("en-GB") + (data.simplified && total !== null ? " of " + total.toLocaleString("en-GB") : "") + " stored positions" + (data.simplified ? " · Sampled history" : "") + " · Dashed: estimated water route · Light grey: older than 24 h" + (gaps ? " · " + gaps + " connections unavailable" : "") + (pending ? " · Preparing remaining connections…" : "") : "No stored AIS positions in this period.";
       text(query("track-meta"), label);
       query("track-meta").title = data.start && data.end ? utcLabel(data.start) + " to " + utcLabel(data.end) : "";
       query("fit").disabled = !count && !position((selectedVessel() || {}).last_position) && !(geofenceLayer && geofenceLayer.getBounds().isValid());
@@ -581,6 +587,7 @@
       if (!state.active) { clearTrack(); return; }
       var id = state.selected, generation = state.generation;
       var params = historyParams();
+      params.set("water_route", "1");
       var controller = new AbortController(); state.historyController = controller;
       try {
         var data = await request("vessels/" + encodeURIComponent(id) + "/positions/?" + params.toString(), { controller: controller });
@@ -608,6 +615,10 @@
         if (pos) coords.push([pos.latitude, pos.longitude]);
       }
       var bounds = global.L.latLngBounds(coords);
+      var routeParts = waterRouteParts(trackData && trackData.water_route, Date.now());
+      routeParts.older.concat(routeParts.recent).forEach(function (part) {
+        part.forEach(function (point) { bounds.extend(point); });
+      });
       // Keep the full arrival area visible even when several reports share one berth.
       if (geofenceLayer && geofenceLayer.getBounds().isValid()) bounds.extend(geofenceLayer.getBounds());
       if (!bounds.isValid()) return;

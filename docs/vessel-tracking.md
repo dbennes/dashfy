@@ -2,8 +2,9 @@
 
 The cockpit includes **Vessels** immediately before **3D Model**. It uses real
 AISStream observations, an authenticated Django API and Leaflet 1.9.4 with
-OpenStreetMap tiles. There are no seeded vessels, simulated positions or
-predicted routes. Existing fabrication, skyline and rundown sources are independent.
+OpenStreetMap tiles. There are no seeded vessels or simulated positions. Dashed
+connections through mapped water are explicitly labelled estimates, separately
+from recorded AIS dots. Existing fabrication, skyline and rundown sources are independent.
 
 ## Default operation: imported reports
 
@@ -80,10 +81,11 @@ normally by the browser; no tile prefetching or offline harvesting is implemente
 * AIS unavailable-value sentinels become missing fields, not zero coordinates,
   speed or heading. Vessels use a blue pulsing dot; freshness remains explicit in status badges.
   Reduced-motion preferences disable the pulse.
-* The dashed **REAL TRACK** connects stored observations chronologically. Large
+* The dashed **WATER ROUTE** estimates connections between observations through
+  mapped water. Large
   query results are sampled from actual rows, preserving the first and last
-  observations. Sampling does not create estimated positions. A line between
-  observations is not a verified navigable route.
+  observations. Sampling does not create AIS positions. The estimated connection
+  is not the measured journey or a verified navigable route.
 * **RECENT** means the last actual AIS position is at most 10 minutes old;
   **STALE** is 10–60 minutes; **NO RECENT AIS** means older than 60 minutes or no
   received position. The marker stays at the last actual position when signal is
@@ -298,19 +300,30 @@ Historical tracks use a fine, rounded `3 6` dash: blue at 1.6 px for the last
 the current clock, not the latest imported row. The current vessel marker keeps
 its blue pulse. Isolated observations remain visible as small dots.
 
-The map no longer joins fixes separated by more than ten minutes, one kilometre,
-an implied speed over 50 knots, conflicting equal timestamps, or the date line.
-These are conservative display thresholds, not a land/water classifier. The
-legend reports gaps as `route unknown`. The same policy applies to old imports
-without changing stored coordinates, timestamps or CSV exports. It also applies
-after API sampling, which can create additional gaps.
+The map requests `water_route=1` on the existing positions endpoint. The response
+keeps `positions` unchanged and adds a separate `water_route` containing estimated
+paths between successive fixes, including sparse historical imports. It no longer
+drops those connections simply because reports are more than ten minutes apart.
 
-This removes the known false straight lines between the three local Eastern
-Ursinia fixes (16–18 September). It does **not** reconstruct a missing journey,
-validate short segments against shorelines, or guarantee navigability. A complete
-water-only reconstruction requires detailed water geometry and a separately
-labelled estimated route, or intermediate observed positions. No external routing
-request, new listener, migration or additional dashboard fetch is introduced.
+`apps/vessels/water_routes.py` uses the bundled OSM water/ocean mask in
+`apps/vessels/data/` (approximately 38m resolution, with an inset from mapped
+banks). A graph of entirely-water squares keeps offshore searches small while
+retaining narrow river cells. Every resulting segment is checked against the
+mask, including simplification. Existing historical lines therefore get the same
+water constraint without reimporting or editing the underlying observations.
+
+The current extract covers Bonga North / the Niger Delta / Port Harcourt. Outside
+its coverage, or when mapped water is disconnected, observations remain visible
+and the footer reports unavailable connections; no straight fallback is drawn.
+An observation at a quay may have an estimated endpoint on nearby mapped water
+(maximum about 270m away); its AIS marker remains at the exact received location.
+The estimate does not establish the exact journey, depth, tide or navigability.
+
+Geometry is cached by coordinate pair; ages, timestamps and observations remain
+fresh. Per-response route preparation is budgeted and remaining pairs continue
+on subsequent refreshes. No runtime external routing request, listener, migration
+or new dependency is required. See `apps/vessels/data/README.md` for the source,
+licence and rebuild command. The map's `Fit map` includes the estimated detours.
 
 ## Vessel model loading
 

@@ -198,6 +198,30 @@ class VesselAPITests(TestCase):
             with self.subTest(query=query):
                 self.assertEqual(self.client.get(self.url("api_positions"), query).status_code, 400)
 
+    def test_water_route_is_separate_from_observations_and_read_only(self):
+        first = self.position(self.now - timedelta(days=2), latitude=4.7942467, longitude=6.9417582)
+        last = self.position(self.now - timedelta(days=1), latitude=4.615082, longitude=7.168013)
+        original = list(VesselPosition.objects.values())
+        response = self.client.get(self.url("api_positions"), {"range": "all", "water_route": "1"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual([row["id"] for row in data["positions"]], [first.pk, last.pk])
+        self.assertEqual(data["positions"][0]["latitude"], first.latitude)
+        self.assertEqual(data["water_route"]["kind"], "estimated_water_route")
+        self.assertGreater(len(data["water_route"]["segments"][0]["coordinates"]), 10)
+        self.assertEqual(list(VesselPosition.objects.values()), original)
+        plain = self.client.get(self.url("api_positions"), {"range": "all"}).json()
+        self.assertNotIn("water_route", plain)
+
+    def test_missing_water_mask_does_not_hide_stored_positions(self):
+        self.position()
+        with patch("apps.vessels.views.estimated_water_routes", side_effect=OSError("Missing mask")):
+            with self.assertLogs("apps.vessels.views", level="ERROR"):
+                response = self.client.get(self.url("api_positions"), {"water_route": "1"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.json()["positions"]), 1)
+        self.assertTrue(response.json()["water_route"]["unavailable"])
+
     def test_database_sampling_returns_bounded_actual_rows_and_preserves_first_last(self):
         points = VesselPosition.objects.bulk_create([
             VesselPosition(vessel=self.vessel, timestamp=self.now - timedelta(minutes=100-index), latitude=4+index/10000, longitude=6)

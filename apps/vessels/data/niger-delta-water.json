@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "zoom": 12,
+  "tile_size": 256,
+  "origin_tile": [
+    2096,
+    1990
+  ],
+  "size": [
+    9728,
+    5120
+  ],
+  "built_at": "2026-09-28T11:19:22.527271+00:00",
+  "requested_bounds": [
+    4.3,
+    3.4,
+    7.5,
+    5.05
+  ],
+  "source": "OpenStreetMap water and ocean polygons via VersaTiles",
+  "source_url": "https://tiles.versatiles.org/tiles/osm/{z}/{x}/{y}",
+  "license": "ODbL-1.0",
+  "attribution": "\u00a9 OpenStreetMap contributors",
+  "shore_inset_pixels": 1,
+  "sha256": "18612db5e4885bbb66077ba32e2cbddc0c9eef117262727e41e93e5c0dcd09e9"
+}

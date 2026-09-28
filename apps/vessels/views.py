@@ -25,6 +25,7 @@ from . import csvio
 from .imports import ReportError, import_report
 from .models import AISListenerState, Vessel, VesselPosition
 from .serializers import VesselRegistrationSerializer, vessel_data
+from .water_routes import estimated_water_routes
 
 
 logger = logging.getLogger(__name__)
@@ -217,10 +218,19 @@ class VesselPositionsView(VesselAPIView):
         period, start, end, limit = _history_parameters(request.query_params, now=now)
         query, total = _track(vessel, start=start, end=end, limit=limit)
         positions = list(query.values(*_POSITION_FIELDS)[:limit])
+        water_route = {}
+        if request.query_params.get("water_route") == "1":
+            try:
+                water_route["water_route"] = estimated_water_routes(positions)
+            except (OSError, ValueError):
+                logger.exception("Offline water route data is unavailable")
+                water_route["water_route"] = {"kind": "estimated_water_route", "segments": [],
+                                              "unresolved": max(0, len(positions) - 1), "unavailable": True}
         return Response({
             "vessel_id": vessel.pk, "positions": positions, "total_count": total,
             "returned_count": len(positions), "simplified": total > len(positions),
             "range": period, "start": start, "end": end, "collection": collection_status(now=now),
+            **water_route,
         })
 
 
