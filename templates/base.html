@@ -34,11 +34,11 @@
 <script>(function(){try{document.body.dataset.theme=localStorage.getItem('c3-theme')||'dark';}catch(e){}})();</script>
 {% if user.is_authenticated and show_login_boot %}
   {% include "partials/_login_boot.html" %}
-  <script src="{% static 'js/login-boot.js' %}?v=20260523-fast-v1"></script>
+  {% if not dashboard_boot %}<script src="{% static 'js/login-boot.js' %}?v=20260523-fast-v1"></script>{% endif %}
 {% endif %}
 
 {% if user.is_authenticated %}
-  <div class="shell">
+  <div class="shell"{% if dashboard_boot %} inert{% endif %}>
 
     {# ---------- SIDEBAR slim (hover-expand) ---------- #}
     <aside class="sidebar" id="c3-sidebar">

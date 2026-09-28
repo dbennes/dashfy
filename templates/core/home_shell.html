@@ -3,28 +3,14 @@
 {% block tickers %}{% endblock %}
 {% block project_horiz %}{% endblock %}
 {% block extra_css %}{{ block.super }}
-<link rel="stylesheet" href="{% static 'css/dashboard-loading.css' %}">
+<link rel="stylesheet" href="{% static 'css/dashboard-loading.css' %}?v=20260928-analysing">
 {% endblock %}
 {% block content %}
 <div class="sn-export"><button class="sn-button" type="button" data-sn-legacy hidden>Previous section comments</button><span>Comments and decisions across all sections</span><a class="sn-button" href="{% url 'core:section_minutes' %}">Export minutes</a></div>
-<div data-dashboard-intro>
-  <div class="dashboard-processing" role="status" aria-live="polite">
-    <span class="dashboard-processing-spinner" data-dashboard-spinner aria-hidden="true"></span>
-    <h2 data-dashboard-heading>Processing…</h2>
-    <p data-dashboard-status>Preparing your dashboard with current data.</p>
-    <button class="sn-button" type="button" data-dashboard-retry hidden>Try again</button>
-  </div>
-  <details class="dashboard-history">
-    <summary>History <span>View comments while the dashboard is being prepared</span></summary>
-  {% for panel in note_panels %}
-    <div class="dashboard-history-row"><span>{{ panel.label }}</span><div class="sn-rail" data-note-panel="{{ panel.key }}" data-note-label="{{ panel.label }}"></div></div>
-  {% endfor %}
-  </details>
-</div>
 <div data-dashboard-target data-loading="true" aria-busy="true" inert data-content-url="{% url 'core:dashboard_content' %}"></div>
 {% include 'core/_section_notes.html' %}
-<script src="{% static 'js/section-notes.js' %}?v=20260928-priority" async></script>
-<script src="{% static 'js/dashboard-loading.js' %}?v=20260928-processing" async></script>
+<script src="{% static 'js/section-notes.js' %}?v=20260928-analysing" async></script>
+<script src="{% static 'js/dashboard-loading.js' %}?v=20260928-analysing" async></script>
 <noscript><p>JavaScript is needed to load the dashboard and panel history.</p></noscript>
 {% endblock %}
 {% block app_js %}{% endblock %}

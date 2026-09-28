@@ -1,19 +1,32 @@
-.dashboard-processing { min-height: min(48vh,380px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:32px 20px; text-align:center; }
-.dashboard-processing h2 { margin:0; font-size:18px; font-weight:500; color:var(--text-1,#e2e8f0); }
-.dashboard-processing p { margin:0; max-width:460px; font-size:12px; line-height:1.6; color:var(--text-2,#aab5c4); }
-.dashboard-processing-spinner { width:28px; height:28px; border:2px solid rgba(148,163,184,.18); border-top-color:#3b82f6; border-radius:50%; animation:dashboard-processing-spin 1s linear infinite; }
-.dashboard-processing [hidden] { display:none; }
-@keyframes dashboard-processing-spin { to { transform:rotate(360deg); } }
-@media(prefers-reduced-motion:reduce) { .dashboard-processing-spinner { animation:none; } }
-.dashboard-history { border-top:1px solid rgba(148,163,184,.16); font-size:12px; }
-.dashboard-history summary { padding:14px 0; cursor:pointer; color:#fbbf24; }
-.dashboard-history summary span { margin-left:10px; color:var(--text-2,#aab5c4); font-size:11px; }
-.dashboard-history-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid rgba(148,163,184,.1); }
-.dashboard-history-row > span { min-width:0; overflow-wrap:anywhere; }
-.dashboard-history-row .sn-rail { margin:0; flex-shrink:0; }
+/* Reuse the login animation; keep the cockpit covered until it is ready. */
+.cockpit-v3.has-login-boot { overflow:hidden; }
+[data-dashboard-boot] .c3-boot-stage { width:min(540px,calc(100vw - 48px)); grid-template-columns:minmax(0,1fr); gap:0; }
+[data-dashboard-boot] .c3-boot-left { padding:28px; min-width:0; }
+[data-dashboard-boot] .c3-boot-left::before { content:"DASHFY / PROJECT INTELLIGENCE"; font-size:9px; letter-spacing:.1em; }
+[data-dashboard-boot] .c3-boot-brand { align-items:center; gap:12px; }
+[data-dashboard-boot] .c3-boot-brand h1 { font-size:32px; }
+[data-dashboard-boot] .c3-boot-mark { width:36px; height:36px; min-width:36px; font-size:21px; }
+[data-dashboard-boot] .c3-boot-tagline { margin:14px 0 24px; font-size:10px; line-height:1.6; letter-spacing:.1em; }
+[data-dashboard-boot] .c3-boot-heartbeat { height:48px; margin-bottom:16px; }
+[data-dashboard-boot] h2 { margin:22px 0 8px; color:#fbbf24; font-size:17px; font-weight:500; }
+[data-dashboard-boot] p { margin:0; color:#a8aeb8; font-size:11px; line-height:1.7; }
+[data-dashboard-boot] [data-dashboard-retry] { margin-top:18px; }
+[data-dashboard-boot] [hidden] { display:none; }
+[data-dashboard-boot] .dashboard-analysis-bar { height:2px; overflow:hidden; }
+[data-dashboard-boot] .dashboard-analysis-bar i { display:block; width:32%; height:100%; background:#fbbf24; animation:dashboard-analysis 1.8s ease-in-out infinite; }
+@keyframes dashboard-analysis { from { transform:translateX(-105%); } to { transform:translateX(420%); } }
+@media(max-width:640px) {
+  [data-dashboard-boot] .c3-boot-left { padding:22px 18px; }
+  [data-dashboard-boot] .c3-boot-brand h1 { font-size:28px; }
+}
+@media(prefers-reduced-motion:reduce) {
+  [data-dashboard-boot]::before, [data-dashboard-boot]::after,
+  [data-dashboard-boot] .c3-boot-mark, [data-dashboard-boot] .c3-boot-heartbeat polyline,
+  [data-dashboard-boot] .dashboard-analysis-bar i { animation:none; }
+  .cockpit-v3.login-boot-ready > .shell { animation:none; }
+}
 [data-dashboard-target] { min-width:0; }
 /* Keep full width for chart measurement, without exposing uninitialised panels. */
 [data-dashboard-target][data-loading] { height:0; overflow:hidden; visibility:hidden; }
 .cockpit-v3 [data-dashboard-target] #s03 .fab-page-header .page-title-block { min-width:0; max-width:100%; }
 .cockpit-v3 [data-dashboard-target] #s03 .head-actions { max-width:100%; }
-@media(max-width:640px) { .dashboard-history summary span { display:block; margin:6px 0 0; } .dashboard-history-row { flex-wrap:wrap; } }

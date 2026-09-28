@@ -285,12 +285,14 @@ A rota `/` retorna uma estrutura leve com os controles de comentarios. A
 consulta de History comeca antes dos dados operacionais. Os paineis chegam
 por `/dashboard/content/`, preservando filtros, comentarios em edicao e o
 visual existente. Nao bloqueie essa nova rota no proxy. Falhas exibem uma
-mensagem e uma opcao de tentar novamente; History continua acessivel.
+mensagem e uma opcao de tentar novamente na propria entrada.
 
-A abertura apresenta um unico estado `Processing…`, sem cartoes provisorios
-por grafico. History fica numa lista recolhida enquanto os dados carregam.
-Os paineis sao revelados juntos depois da inicializacao dos componentes;
-um comentario em edicao permanece aberto durante essa troca.
+A abertura reutiliza o visual de login com `Analysing…`. Ela permanece ate os
+dados, scripts, controles e History da pagina estarem inicializados. A animacao
+nao termina por tempo ou clique; nao ha uma segunda tela de processamento.
+A montagem e o ajuste de tamanho dos graficos acontecem sob a animacao antes
+de liberar o dashboard inteiro. Modelos 3D e outros recursos sob demanda
+continuam carregando quando a respectiva secao e aberta.
 
 O endpoint de dados ignora os caches temporarios de management, fabricacao,
 P6, ECLIC, estrutura, AVEON e materiais Skyline, em um contexto isolado por

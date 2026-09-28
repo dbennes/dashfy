@@ -161,7 +161,7 @@
   });
   }
   mountPanels();
-  document.addEventListener("dashboard:panels-ready",()=>{mountPanels();summary();});
+  document.addEventListener("dashboard:panels-ready",()=>{mountPanels();window.dashfyPanelNotesReady=summary();});
   if(legacyButton) legacyButton.addEventListener("click",()=>{if(legacySelect.value)open(legacySelect.value,"history",legacyButton);});
   legacySelect.addEventListener("change",()=>run(async()=>{section=legacySelect.value;page=1;document.getElementById("snTitle").textContent=labels[section];await loadHistory();}));
   form.elements.information_only.addEventListener("change",()=>{

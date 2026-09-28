@@ -18,22 +18,34 @@ class PriorityDashboardTests(SimpleTestCase):
         cache.clear()
         self.addCleanup(cache.clear)
 
-    def test_first_response_has_history_without_loading_operational_sources(self):
+    def test_first_response_has_entry_animation_without_loading_operational_sources(self):
         with patch.object(real_sources, "management_dashboard", side_effect=AssertionError("heavy source")), \
              patch.object(views.fabrication_source, "fabrication_progress_safe", side_effect=AssertionError("heavy source")):
             response = views.home_shell_view(self.request)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'id="sectionNotesDialog"')
-        self.assertContains(response, 'data-note-panel="piping-rundown"')
-        self.assertContains(response, 'data-note-panel="wooden-box-skyline"')
-        self.assertContains(response, "Processing…")
-        self.assertContains(response, 'class="dashboard-history"')
+        self.assertContains(response, "Analysing…")
+        self.assertContains(response, "data-dashboard-boot")
+        self.assertContains(response, 'data-login-boot-started="1"')
+        self.assertContains(response, "has-login-boot")
+        self.assertNotContains(response, "Processing…")
+        self.assertNotContains(response, 'class="dashboard-history"')
+        self.assertNotContains(response, "CLICK ANYWHERE TO SKIP")
         self.assertContains(response, 'data-loading="true" aria-busy="true" inert')
         self.assertNotContains(response, "dashboard-placeholder")
         self.assertNotContains(response, "Loading current data")
         self.assertNotContains(response, 'id="fabRundownModes"')
         self.assertLess(len(response.content), 65000)
         self.assertIn("no-store", response["Cache-Control"])
+
+    def test_login_flag_is_consumed_by_shell_and_refresh_keeps_the_ready_gate(self):
+        self.request.session["show_login_boot"] = True
+        first = views.home_shell_view(self.request)
+        self.assertNotIn("show_login_boot", self.request.session)
+        self.assertContains(first, "data-dashboard-boot")
+        refreshed = views.home_shell_view(self.request)
+        self.assertContains(refreshed, "data-dashboard-boot")
+        self.assertNotContains(refreshed, "js/login-boot.js")
 
     def test_live_source_read_bypasses_cached_values_and_is_request_local(self):
         source_cache.set("priority-test", "old", 300)

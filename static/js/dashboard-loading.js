@@ -8,6 +8,14 @@
   const heading = document.querySelector("[data-dashboard-heading]");
   const spinner = document.querySelector("[data-dashboard-spinner]");
   let busy = false, mounted = false;
+  async function waitForHistory(promise) {
+    let timer;
+    try {
+      await Promise.race([promise, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error("History is taking too long to respond. Reload the page to retry.")), 20000);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
   async function execute(source) {
     const script = document.createElement("script");
     for (const attribute of source.attributes) {
@@ -27,7 +35,7 @@
     if (busy) return;
     if (mounted) { location.reload(); return; }
     busy = true; retry.hidden = true;
-    heading.textContent = "Processing…";
+    heading.textContent = "Analysing…";
     spinner.hidden = false;
     status.textContent = "Preparing your dashboard with current data.";
     try {
@@ -36,7 +44,7 @@
       const response = await fetch(url, {credentials:"same-origin", cache:"no-store"});
       if (response.redirected || response.headers.get("X-Dashboard-Content") !== "1")
         throw Error("Your session expired or the service is unavailable. Reload the page and sign in again.");
-      if (!response.ok) throw Error("Current data could not be loaded. History remains available. Please try again.");
+      if (!response.ok) throw Error("Current data could not be loaded. Please try again.");
       const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
       const panels = parsed.querySelector("[data-dashboard-panels]");
       if (!panels) throw Error("Current data could not be loaded. Please try again.");
@@ -57,14 +65,31 @@
       // Base vendor scripts (Bootstrap/jQuery) must finish before app setup.
       if (document.readyState === "loading") await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once:true}));
       for (const script of scripts) await execute(script);
-      // Reveal in one step only after setup. The comments dialog lives outside
-      // both containers so opening History or typing a draft survives the swap.
+      // Give charts their final dimensions behind the entry animation. The
+      // dashboard remains invisible and inert until controls and History exist.
       target.removeAttribute("data-loading");
-      target.removeAttribute("inert");
       target.setAttribute("aria-busy", "false");
-      intro.remove();
+      // The notes script loads independently. Do not reveal missing controls if
+      // it is slower than the data response or has failed to download.
+      let historyListener;
+      try {
+        await waitForHistory(window.dashfyNotesReady || new Promise(resolve => {
+          historyListener = resolve;
+          document.addEventListener("dashboard:history-ready", historyListener, {once:true});
+        }));
+      } finally {
+        if (historyListener) document.removeEventListener("dashboard:history-ready", historyListener);
+      }
       document.dispatchEvent(new CustomEvent("dashboard:panels-ready"));
+      if (window.dashfyPanelNotesReady) await waitForHistory(window.dashfyPanelNotesReady);
       window.dispatchEvent(new Event("resize"));
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      target.removeAttribute("inert");
+      document.querySelector(".shell")?.removeAttribute("inert");
+      document.body.classList.remove("has-login-boot");
+      document.body.classList.add("login-boot-ready");
+      intro.remove();
+      document.dispatchEvent(new CustomEvent("dashboard:ready"));
       const anchor = location.hash && document.getElementById(location.hash.slice(1));
       if (anchor && !document.querySelector("dialog[open]")) anchor.scrollIntoView();
     } catch (error) {

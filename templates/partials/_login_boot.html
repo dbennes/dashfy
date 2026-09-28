@@ -1,5 +1,21 @@
-<div class="c3-boot" data-login-boot aria-live="polite" aria-label="Loading cockpit">
+<div class="c3-boot" data-login-boot{% if dashboard_boot %} data-dashboard-boot data-dashboard-intro data-login-boot-started="1"{% endif %} aria-live="polite" aria-label="Loading cockpit">
   <div class="c3-boot-vignette"></div>
+  {% if dashboard_boot %}
+  <div class="c3-boot-stage">
+    <div class="c3-boot-left">
+      <div class="c3-boot-brand"><div class="c3-boot-mark">D</div><h1>DASHFY</h1></div>
+      <div class="c3-boot-tagline">BONGA NORTH · CONSTRUCTION COCKPIT</div>
+      <div data-dashboard-spinner aria-hidden="true">
+        <div class="c3-boot-heartbeat"><svg viewBox="0 0 320 60" preserveAspectRatio="none"><polyline points="0,31 36,31 44,27 50,37 58,18 68,43 78,31 132,31 140,29 148,34 158,26 168,31 320,31"></polyline></svg></div>
+        <div class="c3-boot-progress-bar dashboard-analysis-bar"><i></i></div>
+      </div>
+      <h2 data-dashboard-heading>Analysing…</h2>
+      <p data-dashboard-status>Preparing your dashboard with current data.</p>
+      <button class="sn-button" type="button" data-dashboard-retry hidden>Try again</button>
+    </div>
+  </div>
+  <noscript>Enable JavaScript to open the dashboard.</noscript>
+  {% else %}
   <div class="c3-boot-noise"></div>
   <div class="c3-boot-stage">
     <div class="c3-boot-left">
@@ -42,4 +58,5 @@
     <div><span><i></i>LINK ESTABLISHED</span><span>NODE · BR-SAO-01</span><span>LATENCY · 12ms</span></div>
     <div><span>BUILD 26.05.23-W21</span><span>CLICK ANYWHERE TO SKIP</span></div>
   </div>
+  {% endif %}
 </div>

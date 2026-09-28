@@ -359,11 +359,10 @@ def _supply_scope_view(manager, scope_key: str):
 @login_required
 @never_cache
 def home_shell_view(request):
-    from .section_notes import PANELS, SECTIONS
-    panels = [{"key": key, "label": label, "section": SECTIONS[section]}
-              for key, (section, label) in PANELS.items()
-              if section != "s04" or settings.DASHFY_SHOW_TRACKING]
-    return render(request, "core/home_shell.html", {"note_panels": panels})
+    request.session.pop("show_login_boot", None)
+    return render(request, "core/home_shell.html", {
+        "show_login_boot": True, "dashboard_boot": True,
+    })
 
 
 @login_required
