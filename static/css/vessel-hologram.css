@@ -132,6 +132,20 @@
 .vh-stage-canvas { position: absolute; inset: 0; z-index: 1; cursor: grab; touch-action: none; }
 .vh-stage-canvas:active { cursor: grabbing; }
 .vh-stage-canvas canvas { display: block; width: 100% !important; height: 100% !important; }
+.vh-stage-canvas:not([data-model-state="ready"]) { cursor:default; pointer-events:none; }
+.vh-model-loading {
+  position:absolute; inset:42px 16px 80px; z-index:4;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px;
+  text-align:center; color:var(--fg-2,#a8b6c7); font:11px/1.6 var(--font-mono,monospace);
+}
+.vh-model-loading [data-vh-model-message] { max-width:230px; }
+.vh-model-spinner {
+  width:24px; height:24px; border:2px solid rgba(56,189,248,.15); border-top-color:#38bdf8;
+  border-radius:50%; animation:vh-model-loading .9s linear infinite;
+}
+.vh-model-loading[hidden], .vh-model-loading [hidden], .vh-model-loading:not([data-state="loading"]) .vh-model-spinner { display:none; }
+@keyframes vh-model-loading { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .vh-model-spinner { animation:none; } }
 .vh-stage-top {
   position: absolute; inset-inline: 0; top: 0; z-index: 3;
   display: flex; align-items: center; justify-content: space-between; gap: 10px;

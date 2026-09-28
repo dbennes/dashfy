@@ -18,7 +18,7 @@ async function loadThree() {
   return THREE;
 }
 
-const MODEL_STATE = { loading: null, scene: null };
+const MODEL_STATE = { loading: null, url: null };
 const CARD_STAGGER_MS = 45;
 
 function num(value) {
@@ -42,18 +42,6 @@ function measure(value, unit, digits = 1) {
 }
 
 /* ------------------------------------------------------------ hologram */
-
-/** A stylised hull, shown until a real model is supplied and if one fails. */
-function placeholderHull() {
-  const group = new THREE.Group();
-  const material = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.1, roughness: 0.8 });
-  const hull = new THREE.Mesh(new THREE.CapsuleGeometry(0.62, 3.1, 6, 16).rotateZ(Math.PI / 2), material);
-  group.add(hull);
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.55, 0.95), material);
-  deck.position.set(-0.85, 0.6, 0);
-  group.add(deck);
-  return group;
-}
 
 function frameObject(object, targetSize = 4.1) {
   const box = new THREE.Box3().setFromObject(object);
@@ -91,27 +79,49 @@ async function loadModel(url) {
 }
 
 class Hologram {
-  constructor(mount, note) {
+  constructor(mount, note, loading) {
     this.mount = mount;
     this.note = note;
+    this.loading = loading;
     this.alive = false;
     this.frame = null;
   }
 
+  setStageState(state, message) {
+    if (this.stopped) return;
+    this.mount.dataset.modelState = state;
+    this.mount.setAttribute("aria-busy", String(state === "loading"));
+    this.note.textContent = state === "ready" ? "Vessel model" : state === "loading" ? "Preparing 3D view" : "3D view unavailable";
+    if (!this.loading) return;
+    this.loading.hidden = state === "ready";
+    this.loading.dataset.state = state;
+    const label = this.loading.querySelector("[data-vh-model-message]");
+    if (label) label.textContent = message || "";
+    const retry = this.loading.querySelector("[data-vh-model-retry]");
+    if (retry) retry.hidden = state !== "error";
+  }
+
   async start(modelUrl) {
-    if (this.alive || this.starting) return;
+    if (this.alive || this.starting || this.stopped) return;
+    if (!modelUrl) {
+      this.setStageState("unavailable", "No vessel model is configured.");
+      return;
+    }
     this.starting = true;
+    this.setStageState("loading", "Loading vessel model…");
     try {
       await loadThree();
     } catch {
-      this.note.textContent = "3D viewer could not be loaded. Vessel data is unaffected.";
+      this.starting = false;
+      this.setStageState("error", "3D viewer could not be loaded. Vessel data is still available.");
       return;
     }
     if (this.stopped) return;
     try {
       this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "low-power" });
     } catch {
-      this.note.textContent = "3D view unavailable on this device. Vessel data is unaffected.";
+      this.starting = false;
+      this.setStageState("error", "3D view is unavailable on this device. Vessel data is still available.");
       return;
     }
     this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, 1.25));
@@ -176,25 +186,26 @@ class Hologram {
       else this.loop();
     };
     document.addEventListener("visibilitychange", this.onVisibility);
-    this.note.textContent = modelUrl ? "Loading vessel model…" : "Schematic view · upload a model to replace it";
-    this.attach(placeholderHull());
-    if (modelUrl) this.loadInto(modelUrl);
-    this.loop();
+    this.starting = false;
+    await this.loadInto(modelUrl);
   }
 
   async loadInto(url) {
+    if (!MODEL_STATE.loading || MODEL_STATE.url !== url) {
+      MODEL_STATE.url = url;
+      MODEL_STATE.loading = loadModel(url);
+    }
+    const pending = MODEL_STATE.loading;
     try {
-      if (!MODEL_STATE.loading) MODEL_STATE.loading = loadModel(url);
-      const source = await MODEL_STATE.loading;
+      const source = await pending;
       if (!this.alive || !source) return;
       this.attach(source.clone(true));
       this.hasModel = true;
-      this.note.textContent = "Vessel model";
+      this.setStageState("ready");
     } catch {
-      MODEL_STATE.loading = null;
+      if (MODEL_STATE.loading === pending) MODEL_STATE.loading = null;
       if (!this.alive) return;
-      // A missing or broken model must never blank the dossier.
-      this.note.textContent = "Model could not be loaded · showing schematic";
+      this.setStageState("error", "The vessel model could not be loaded. Please try again.");
     }
   }
 
@@ -234,7 +245,7 @@ class Hologram {
 
   // Animate while open and visible; manual dragging takes priority over rotation.
   loop() {
-    if (!this.alive || this.frame || document.hidden) return;
+    if (!this.alive || !this.model || this.frame || document.hidden) return;
     this.frame = requestAnimationFrame(() => {
       this.frame = null;
       if (!this.alive || document.hidden || !this.orbit) return;
@@ -255,11 +266,10 @@ class Hologram {
   stop() {
     // start() may still be awaiting the library; tell it not to build a scene.
     this.stopped = true;
-    if (!this.alive) return;
     this.alive = false;
-    cancelAnimationFrame(this.frame);
+    if (this.frame) cancelAnimationFrame(this.frame);
     this.frame = null;
-    document.removeEventListener("visibilitychange", this.onVisibility);
+    if (this.onVisibility) document.removeEventListener("visibilitychange", this.onVisibility);
     this.observer?.disconnect();
     this.mount.removeEventListener("pointerdown", this.onDown);
     this.mount.removeEventListener("pointermove", this.onMove);
@@ -589,13 +599,19 @@ function initDossier(root) {
     overlay.hidden = false;
     state.open = true;
     document.body.style.overflow = "hidden";
-    hologram = new Hologram(q("stage"), q("stage-note"));
-    // Fire and forget: a 3D failure must never block the dossier from opening.
-    hologram.start(modelUrl).catch(() => {
-      q("stage-note").textContent = "3D viewer could not be loaded. Vessel data is unaffected.";
-    });
+    startHologram();
     q("close").focus();
     loadContainers();
+  }
+
+  function startHologram() {
+    hologram?.stop();
+    const instance = new Hologram(q("stage"), q("stage-note"), q("model-loading"));
+    hologram = instance;
+    // Model loading never delays facts, map or cargo; retry only the 3D stage.
+    instance.start(modelUrl).catch(() => {
+      if (state.open && hologram === instance) instance.setStageState("error", "3D viewer could not be loaded. Please try again.");
+    });
   }
 
   function close() {
@@ -642,6 +658,7 @@ function initDossier(root) {
     root.dispatchEvent(new CustomEvent("vt:zoom-vessel", { detail: state.vessel }));
   });
   q("manifest").addEventListener("click", exportManifest);
+  q("model-retry").addEventListener("click", () => { if (state.open) startHologram(); });
   q("close").addEventListener("click", close);
   overlay.addEventListener("mousedown", (event) => { if (event.target === overlay) close(); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape" && state.open) close(); });

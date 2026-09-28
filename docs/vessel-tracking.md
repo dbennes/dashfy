@@ -311,3 +311,16 @@ validate short segments against shorelines, or guarantee navigability. A complet
 water-only reconstruction requires detailed water geometry and a separately
 labelled estimated route, or intermediate observed positions. No external routing
 request, new listener, migration or additional dashboard fetch is introduced.
+
+## Vessel model loading
+
+The dossier shows a small `Loading vessel model…` indicator until the configured
+GLB is loaded and attached. It no longer draws the capsule/schematic hull.
+Vessel facts, map and cargo remain usable during loading. An unavailable model
+shows `Try again` for the 3D view only, without reopening the dossier or reloading
+its data. A missing model URL is shown explicitly, without placeholder geometry.
+
+The render loop starts only when actual model geometry exists. Closing stops the
+viewer, and late responses from that instance cannot overwrite a newly opened
+view. Successful downloads are reused for the same model URL. The current
+`vessel-hq.glb` remains the ship asset; no additional preview download is added.

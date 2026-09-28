@@ -116,6 +116,11 @@
             <span class="vh-stage-hint">DRAG TO ORBIT · WHEEL TO ZOOM</span>
           </div>
           <div class="vh-stage-canvas" data-vh-stage></div>
+          <div class="vh-model-loading" data-vh-model-loading data-state="loading" role="status" aria-live="polite">
+            <span class="vh-model-spinner" aria-hidden="true"></span>
+            <span data-vh-model-message>Loading vessel model…</span>
+            <button type="button" class="vh-btn" data-vh-model-retry hidden>Try again</button>
+          </div>
           <div class="vh-stage-grid" aria-hidden="true"></div>
           <div class="vh-scan" aria-hidden="true"></div>
           <div class="vh-stage-note" data-vh-stage-note>Initialising projection…</div>
