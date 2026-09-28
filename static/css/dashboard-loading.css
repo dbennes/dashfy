@@ -1,8 +1,19 @@
-.dashboard-load-status { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:8px 0 14px; color:var(--text-2,#aab5c4); font-size:12px; }
-.dashboard-placeholder { margin-bottom:12px; }
+.dashboard-processing { min-height: min(48vh,380px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:32px 20px; text-align:center; }
+.dashboard-processing h2 { margin:0; font-size:18px; font-weight:500; color:var(--text-1,#e2e8f0); }
+.dashboard-processing p { margin:0; max-width:460px; font-size:12px; line-height:1.6; color:var(--text-2,#aab5c4); }
+.dashboard-processing-spinner { width:28px; height:28px; border:2px solid rgba(148,163,184,.18); border-top-color:#3b82f6; border-radius:50%; animation:dashboard-processing-spin 1s linear infinite; }
+.dashboard-processing [hidden] { display:none; }
+@keyframes dashboard-processing-spin { to { transform:rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .dashboard-processing-spinner { animation:none; } }
+.dashboard-history { border-top:1px solid rgba(148,163,184,.16); font-size:12px; }
+.dashboard-history summary { padding:14px 0; cursor:pointer; color:#fbbf24; }
+.dashboard-history summary span { margin-left:10px; color:var(--text-2,#aab5c4); font-size:11px; }
+.dashboard-history-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid rgba(148,163,184,.1); }
+.dashboard-history-row > span { min-width:0; overflow-wrap:anywhere; }
+.dashboard-history-row .sn-rail { margin:0; flex-shrink:0; }
 [data-dashboard-target] { min-width:0; }
+/* Keep full width for chart measurement, without exposing uninitialised panels. */
+[data-dashboard-target][data-loading] { height:0; overflow:hidden; visibility:hidden; }
 .cockpit-v3 [data-dashboard-target] #s03 .fab-page-header .page-title-block { min-width:0; max-width:100%; }
 .cockpit-v3 [data-dashboard-target] #s03 .head-actions { max-width:100%; }
-.dashboard-placeholder .card-head { gap:12px; }
-.dashboard-pending { font-size:11px; color:var(--text-3,#8793a4); white-space:nowrap; }
-@media(max-width:640px) { .dashboard-placeholder .card-head { align-items:flex-start; flex-direction:column; } .dashboard-placeholder h3 { overflow-wrap:anywhere; } }
+@media(max-width:640px) { .dashboard-history summary span { display:block; margin:6px 0 0; } .dashboard-history-row { flex-wrap:wrap; } }

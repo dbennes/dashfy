@@ -287,13 +287,17 @@ por `/dashboard/content/`, preservando filtros, comentarios em edicao e o
 visual existente. Nao bloqueie essa nova rota no proxy. Falhas exibem uma
 mensagem e uma opcao de tentar novamente; History continua acessivel.
 
+A abertura apresenta um unico estado `Processing…`, sem cartoes provisorios
+por grafico. History fica numa lista recolhida enquanto os dados carregam.
+Os paineis sao revelados juntos depois da inicializacao dos componentes;
+um comentario em edicao permanece aberto durante essa troca.
+
 O endpoint de dados ignora os caches temporarios de management, fabricacao,
 P6, ECLIC, estrutura, AVEON e materiais Skyline, em um contexto isolado por
 requisicao. Se DATAFY estiver indisponivel, nao substitui a consulta por um
 snapshot antigo. Relatorios importados continuam mostrando suas datas de
 origem: consultar agora nao transforma um relatorio antigo em dados de hoje.
-`Last checked` indica quando a consulta terminou; nao significa que todas as
-fontes publicaram novos dados naquele instante. Nao ha polling automatico
+Nao ha polling automatico
 dos graficos: use a atualizacao da pagina para consultar novamente.
 
 Ambas as respostas usam `Cache-Control: no-store`; a compressao de HTML

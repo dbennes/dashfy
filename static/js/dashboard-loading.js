@@ -4,6 +4,9 @@
   if (!target) return;
   const status = document.querySelector("[data-dashboard-status]");
   const retry = document.querySelector("[data-dashboard-retry]");
+  const intro = document.querySelector("[data-dashboard-intro]");
+  const heading = document.querySelector("[data-dashboard-heading]");
+  const spinner = document.querySelector("[data-dashboard-spinner]");
   let busy = false, mounted = false;
   async function execute(source) {
     const script = document.createElement("script");
@@ -24,6 +27,9 @@
     if (busy) return;
     if (mounted) { location.reload(); return; }
     busy = true; retry.hidden = true;
+    heading.textContent = "Processing…";
+    spinner.hidden = false;
+    status.textContent = "Preparing your dashboard with current data.";
     try {
       const url = new URL(target.dataset.contentUrl, location.origin);
       url.search = location.search;
@@ -34,6 +40,7 @@
       const parsed = new DOMParser().parseFromString(await response.text(), "text/html");
       const panels = parsed.querySelector("[data-dashboard-panels]");
       if (!panels) throw Error("Current data could not be loaded. Please try again.");
+      status.textContent = "Preparing charts and controls…";
       const scripts = Array.from(parsed.querySelectorAll("script")).filter(s => !s.type || ["module", "importmap", "text/javascript"].includes(s.type));
       scripts.forEach(s => s.remove());
       panels.querySelector(".sn-export")?.remove();
@@ -47,14 +54,22 @@
       if (tickers) document.querySelector(".tb-tickers")?.replaceChildren(tickers.content);
       const horizon = parsed.querySelector("[data-dashboard-horizon]");
       if (horizon) document.querySelector(".tb-project .horiz")?.replaceChildren(horizon.content);
-      document.dispatchEvent(new CustomEvent("dashboard:panels-ready"));
       // Base vendor scripts (Bootstrap/jQuery) must finish before app setup.
       if (document.readyState === "loading") await new Promise(resolve => document.addEventListener("DOMContentLoaded", resolve, {once:true}));
       for (const script of scripts) await execute(script);
-      status.textContent = "Last checked " + new Date().toLocaleTimeString("en-GB") + ". Source report dates are shown in each panel.";
+      // Reveal in one step only after setup. The comments dialog lives outside
+      // both containers so opening History or typing a draft survives the swap.
+      target.removeAttribute("data-loading");
+      target.removeAttribute("inert");
+      target.setAttribute("aria-busy", "false");
+      intro.remove();
+      document.dispatchEvent(new CustomEvent("dashboard:panels-ready"));
+      window.dispatchEvent(new Event("resize"));
       const anchor = location.hash && document.getElementById(location.hash.slice(1));
       if (anchor && !document.querySelector("dialog[open]")) anchor.scrollIntoView();
     } catch (error) {
+      heading.textContent = "Unable to load dashboard";
+      spinner.hidden = true;
       status.textContent = error.message;
       retry.hidden = false;
       retry.textContent = mounted ? "Reload page" : "Try again";
