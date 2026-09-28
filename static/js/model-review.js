@@ -4,8 +4,8 @@
   const labels = {not_started: 'Not started', started: 'Started', completed: 'Completed', unlinked: 'No fabrication link'};
   const colors = {not_started: 0x94a3b8, started: 0xf59e0b, completed: 0x38bdf8, unlinked: 0x94a3b8};
   const authError = () => Object.assign(new Error('Session unavailable. Sign in again to load the 3D geometry.'), {code: 'AUTH_REQUIRED'});
-  async function fetchGeometry(url) {
-    const response = await fetch(url, {cache: 'no-store', credentials: 'same-origin', headers: {Accept: 'model/gltf-binary'}});
+  async function fetchGeometry(url, {signal} = {}) {
+    const response = await fetch(url, {cache: 'no-store', credentials: 'same-origin', signal, headers: {Accept: 'model/gltf-binary'}});
     if (response.status === 401 || /\/accounts\/login\//.test(response.url || '')) throw authError();
     if (!response.ok) throw new Error(response.status === 413 ? 'This group is too large. Select a smaller line or component.' : `Geometry request failed (HTTP ${response.status}).`);
     if ((response.headers.get('content-type') || '').includes('text/html')) throw new Error('The server returned a web page instead of 3D geometry. Reload and try again.');
@@ -111,14 +111,19 @@
     return html || '<div class="dx-project-tree-empty">No drawing or line found.</div>';
   }
 
-  async function buildProgressLayer({THREE, loader, lines, selectionUrl, isCurrent, onUpdate}) {
+  async function buildProgressLayer({THREE, loader, lines, selectionUrl, isCurrent, onUpdate, signal, onReady = () => {}}) {
     const {mergeGeometries} = await import('three/addons/utils/BufferGeometryUtils.js');
-    const jobs = lines.filter(line => ['started', 'completed'].includes(line.status)).flatMap(line => line.nodes.map(node => ({node, status: line.status})));
+    const jobs = Array.from(new Map(lines.filter(line => ['started', 'completed'].includes(line.status))
+      .flatMap(line => line.nodes.map(node => [node.id, {node, status: line.status}]))).values());
+    const group = new THREE.Group();
+    const current = () => !signal?.aborted && isCurrent();
+    if (!current()) return {group, failures: [], total: jobs.length, cancelled: true};
     const buckets = {started: [], completed: []};
     const ranges = {started: [], completed: []};
     const triangles = {started: 0, completed: 0};
     const failures = [];
     let authenticationError = null;
+    const controllers = new Set();
     let next = 0, done = 0;
     const disposeScene = scene => {
       const materials = new Set();
@@ -128,16 +133,40 @@
       });
       materials.forEach(material => material.dispose());
     };
+    const flush = () => {
+      for (const status of ['started', 'completed']) {
+        if (!buckets[status].length) continue;
+        if (current()) {
+          const geometry = mergeGeometries(buckets[status], false);
+          geometry.computeVertexNormals();
+          const material = new THREE.MeshStandardMaterial({color: colors[status], roughness: 0.75, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.userData.progressRanges = ranges[status];
+          group.add(mesh);
+        }
+        buckets[status].forEach(geometry => geometry.dispose());
+        buckets[status] = [];
+        ranges[status] = [];
+        triangles[status] = 0;
+      }
+    };
+    try { onReady(group); }
+    catch (error) { disposeScene(group); throw error; }
     const worker = async () => {
-      while (next < jobs.length && isCurrent() && !authenticationError) {
+      while (next < jobs.length && current() && !authenticationError) {
         const {node, status} = jobs[next++];
         let scene;
+        const controller = new AbortController();
+        controllers.add(controller);
+        const abort = () => controller.abort();
+        signal?.addEventListener('abort', abort, {once: true});
+        const timeout = setTimeout(abort, 45000);
         try {
-          const buffer = await fetchGeometry(selectionUrl.replace(/0\.glb(?=($|\?))/, `${encodeURIComponent(node.id)}.glb`));
-          if (!isCurrent()) break;
+          const buffer = await fetchGeometry(selectionUrl.replace(/0\.glb(?=($|\?))/, `${encodeURIComponent(node.id)}.glb`), {signal: controller.signal});
+          if (!current() || authenticationError) break;
           const gltf = await new Promise((resolve, reject) => loader.parse(buffer, '', resolve, reject));
           scene = gltf.scene;
-          if (!isCurrent()) break;
+          if (!current() || authenticationError) break;
           scene.updateMatrixWorld(true);
           const start = triangles[status];
           scene.traverse(child => {
@@ -151,33 +180,46 @@
           });
           ranges[status].push({nodeId: node.id, start, end: triangles[status]});
         } catch (error) {
-          if (error.code === 'AUTH_REQUIRED') authenticationError = error;
-          failures.push(node.id);
+          if (error.code === 'AUTH_REQUIRED') {
+            authenticationError = error;
+            controllers.forEach(controller => controller.abort());
+          }
+          if (current()) failures.push(node.id);
         } finally {
+          clearTimeout(timeout);
+          controllers.delete(controller);
+          signal?.removeEventListener('abort', abort);
           if (scene) disposeScene(scene);
           done++;
-          if (isCurrent()) onUpdate(done, jobs.length);
+          // Show the first line immediately, then small merged batches. This
+          // keeps navigation responsive without hundreds of individual meshes.
+          if (!authenticationError && (!group.children.length || done % 8 === 0)) flush();
+          if (current() && !authenticationError) onUpdate(done, jobs.length);
         }
       }
     };
-    await Promise.all([worker(), worker(), worker()]);
+    // Leave browser/server capacity for picking and exact selected geometry.
+    const workers = [worker(), worker()];
+    try {
+      await Promise.all(workers);
+    } catch (error) {
+      authenticationError = error;
+      controllers.forEach(controller => controller.abort());
+      await Promise.allSettled(workers);
+    }
     if (authenticationError) {
       Object.values(buckets).flat().forEach(geometry => geometry.dispose());
+      disposeScene(group);
       throw authenticationError;
     }
-    const group = new THREE.Group();
-    for (const status of ['started', 'completed']) {
-      if (isCurrent() && buckets[status].length) {
-        const geometry = mergeGeometries(buckets[status], false);
-        geometry.computeVertexNormals();
-        const material = new THREE.MeshStandardMaterial({color: colors[status], roughness: 0.75, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.userData.progressRanges = ranges[status];
-        group.add(mesh);
-      }
-      buckets[status].forEach(geometry => geometry.dispose());
+    try { flush(); }
+    catch (error) {
+      Object.values(buckets).flat().forEach(geometry => geometry.dispose());
+      disposeScene(group);
+      throw error;
     }
-    return {group, failures, total: jobs.length};
+    if (!current()) disposeScene(group);
+    return {group, failures, total: jobs.length, cancelled: !current()};
   }
   window.DashfyModelReview = {key, labels, colors, authError, fetchGeometry, matchLines, drawingSelection, renderTree, buildProgressLayer,
     visibilityDisciplines, nodeDiscipline, objectDiscipline};

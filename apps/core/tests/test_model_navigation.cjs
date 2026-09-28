@@ -29,11 +29,11 @@ test('initial tab does not fetch hierarchy; visible panel and explicit tabs do',
   assert.equal(loads, 2);
 });
 
-function gestures() {
+function gestures({expanded = false} = {}) {
   const listeners = {}, picks = [], actions = [];
   let now = 100;
   const canvas = { addEventListener(name, fn) { listeners[name] = fn; }, focus() {}, classList: {add() {}, remove() {}} };
-  const context = { state: {pickRequestId: 0}, performance: {now: () => now}, console,
+  const context = { state: {pickRequestId: 0}, root: {closest: () => expanded ? {} : null}, performance: {now: () => now}, console,
     handleViewerClick: async event => picks.push(event), setStatus() {},
     focusSelection: () => actions.push('focus'), setNavigationMode: mode => actions.push(mode),
     fitButton: {click: () => actions.push('fit')}, clearButton: {click: () => actions.push('clear')} };
@@ -79,4 +79,12 @@ test('keyboard shortcuts operate only on the focused canvas', () => {
   for (const key of ['f', 'Home', 'Escape', 'p', 'r']) h.emit('keydown', {key});
   h.emit('keydown', {key: 'f', ctrlKey: true});
   assert.deepEqual(h.actions, ['focus', 'fit', 'clear', 'pan', 'orbit']);
+});
+
+test('Escape in expanded review preserves selection and leaves closing to the dialog', () => {
+  const h = gestures({expanded: true});
+  let prevented = false;
+  h.emit('keydown', {key: 'Escape', preventDefault() { prevented = true; }});
+  assert.deepEqual(h.actions, []);
+  assert.equal(prevented, false);
 });

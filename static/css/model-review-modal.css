@@ -1,0 +1,106 @@
+/* Keep the same review surface and controls when its live canvas is expanded. */
+.cockpit-v3 #s05 .dx-review-dialog {
+  box-sizing: border-box;
+  width: calc(100vw - 32px);
+  max-width: 1920px;
+  height: calc(100vh - 32px);
+  height: calc(100dvh - 32px);
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
+  background: var(--bg-1);
+  color: var(--fg-1);
+  overflow: hidden;
+  box-shadow: 0 16px 60px rgba(0, 0, 0, .45);
+}
+.cockpit-v3 #s05 .dx-review-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.dx-review-dialog::backdrop { background: rgba(5, 8, 13, .78); }
+.dx-review-dialog-head {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--line-1);
+}
+.dx-review-dialog-title, .dx-review-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.cockpit-v3 #s05 .dx-review-dialog-title h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.dx-review-dialog-actions { flex-shrink: 0; }
+.cockpit-v3 #s05 .dx-review-tree-toggle { display: none; }
+.dx-review-dialog-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px;
+  overflow: hidden;
+}
+.cockpit-v3 #s05 .dx-review-dialog .dx-project-consult {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.cockpit-v3 #s05 .dx-review-dialog .dx-project-consult-shell {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 10px;
+}
+.cockpit-v3 #s05 .dx-review-dialog .dx-project-tree-panel {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+}
+.cockpit-v3 #s05 .dx-review-dialog .dx-project-viewer { min-height: 200px; }
+.dx-review-placeholder { width: 100%; }
+
+@media (max-width: 900px) {
+  .cockpit-v3 #s05 .dx-review-dialog {
+    width: calc(100vw - 12px);
+    height: calc(100vh - 12px);
+    height: calc(100dvh - 12px);
+    max-width: none;
+  }
+  .dx-review-dialog-head { padding: 8px; gap: 6px; }
+  .dx-review-dialog-title .tag { display: none; }
+  .cockpit-v3 #s05 .dx-review-dialog-title h2 { font-size: 12px; }
+  .dx-review-dialog-actions { gap: 5px; }
+  .cockpit-v3 #s05 .dx-review-tree-toggle { display: inline-flex; }
+  .dx-review-dialog-body { padding: 6px; }
+  .cockpit-v3 #s05 .dx-review-dialog .dx-project-consult-shell { grid-template-columns: minmax(0, 1fr); }
+  .cockpit-v3 #s05 .dx-review-dialog .dx-project-tree-panel {
+    display: none;
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 20;
+    width: min(320px, 90%);
+    background: var(--bg-1);
+    box-shadow: 10px 0 24px rgba(0, 0, 0, .45);
+  }
+  .cockpit-v3 #s05 .dx-review-dialog.is-tree-open .dx-project-tree-panel { display: flex; }
+  .cockpit-v3 #s05 .dx-review-dialog .dx-project-viewer-panel { overflow-y: auto; }
+  .cockpit-v3 #s05 .dx-review-dialog .dx-project-viewer {
+    flex: 1 0 220px;
+    min-height: 220px;
+  }
+  .cockpit-v3 #s05 .dx-review-dialog .dx-project-navigation { padding: 6px; gap: 5px; }
+  .cockpit-v3 #s05 .dx-review-dialog .dx-project-selection-action { flex: 0 0 auto; }
+  .cockpit-v3 #s05 .dx-review-dialog .dx-project-navigation-help { font-size: 10px; }
+  .cockpit-v3 #s05 .dx-review-dialog .dx-project-selection { padding: 8px; }
+}

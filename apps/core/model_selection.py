@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import struct
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from threading import RLock
 
 from django.conf import settings
 
@@ -10,6 +13,9 @@ from django.conf import settings
 MODEL_PATH = Path(settings.BASE_DIR) / "static" / "models" / "bonga-2.glb"
 CACHE_DIR = Path(settings.BASE_DIR) / "static" / "models" / "selection-cache"
 MAX_SELECTION_MESHES = 500
+_SOURCE_LOCK = RLock()
+_SOURCE_INDEX = None
+_SELECTION_LOCKS = [RLock() for _ in range(32)]
 
 
 class SelectionTooLarge(ValueError):
@@ -99,6 +105,54 @@ def _world_matrices(nodes: list[dict]) -> list[list[float] | None]:
     return matrices
 
 
+class _SourceIndex:
+    """Keep one model's immutable header and only the transforms actually used."""
+
+    def __init__(self, source: Path, identity: tuple):
+        self.identity = identity
+        self.gltf, self.bin_start = _read_gltf_header(source)
+        self.nodes = self.gltf.get("nodes", [])
+        self.parents = [-1] * len(self.nodes)
+        for parent, node in enumerate(self.nodes):
+            for child in node.get("children", []):
+                if 0 <= child < len(self.nodes):
+                    self.parents[child] = parent
+        self.matrices = {}
+        self.lock = RLock()
+
+    def world_matrices(self, selected: list[int]) -> dict[int, list[float]]:
+        # Sibling line requests share ancestors, without repeatedly walking the
+        # entire 80k-node plant or allocating another full transform table.
+        with self.lock:
+            for index in selected:
+                chain = []
+                seen = set()
+                current = index
+                while current >= 0 and current not in self.matrices:
+                    if current in seen:
+                        raise ValueError("Cyclic model hierarchy")
+                    seen.add(current)
+                    chain.append(current)
+                    current = self.parents[current]
+                matrix = self.matrices.get(current, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+                for current in reversed(chain):
+                    matrix = _mat_mul(matrix, _local_matrix(self.nodes[current]))
+                    self.matrices[current] = matrix
+            return {index: self.matrices[index] for index in selected}
+
+
+def _source_index(source: Path) -> _SourceIndex:
+    global _SOURCE_INDEX
+    stamp = source.stat()
+    identity = (str(source.resolve()), stamp.st_size, stamp.st_mtime_ns)
+    with _SOURCE_LOCK:
+        if _SOURCE_INDEX is None or _SOURCE_INDEX.identity != identity:
+            # A single entry bounds memory and each request verifies the source
+            # version. No fabrication status is cached here.
+            _SOURCE_INDEX = _SourceIndex(source, identity)
+        return _SOURCE_INDEX
+
+
 def _descendants(nodes: list[dict], node_id: int) -> list[int]:
     selected: list[int] = []
     stack = [node_id]
@@ -171,18 +225,31 @@ def _write_glb(path: Path, gltf: dict, bin_chunk: bytearray) -> None:
     total_length = 12 + 8 + len(json_bytes) + 8 + len(bin_chunk)
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("wb") as fh:
-        fh.write(struct.pack("<4sII", b"glTF", 2, total_length))
-        fh.write(struct.pack("<I4s", len(json_bytes), b"JSON"))
-        fh.write(json_bytes)
-        fh.write(struct.pack("<I4s", len(bin_chunk), b"BIN\x00"))
-        fh.write(bin_chunk)
+    temporary = None
+    try:
+        # Other workers must see a complete GLB, never a half-written file.
+        with NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}-", suffix=".tmp", delete=False) as fh:
+            temporary = Path(fh.name)
+            fh.write(struct.pack("<4sII", b"glTF", 2, total_length))
+            fh.write(struct.pack("<I4s", len(json_bytes), b"JSON"))
+            fh.write(json_bytes)
+            fh.write(struct.pack("<I4s", len(bin_chunk), b"BIN\x00"))
+            fh.write(bin_chunk)
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def selection_glb_path(node_id: int) -> Path:
     if node_id < 0:
         raise ValueError("Node invalido")
+    # Coalesce repeated clicks and progress workers requesting the same line.
+    with _SELECTION_LOCKS[node_id % len(_SELECTION_LOCKS)]:
+        return _selection_glb_path(node_id)
 
+
+def _selection_glb_path(node_id: int) -> Path:
     source = MODEL_PATH
     if not source.exists():
         raise FileNotFoundError(source)
@@ -191,8 +258,9 @@ def selection_glb_path(node_id: int) -> Path:
     if cache.exists() and cache.stat().st_mtime >= source.stat().st_mtime:
         return cache
 
-    gltf, bin_start = _read_gltf_header(source)
-    nodes = gltf.get("nodes", [])
+    model_index = _source_index(source)
+    gltf, bin_start = model_index.gltf, model_index.bin_start
+    nodes = model_index.nodes
     meshes = gltf.get("meshes", [])
     if node_id >= len(nodes):
         raise ValueError("Node nao existe no GLB")
@@ -206,7 +274,7 @@ def selection_glb_path(node_id: int) -> Path:
     if len(selected_nodes) > MAX_SELECTION_MESHES:
         raise SelectionTooLarge(f"Selecao com {len(selected_nodes)} meshes; limite {MAX_SELECTION_MESHES}")
 
-    world = _world_matrices(nodes)
+    world = model_index.world_matrices(selected_nodes)
     bin_out = bytearray()
     accessors_out: list[dict] = []
     buffer_views_out: list[dict] = []

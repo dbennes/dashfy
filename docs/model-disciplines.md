@@ -53,3 +53,30 @@ Regression checks:
 node --test apps/core/tests/test_model_disciplines.cjs apps/core/tests/test_model_review.cjs apps/core/tests/test_model_navigation.cjs apps/core/tests/test_model_surroundings.cjs apps/core/tests/test_render_idle.cjs
 python manage.py check
 ```
+
+## Expanded review and progressive fabrication colours
+
+`Expand review` opens the existing viewer in a large native dialog. It moves
+the live DOM rather than cloning the canvas or creating another renderer.
+Camera position, selected item, discipline visibility, navigation and colours
+survive closing/reopening. Escape closes the dialog without clearing selection.
+On small screens, `Model tree` opens the search and hierarchy beside the viewer.
+
+Progress colours appear as exact line geometry becomes available: the first
+successful line immediately, followed by batches of up to eight completed
+requests. Two workers leave capacity for selection requests. Returning to Normal
+aborts unfinished geometry downloads; HQ refinement does not restart colouring.
+Failed geometry is reported and choosing Progress again retries a partial result.
+Requests for links time out after 30 seconds and each geometry fetch after 45
+seconds, allowing retry instead of an indefinite loading state.
+
+The server retains one source model header and computes transforms only for
+selected nodes and their ancestors. The source path, size and modification time
+invalidate that metadata. Fabrication statuses are not cached by this change.
+Selection files are written atomically and simultaneous requests for the same
+node are coalesced within each process.
+
+Local benchmark on eight active piping lines, with no selection cache:
+19.039 seconds before, 0.936 seconds after; all eight GLBs had identical SHA256
+hashes. This measures geometry generation, not production network/download time.
+Deploy code and static assets, then restart the application; no migration needed.

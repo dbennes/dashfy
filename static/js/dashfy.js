@@ -1061,6 +1061,8 @@
       hiddenDisciplines: new Set(),
       appearanceRequest: 0,
       progressLayer: null,
+      progressJob: null,
+      progressIncomplete: false,
       progressOriginals: [],
       progressMaterials: new Map(),
       highlighted: [],
@@ -1326,8 +1328,10 @@
       if (state.reviewPromise) return state.reviewPromise;
       if (reviewStatus) reviewStatus.textContent = 'Loading drawing and fabrication links...';
       state.reviewPromise = (async () => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
         try {
-          const response = await fetch(modelUrls.review, {cache: 'no-store', credentials: 'same-origin'});
+          const response = await fetch(modelUrls.review, {cache: 'no-store', credentials: 'same-origin', signal: controller.signal});
           if (response.status === 401 || /\/accounts\/login\//.test(response.url || '')) throw review.authError();
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const payload = await response.json();
@@ -1343,6 +1347,7 @@
           renderModelTree();
           return null;
         } finally {
+          clearTimeout(timeout);
           state.reviewPromise = null;
         }
       })();
@@ -1401,6 +1406,21 @@
     };
     const setAppearance = async mode => {
       if (!review) return;
+      // HQ refinement and repeated clicks must not restart an active colour job.
+      if (mode === 'progress' && state.appearance === mode && state.progressJob) return;
+      if (mode !== 'progress' && state.progressJob) {
+        const job = state.progressJob;
+        job.controller.abort();
+        if (job.group) state.scene.remove(job.group);
+        if (state.progressLayer === job.group) state.progressLayer = null;
+        state.progressJob = null;
+        if (reviewStatus) reviewStatus.textContent = 'Normal colours · Choose Progress to load fabrication colours.';
+      }
+      if (mode === 'progress' && state.progressIncomplete && state.progressLayer) {
+        state.scene.remove(state.progressLayer);
+        disposeObject(state.progressLayer);
+        state.progressLayer = null;
+      }
       const request = ++state.appearanceRequest;
       const hadSurroundings = state.surroundings;
       restoreSurroundings();
@@ -1421,20 +1441,41 @@
       if (state.progressLayer) { applyIsolationVisibility(); return; }
       const lines = review.matchLines(payload.lines, state.hierarchyItems);
       const unmatched = lines.filter(line => !line.nodes.length).length;
+      const job = {controller: new AbortController(), group: null};
+      state.progressJob = job;
+      state.progressIncomplete = false;
       try {
         const result = await review.buildProgressLayer({
           THREE: state.THREE, loader: state.loader, lines, selectionUrl: modelUrls.selection,
           isCurrent: () => request === state.appearanceRequest,
-          onUpdate: (done, total) => { if (reviewStatus) reviewStatus.textContent = `Colouring fabrication lines: ${done}/${total}...`; },
+          signal: job.controller.signal,
+          onReady: group => {
+            job.group = group;
+            state.progressLayer = group;
+            state.scene.add(group);
+            applyIsolationVisibility();
+          },
+          onUpdate: (done, total) => {
+            if (reviewStatus) reviewStatus.textContent = `Fabrication colours: ${done}/${total} · You can keep navigating`;
+            renderOnce();
+          },
         });
-        if (request !== state.appearanceRequest) { disposeObject(result.group); return; }
-        state.progressLayer = result.group;
-        state.scene.add(result.group);
+        if (request !== state.appearanceRequest || result.cancelled) {
+          state.scene.remove(result.group);
+          if (state.progressLayer === result.group) state.progressLayer = null;
+          return;
+        }
+        state.progressIncomplete = result.failures.length > 0;
         if (reviewStatus) reviewStatus.textContent = `${lines.length - unmatched}/${lines.length} lines matched · ${result.total - result.failures.length} coloured · ${unmatched} without exact 3D match${result.failures.length ? ` · ${result.failures.length} geometry unavailable` : ''}`;
         applyIsolationVisibility();
       } catch (error) {
+        // The builder owns disposal of cancelled/failed partial geometry.
+        if (job.group) state.scene.remove(job.group);
+        if (state.progressLayer === job.group) state.progressLayer = null;
         if (request === state.appearanceRequest && showModelAuthError(error)) return;
         if (request === state.appearanceRequest && reviewStatus) reviewStatus.textContent = 'Progress geometry unavailable. Switch to Normal and Progress to retry.';
+      } finally {
+        if (state.progressJob === job) state.progressJob = null;
       }
     };
     const setIsolationMode = (active, options = {}) => {
@@ -3542,9 +3583,11 @@
         if (event.ctrlKey || event.metaKey || event.altKey) return;
         const key = event.key.toLowerCase();
         if (!['f', 'home', 'escape', 'r', 'p'].includes(key)) return;
+        if (key === 'escape' && root.closest('dialog[open]')) return;
         event.preventDefault();
         if (key === 'f') focusSelection();
         if (key === 'home') fitButton?.click();
+        // Escape closes the expanded review without clearing its selection.
         if (key === 'escape') clearButton?.click();
         if (key === 'r' || key === 'p') setNavigationMode(key === 'p' ? 'pan' : 'orbit');
       });
@@ -3824,6 +3867,11 @@
       stopRenderLoop();
     };
     let viewerIntersecting = false;
+    root.addEventListener('model-review:visibility', event => {
+      viewerIntersecting = !!event.detail?.visible;
+      if (viewerIntersecting) activateViewer();
+      else deactivateViewer();
+    });
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && viewerIntersecting) activateViewer();
       else deactivateViewer();

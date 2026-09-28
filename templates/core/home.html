@@ -14,6 +14,7 @@
 <link href="{% static 'vendor/leaflet/leaflet.css' %}" rel="stylesheet">
 <link href="{% static 'css/vessel-tracking.css' %}?v=20260918-ais-map-v18" rel="stylesheet">
 <link href="{% static 'css/vessel-hologram.css' %}?v=20260918-dossier-v9" rel="stylesheet">
+<link href="{% static 'css/model-review-modal.css' %}?v=20260928" rel="stylesheet">
 {% endblock %}
 
 {% block tickers %}
@@ -1776,12 +1777,14 @@
     <div class="sn-rail" data-note-panel="model-review" data-note-label="3D model review"></div>
     <div class="card-head">
       <div class="lhs"><span class="tag">3D REVIEW</span><h3>Hierarchy and model</h3></div>
-      <div class="rhs"><span class="pill">Progressive LOD</span></div>
+      <div class="rhs">
+        <button type="button" class="dx-project-selection-action" data-model-review-expand aria-haspopup="dialog" aria-controls="projectReviewDialog" aria-expanded="false"><i class="bi bi-arrows-fullscreen" aria-hidden="true"></i> Expand review</button>
+      </div>
     </div>
     <div class="card-body">
       <section class="dx-project-consult" data-project-3d data-project-default-tab="model" data-model-autoload="true" data-model-auto-refine="true" data-model-url="{% static 'models/bonga-2-disciplines-fast.glb' %}?v=20260921-tie-ins-piping" data-model-detail-url="{% static 'models/bonga-2-disciplines-hq.glb' %}?v=20260921-tie-ins-piping" data-model-hierarchy-url="{% static 'models/bonga-2-hierarchy.json' %}" data-model-selection-url="{% url 'core:model_node_glb' 0 %}" data-material-items-url="{% url 'core:material_items_3d' %}" data-model-review-url="{% url 'core:model_review' %}">
         <div class="dx-project-consult-shell">
-          <aside class="dx-project-tree-panel">
+          <aside class="dx-project-tree-panel" id="projectReviewTree">
             <div class="dx-project-search">
               <i class="bi bi-search"></i>
               <input type="search" placeholder="Search by name, tag or node ID" data-project-query>
@@ -1866,6 +1869,16 @@
         </div>
       </section>
     </div>
+    <dialog id="projectReviewDialog" class="dx-review-dialog" data-model-review-dialog aria-labelledby="projectReviewDialogTitle">
+      <div class="dx-review-dialog-head">
+        <div class="dx-review-dialog-title"><span class="tag">3D REVIEW</span><h2 id="projectReviewDialogTitle">Project visual review</h2></div>
+        <div class="dx-review-dialog-actions">
+          <button type="button" class="dx-project-selection-action dx-review-tree-toggle" data-model-review-tree-toggle aria-controls="projectReviewTree" aria-expanded="false"><i class="bi bi-diagram-3" aria-hidden="true"></i> Model tree</button>
+          <button type="button" class="dx-project-selection-action" data-model-review-close autofocus><i class="bi bi-fullscreen-exit" aria-hidden="true"></i> Close</button>
+        </div>
+      </div>
+      <div class="dx-review-dialog-body" data-model-review-dialog-body></div>
+    </dialog>
   </div>
 </section>
 
@@ -1901,6 +1914,7 @@
 {% endif %}
 <script src="{% static 'vendor/leaflet/leaflet.js' %}" defer></script>
 <script src="{% static 'js/vessel-tracking.js' %}?v=20260928-track-gaps" defer></script>
+<script src="{% static 'js/model-review-modal.js' %}?v=20260928" defer></script>
 <script type="module" src="{% static 'js/vessel-hologram.js' %}?v=20260918-dossier-v11"></script>
 {{ block.super }}
 <script>
