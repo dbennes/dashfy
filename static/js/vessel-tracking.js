@@ -82,18 +82,41 @@
       return true;
     });
   }
-  function trackParts(points) {
-    var parts = [], current = [];
+  function trackDistance(a, b) {
+    var radians = Math.PI / 180;
+    var lat = (b.latitude - a.latitude) * radians, lon = (b.longitude - a.longitude) * radians;
+    var h = Math.sin(lat / 2) ** 2 + Math.cos(a.latitude * radians) * Math.cos(b.latitude * radians) * Math.sin(lon / 2) ** 2;
+    return 6371000 * 2 * Math.asin(Math.sqrt(Math.min(1, h)));
+  }
+  function trackRuns(points) {
+    var parts = [], current = [], previous = null;
     points.forEach(function (point) {
-      // Do not draw a globe-spanning line through zero longitude at the date line.
-      if (current.length && Math.abs(current[current.length - 1][1] - point.longitude) > 180) {
+      // Sparse imports cannot establish a route around river bends or islands.
+      // Keep the fixes; never bridge an unobserved journey with a straight line.
+      var elapsed = previous ? point.time - previous.time : 0;
+      var distance = previous ? trackDistance(previous, point) : 0;
+      if (previous && (Math.abs(previous.longitude - point.longitude) > 180 ||
+          elapsed <= 0 || elapsed > 10 * 60 * 1000 || distance > 1000 ||
+          distance / (elapsed / 1000) > 50 * .514444)) {
         parts.push(current);
         current = [];
       }
-      current.push([point.latitude, point.longitude]);
+      current.push(point);
+      previous = point;
     });
     if (current.length) parts.push(current);
     return parts;
+  }
+  function trackParts(points) {
+    return trackRuns(points).map(function (part) {
+      return part.map(function (point) { return [point.latitude, point.longitude]; });
+    });
+  }
+  function trackStyle(time, now) {
+    var old = time < now - 24 * 60 * 60 * 1000;
+    return { color: old ? "#94a3b8" : "#3b82f6", weight: old ? 1.25 : 1.6,
+      opacity: old ? .55 : .85, dashArray: "3 6", lineCap: "round",
+      smoothFactor: 0, interactive: false };
   }
   function customRange(start, end) {
     function utc(value) {
@@ -164,7 +187,7 @@
 
   var helpers = { number: number, measurement: measurement, timestamp: timestamp, utcLabel: utcLabel,
     ageLabel: ageLabel, etaLabel: etaLabel, position: position, bearing: bearing,
-    trackPoints: trackPoints, trackParts: trackParts, customRange: customRange, apiError: apiError,
+    trackPoints: trackPoints, trackParts: trackParts, trackRuns: trackRuns, trackStyle: trackStyle, customRange: customRange, apiError: apiError,
     attachmentName: attachmentName, geofence: geofence, voyageDisplay: voyageDisplay };
   if (typeof module === "object" && module.exports) module.exports = helpers;
   if (!global.document) return;
@@ -476,17 +499,33 @@
     function renderTrack(data) {
       clearTrack();
       state.points = trackPoints(data.positions);
+      var runs = trackRuns(state.points), now = Date.now();
       if (map && state.points.length) {
         query("map-empty").hidden = true;
         lineLayer = global.L.layerGroup().addTo(map);
-        trackParts(state.points).forEach(function (part) {
-          if (part.length > 1) global.L.polyline(part, { color: "#3b82f6", weight: 3, opacity: .9, dashArray: "5 7", smoothFactor: 0, interactive: false }).addTo(lineLayer);
-          if (part.length === 1) global.L.circleMarker(part[0], { radius: 3, color: "#0284c7", fillOpacity: .8, interactive: false }).addTo(lineLayer);
+        runs.forEach(function (part) {
+          // At most two paths per run: batch by age instead of creating a layer
+          // per observation. Draw recent segments last, above the older history.
+          var older = [], recent = [];
+          for (var i = 1; i < part.length; i += 1) {
+            var segment = [[part[i - 1].latitude, part[i - 1].longitude], [part[i].latitude, part[i].longitude]];
+            (part[i].time < now - 86400000 ? older : recent).push(segment);
+          }
+          if (older.length) global.L.polyline(older, trackStyle(now - 86400001, now)).addTo(lineLayer);
+          if (recent.length) global.L.polyline(recent, trackStyle(now, now)).addTo(lineLayer);
+          if (part.length === 1) {
+            var style = trackStyle(part[0].time, now);
+            global.L.circleMarker([part[0].latitude, part[0].longitude], {
+              radius: 2.5, weight: 1, color: style.color, opacity: style.opacity,
+              fillColor: style.color, fillOpacity: style.opacity, interactive: false
+            }).addTo(lineLayer);
+          }
         });
         drawEndpoints();
       }
       var total = number(data.total_count), count = state.points.length;
-      var label = count ? count.toLocaleString("en-GB") + (data.simplified && total !== null ? " of " + total.toLocaleString("en-GB") : "") + " stored positions" + (data.simplified ? " · Simplified track" : " · Real track") : "No stored AIS positions in this period.";
+      var gaps = Math.max(0, runs.length - 1);
+      var label = count ? count.toLocaleString("en-GB") + (data.simplified && total !== null ? " of " + total.toLocaleString("en-GB") : "") + " stored positions" + (data.simplified ? " · Sampled history" : "") + " · Light grey: older than 24 h" + (gaps ? " · " + gaps + " gaps (route unknown)" : "") : "No stored AIS positions in this period.";
       text(query("track-meta"), label);
       query("track-meta").title = data.start && data.end ? utcLabel(data.start) + " to " + utcLabel(data.end) : "";
       query("fit").disabled = !count && !position((selectedVessel() || {}).last_position) && !(geofenceLayer && geofenceLayer.getBounds().isValid());

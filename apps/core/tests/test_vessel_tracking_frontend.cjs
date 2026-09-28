@@ -47,9 +47,54 @@ test('date-line crossing never creates a fictitious line across zero longitude',
   const points = ui.trackPoints([
     point(5, 179, '2026-09-15T09:00:00Z'),
     point(5.1, -179, '2026-09-15T09:10:00Z'),
-    point(5.2, -178, '2026-09-15T09:20:00Z')
+    point(5.1001, -179.001, '2026-09-15T09:20:00Z')
   ]);
-  assert.deepEqual(ui.trackParts(points), [[[5, 179]], [[5.1, -179], [5.2, -178]]]);
+  assert.deepEqual(ui.trackParts(points), [[[5, 179]], [[5.1, -179], [5.1001, -179.001]]]);
+});
+
+test('sparse Eastern Ursinia imports never draw shortcuts across the delta', () => {
+  const fixes = [
+    point(4.7942467, 6.9417582, '2026-09-16T14:57:03Z'),
+    point(4.615082, 7.168013, '2026-09-18T15:07:00Z'),
+    point(4.541847, 7.203438, '2026-09-18T15:41:00Z')
+  ];
+  const original = JSON.stringify(fixes);
+  const parts = ui.trackParts(ui.trackPoints(fixes));
+  assert.deepEqual(parts, fixes.map(p => [[p.latitude, p.longitude]]));
+  assert.equal(JSON.stringify(fixes), original);
+});
+
+test('nearby frequent fixes stay connected, but time gaps and jumps break the line', () => {
+  const fixes = ui.trackPoints([
+    point(4.5, 7.1, '2026-09-15T09:00:00Z'),
+    point(4.501, 7.101, '2026-09-15T09:01:00Z'),
+    point(4.5011, 7.1011, '2026-09-15T10:00:00Z'),
+    point(4.55, 7.15, '2026-09-15T10:01:00Z'),
+    point(4.555, 7.15, '2026-09-15T10:01:01Z')
+  ]);
+  assert.deepEqual(ui.trackRuns(fixes).map(run => run.length), [2, 1, 1, 1]);
+  assert.equal(ui.trackRuns(fixes).flat().length, fixes.length);
+});
+
+test('conflicting simultaneous fixes are kept without connecting them', () => {
+  const fixes = ui.trackPoints([
+    point(4.5, 7.1, '2026-09-15T09:00:00Z'),
+    point(4.5001, 7.1001, '2026-09-15T09:00:00Z')
+  ]);
+  assert.equal(ui.trackRuns(fixes).length, 2);
+  assert.deepEqual(ui.trackRuns([]), []);
+});
+
+test('history fades against actual time rather than making old imports look recent', () => {
+  const now = Date.parse('2026-09-28T12:00:00Z');
+  const older = ui.trackStyle(Date.parse('2026-09-18T15:41:00Z'), now);
+  const recent = ui.trackStyle(now, now);
+  assert.equal(older.color, '#94a3b8');
+  assert.equal(recent.color, '#3b82f6');
+  assert.ok(older.weight < recent.weight && recent.weight < 2);
+  assert.ok(older.opacity < recent.opacity && older.opacity >= .5);
+  assert.equal(older.dashArray, '3 6');
+  assert.equal(ui.trackStyle(now - 86400000, now).color, recent.color);
 });
 
 test('ETA does not invent a year or midnight for unavailable time fields', () => {

@@ -290,3 +290,24 @@ observed arrivals use `destination_source=arrival`. Raw AIS declarations and all
 stored positions remain unchanged. Direction changes follow newer observed port
 arrivals/departures; loading an older export or changing the map period cannot
 reverse the journey.
+
+## Sparse history and visual age
+
+Historical tracks use a fine, rounded `3 6` dash: blue at 1.6 px for the last
+24 hours, light grey at 1.25 px / 55% opacity for older observations. Age uses
+the current clock, not the latest imported row. The current vessel marker keeps
+its blue pulse. Isolated observations remain visible as small dots.
+
+The map no longer joins fixes separated by more than ten minutes, one kilometre,
+an implied speed over 50 knots, conflicting equal timestamps, or the date line.
+These are conservative display thresholds, not a land/water classifier. The
+legend reports gaps as `route unknown`. The same policy applies to old imports
+without changing stored coordinates, timestamps or CSV exports. It also applies
+after API sampling, which can create additional gaps.
+
+This removes the known false straight lines between the three local Eastern
+Ursinia fixes (16–18 September). It does **not** reconstruct a missing journey,
+validate short segments against shorelines, or guarantee navigability. A complete
+water-only reconstruction requires detailed water geometry and a separately
+labelled estimated route, or intermediate observed positions. No external routing
+request, new listener, migration or additional dashboard fetch is introduced.
