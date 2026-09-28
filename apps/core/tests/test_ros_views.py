@@ -145,7 +145,7 @@ class RosWorkbookViewTests(TestCase):
         self.assertEqual(batch.payload["skyline"]["rows"][0][:3], initial["skyline"]["rows"][0][:3])
 
         with self.isolated_home_sources() as live:
-            home = self.client.get(self.home_url)
+            home = self.client.get(reverse("core:dashboard_content"))
 
         self.assertEqual(home.status_code, 200)
         self.assertEqual(home.context["ros_schedule"]["batch"].pk, batch.pk)
@@ -306,7 +306,7 @@ class RosWorkbookViewTests(TestCase):
                 patch("apps.core.rundown_source.fabrication_rundown_safe") as rundown,
                 patch("logging.Logger.exception"),
             ):
-                response = self.client.get(self.home_url)
+                response = self.client.get(reverse("core:dashboard_content"))
 
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.context["ros_schedule"])

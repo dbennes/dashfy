@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
-from django.core.cache import cache
+from .dashboard_cache import cache, fresh_sources_requested
 from django.db.utils import OperationalError, ProgrammingError
 
 from apps.eclic.api_client import EclicAPIError, EclicClient
@@ -6089,6 +6089,9 @@ def _construction_datafy_snapshot(filters: dict) -> dict:
         payload["source_database"] = settings.DATAFY_DB_NAME
         payload["source_host"] = f"{settings.DATAFY_DB_HOST}:{settings.DATAFY_DB_PORT}"
         return payload
+
+    if fresh_sources_requested():
+        return _construction_datafy_empty("Current DATAFY data is unavailable. Please retry; no older snapshot is displayed.")
 
     requested_snapshot_filters = normalized_supply_snapshot_filters(filters)
     try:

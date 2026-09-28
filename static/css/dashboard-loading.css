@@ -1,0 +1,8 @@
+.dashboard-load-status { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:8px 0 14px; color:var(--text-2,#aab5c4); font-size:12px; }
+.dashboard-placeholder { margin-bottom:12px; }
+[data-dashboard-target] { min-width:0; }
+.cockpit-v3 [data-dashboard-target] #s03 .fab-page-header .page-title-block { min-width:0; max-width:100%; }
+.cockpit-v3 [data-dashboard-target] #s03 .head-actions { max-width:100%; }
+.dashboard-placeholder .card-head { gap:12px; }
+.dashboard-pending { font-size:11px; color:var(--text-3,#8793a4); white-space:nowrap; }
+@media(max-width:640px) { .dashboard-placeholder .card-head { align-items:flex-start; flex-direction:column; } .dashboard-placeholder h3 { overflow-wrap:anywhere; } }

@@ -278,3 +278,30 @@ Plotly e carregado somente nas paginas Datafy/Taskfy que o utilizam. O
 cockpit e o login nao baixam Plotly nem ECharts. Esta correcao nao requer
 migrations. Se `config/settings.py` tiver alteracoes locais no servidor,
 preserve-as e confirme que a linha do middleware novo foi incorporada.
+
+### History primeiro e consultas atuais (28 setembro 2026)
+
+A rota `/` retorna uma estrutura leve com os controles de comentarios. A
+consulta de History comeca antes dos dados operacionais. Os paineis chegam
+por `/dashboard/content/`, preservando filtros, comentarios em edicao e o
+visual existente. Nao bloqueie essa nova rota no proxy. Falhas exibem uma
+mensagem e uma opcao de tentar novamente; History continua acessivel.
+
+O endpoint de dados ignora os caches temporarios de management, fabricacao,
+P6, ECLIC, estrutura, AVEON e materiais Skyline, em um contexto isolado por
+requisicao. Se DATAFY estiver indisponivel, nao substitui a consulta por um
+snapshot antigo. Relatorios importados continuam mostrando suas datas de
+origem: consultar agora nao transforma um relatorio antigo em dados de hoje.
+`Last checked` indica quando a consulta terminou; nao significa que todas as
+fontes publicaram novos dados naquele instante. Nao ha polling automatico
+dos graficos: use a atualizacao da pagina para consultar novamente.
+
+Ambas as respostas usam `Cache-Control: no-store`; a compressao de HTML
+continua ativa. `Server-Timing` dos dados passa a ser consultado na resposta
+`/dashboard/content/`. O TTL de 45 segundos documentado anteriormente fica
+restrito a outros consumidores das fontes, nao a essa carga do cockpit.
+
+Atualize com `git pull --ff-only`, execute `python manage.py collectstatic
+--noinput` e `python manage.py check`, e reinicie o servico web. Nao ha novas
+migrations. Valide que History abre durante o carregamento e que os graficos,
+Rundown, filtros e 3D continuam funcionando apos a chegada dos dados.

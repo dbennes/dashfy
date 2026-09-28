@@ -35,6 +35,7 @@ from apps.exports.models import ExportLog
 from apps.core import real_sources
 from apps.core import ros_workbook, rundown_workbook
 from apps.core.response_timing import ResponseTiming
+from apps.core.dashboard_cache import fresh_sources
 
 from .models import Announcement, DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport
 
@@ -356,6 +357,26 @@ def _supply_scope_view(manager, scope_key: str):
 
 
 @login_required
+@never_cache
+def home_shell_view(request):
+    from .section_notes import PANELS, SECTIONS
+    panels = [{"key": key, "label": label, "section": SECTIONS[section]}
+              for key, (section, label) in PANELS.items()
+              if section != "s04" or settings.DASHFY_SHOW_TRACKING]
+    return render(request, "core/home_shell.html", {"note_panels": panels})
+
+
+@login_required
+@never_cache
+def dashboard_content_view(request):
+    request.dashboard_fragment = True
+    with fresh_sources():
+        response = home_view(request)
+    response["X-Dashboard-Content"] = "1"
+    return response
+
+
+@login_required
 def home_view(request):
     """Cockpit gerencial consumindo somente bases reais integradas."""
     timing = ResponseTiming()
@@ -485,6 +506,8 @@ def home_view(request):
     timing.mark("tracking")
 
     context = {
+        "dashboard_fragment": getattr(request, "dashboard_fragment", False),
+        "dashboard_base": "core/dashboard_fragment.html" if getattr(request, "dashboard_fragment", False) else "base.html",
         "modules": modules,
         "announcements": announcements,
         "manager": manager,

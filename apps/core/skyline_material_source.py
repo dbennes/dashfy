@@ -17,7 +17,7 @@ import re
 from typing import Any, Iterable
 
 from django.conf import settings
-from django.core.cache import cache
+from .dashboard_cache import cache
 from django.utils import timezone
 
 from . import fabrication_source as fabrication

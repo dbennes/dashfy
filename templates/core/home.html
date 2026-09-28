@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends dashboard_base|default:"base.html" %}
 {% load humanize static l10n %}
 {% block title %}Cockpit · {{ APP_NAME }}{% endblock %}
 {% block crumb_current %}COCKPIT{% endblock %}
@@ -1886,8 +1886,10 @@
 {% endblock %}
 
 {% block extra_js %}
+{% if not dashboard_fragment %}
 {% include 'core/_section_notes.html' %}
-<script src="{% static 'js/section-notes.js' %}?v=20260924-panels" defer></script>
+<script src="{% static 'js/section-notes.js' %}?v=20260928-priority" defer></script>
+{% endif %}
 
 {% if user.is_admin %}
 <dialog id="rundownImportDialog" aria-labelledby="rundownImportTitle">
@@ -6309,7 +6311,7 @@
     document.addEventListener('scroll', keepVisibleDuringScroll, true);
   }
 
-  document.addEventListener('DOMContentLoaded', function () {
+  function initCockpitPanels() {
     var curveEl = document.querySelector('[data-c3-curve]');
     if (!curveEl || curveEl.dataset.c3RenderedEarly !== '1') {
       renderC3Curve(curveEl, C3_CURVE_PAYLOAD);
@@ -6387,7 +6389,9 @@
 
     // ECharts supply campaign panel (keep previous behavior)
     initSupplyEcharts();
-  });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initCockpitPanels, {once:true});
+  else initCockpitPanels();
 
   function initSupplyEcharts() {
     var fmt = function(n){ return (n || 0).toLocaleString('pt-BR'); };

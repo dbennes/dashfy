@@ -4,11 +4,12 @@
   if (!dialog || !dialog.showModal) return;
   const legacyLabels = {s00:"Planning", s01:"Engineering", s02:"Supply", s03:"Fabrication", s04:"Logistics", s05:"3D model"};
   const panels = new Map(Array.from(document.querySelectorAll("[data-note-panel]"), node => [node.dataset.notePanel, node]));
+  const panelKeys = new Set(panels.keys());
   const labels = {...legacyLabels, ...Object.fromEntries(Array.from(panels, ([key,node]) => [key,node.dataset.noteLabel]))};
   const legacyButton = document.querySelector("[data-sn-legacy]");
   const legacySelect = dialog.querySelector("[data-sn-legacy-select]");
   const legacyLabel = dialog.querySelector("[data-sn-legacy-label]");
-  function scopeParams() { return panels.has(section) ? {panel:section} : {section}; }
+  function scopeParams() { return panelKeys.has(section) ? {panel:section} : {section}; }
   const statuses = {pending:"Pending", resolved:"Resolved", cancelled:"Cancelled"};
   const contextLabels = {date_from:"From",date_to:"To",discipline:"Discipline",campaign:"Campaign",contract_week:"Week",panel_mode:"Mode",panel_discipline:"Discipline",vessel:"Vessel"};
   const form = dialog.querySelector("[data-sn-form]");
@@ -67,7 +68,7 @@
         if(previous.some(([key])=>key===selected)) legacySelect.value=selected;
       }
       for (const [key, record] of Object.entries(data.sections)) {
-        const bar = bars[key]; if (!bar) continue;
+        for (const bar of bars[key] || []) {
         bar.count.textContent = String(record.total);
         bar.count.title = `${record.pending} pending · ${record.total} records`;
         bar.count.setAttribute("aria-label", bar.count.title);
@@ -82,8 +83,9 @@
           const extra=el("span", "+"+(record.people.length-5),"sn-avatar");
           extra.title=record.people.slice(5).map(p=>p.name).join(", ");extra.tabIndex=0;extra.setAttribute("aria-label",extra.title);bar.people.append(extra);
         }
+        }
       }
-    } catch (_error) { Object.values(bars).forEach(bar => {bar.count.textContent="!";bar.count.title="History unavailable";}); }
+    } catch (_error) { Object.values(bars).flat().forEach(bar => {bar.count.textContent="!";bar.count.title="History unavailable";}); }
   }
   function tab(mode) {
     form.hidden = mode !== "new"; history.hidden = mode !== "history";
@@ -128,7 +130,7 @@
   function open(key,mode,source) {
     if(busy) return;
     section=key;opener=source;page=1;filter.value="all";message.textContent="";
-    const legacy = !panels.has(key);
+    const legacy = !panelKeys.has(key);
     legacyLabel.hidden = !legacy;
     dialog.querySelector('[data-sn-tab="new"]').hidden = legacy;
     if(legacy) { mode="history"; legacySelect.value=key; }
@@ -140,15 +142,26 @@
     if(mode==="history") run(async()=>{message.textContent="Loading records…";await loadHistory();message.textContent="";});
     else form.elements.body.focus();
   }
-  panels.forEach((target,key)=>{
+  function mountPanels() {
+  panels.clear();
+  document.querySelectorAll("[data-note-panel]").forEach(node=>panels.set(node.dataset.notePanel,node));
+  Object.keys(bars).forEach(key=>delete bars[key]);
+  document.querySelectorAll("[data-note-panel]").forEach(target=>{
+    const key=target.dataset.notePanel;
+    panelKeys.add(key);labels[key]=target.dataset.noteLabel;
+    target.querySelector(".sn-bar")?.remove();
     const label=labels[key];
     const bar=el("div",undefined,"sn-bar");bar.setAttribute("aria-label","Comments for "+label);
     const add=button("",()=>open(key,"new",add));
     const icon=el("i",undefined,"bi bi-exclamation-circle-fill");icon.setAttribute("aria-hidden","true");add.prepend(icon);add.title="Add comment";add.setAttribute("aria-label","Add comment · "+label);
     const view=button("History",()=>open(key,"history",view));view.setAttribute("aria-label","View comments · "+label);
     const count=el("span","…","sn-bar-count"),people=el("div",undefined,"sn-people");people.setAttribute("aria-label","People who commented on this panel");
-    view.append(count);bar.append(add,view,people);target.append(bar);bars[key]={count,people};
+    view.append(count);bar.append(add,view,people);target.append(bar);
+    (bars[key] ||= []).push({count,people});
   });
+  }
+  mountPanels();
+  document.addEventListener("dashboard:panels-ready",()=>{mountPanels();summary();});
   if(legacyButton) legacyButton.addEventListener("click",()=>{if(legacySelect.value)open(legacySelect.value,"history",legacyButton);});
   legacySelect.addEventListener("change",()=>run(async()=>{section=legacySelect.value;page=1;document.getElementById("snTitle").textContent=labels[section];await loadHistory();}));
   form.elements.information_only.addEventListener("change",()=>{
@@ -184,5 +197,5 @@
   dialog.addEventListener("cancel",event=>{if(busy)event.preventDefault();});
   dialog.addEventListener("close",()=>{document.documentElement.classList.remove("sn-modal-open");if(opener)opener.focus();});
   window.addEventListener("focus",()=>{if(!busy)summary();});
-  summary();
+  window.dashfyNotesReady = summary().finally(()=>document.dispatchEvent(new CustomEvent("dashboard:history-ready")));
 }());
