@@ -19,6 +19,18 @@ PREVIEW_SALT = "core.rundown-preview.v1"
 MAX_BYTES = 10 * 1024 * 1024
 
 
+def _import_success(request, batch, modal):
+    message = "Rundown updated, including reported progress." if batch else "No changes to apply."
+    if modal:
+        payloads = {key: workbook.chart_payload(key, table, batch.original_filename)
+                    for key, table in batch.payload.items()} if batch else {}
+        response = JsonResponse({"ok": True, "payloads": payloads, "message": message})
+        response["Cache-Control"] = "no-store"
+        return response
+    messages.success(request, message)
+    return redirect(reverse("core:home")+"#s03")
+
+
 @login_required
 @require_GET
 def export_rundown(request):
@@ -44,7 +56,7 @@ def import_rundown(request):
     try:
         context["history"] = list(RundownImport.objects.select_related("imported_by")[:10])
         if request.method == "POST":
-            action = request.POST.get("action", "preview")
+            action = request.POST.get("action", "import")
             if action == "apply":
                 try:
                     preview = signing.loads(request.POST.get("preview_token", ""), salt=PREVIEW_SALT, max_age=1800)
@@ -53,17 +65,9 @@ def import_rundown(request):
                 if preview["user_id"] != request.user.pk:
                     raise ValueError("Upload and review the workbook using your own account.")
                 batch = workbook.apply_import(preview["parsed"], preview["filename"], preview["hash"], request.user)
-                if modal:
-                    payloads = {key: workbook.chart_payload(key, table, batch.original_filename)
-                                for key, table in batch.payload.items()} if batch else {}
-                    response = JsonResponse({"ok": True, "payloads": payloads,
-                        "message": "Rundown updated, including reported progress." if batch else "No changes to apply."})
-                    response["Cache-Control"] = "no-store"
-                    return response
-                messages.success(request, "Rundown updated, including reported progress." if batch else "No changes to apply.")
-                return redirect(reverse("core:home")+"#s03")
-            if action != "preview":
-                raise ValueError("Choose a workbook to preview.")
+                return _import_success(request, batch, modal)
+            if action not in ("import", "preview"):
+                raise ValueError("Choose a workbook to import.")
             upload = request.FILES.get("rundown_file")
             if not upload or not upload.name.lower().endswith(".xlsx"):
                 raise ValueError("Choose the exported .xlsx workbook.")
@@ -72,13 +76,17 @@ def import_rundown(request):
             content = upload.read(MAX_BYTES+1)
             if len(content) > MAX_BYTES:
                 raise ValueError("Maximum file size is 10 MB.")
-            logger.info("Rundown preview upload: bytes=%s sha256=%s", len(content), hashlib.sha256(content).hexdigest())
+            file_hash = hashlib.sha256(content).hexdigest()
+            logger.info("Rundown upload: action=%s bytes=%s sha256=%s", action, len(content), file_hash)
             parsed = workbook.parse_workbook(content, workbook.current_state())
+            if action == "import":
+                batch = workbook.apply_import(parsed, upload.name, file_hash, request.user)
+                return _import_success(request, batch, modal)
             context["unchanged"] = not parsed["changes"]
             if parsed["changes"]:
                 context.update(preview=parsed, filename=upload.name,
                     preview_token=signing.dumps({"parsed": parsed, "filename": upload.name,
-                        "hash": hashlib.sha256(content).hexdigest(), "user_id": request.user.pk}, salt=PREVIEW_SALT, compress=True))
+                        "hash": file_hash, "user_id": request.user.pk}, salt=PREVIEW_SALT, compress=True))
     except (ValueError, KeyError, TypeError) as exc:
         context["error"], status = str(exc), 400
     except (DatabaseError, OSError):

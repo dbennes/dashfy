@@ -29,10 +29,10 @@
         <button class="ob-btn ob-btn-blue" type="submit">Apply changes</button><a class="ob-btn" data-rundown-reset href="{% url 'core:import_rundown' %}">Cancel</a>
       </form>
       {% else %}
-      <form action="{% url 'core:import_rundown' %}" method="post" enctype="multipart/form-data" class="fab-ros-upload">{% csrf_token %}<input type="hidden" name="action" value="preview">
+      <form action="{% url 'core:import_rundown' %}" method="post" enctype="multipart/form-data" class="fab-ros-upload">{% csrf_token %}<input type="hidden" name="action" value="import">
         <label for="rundownFile">Updated rundown workbook (.xlsx)</label>
-        <div class="fab-ros-actions"><input id="rundownFile" name="rundown_file" type="file" accept=".xlsx" required aria-describedby="rundownFileHint"><button class="ob-btn ob-btn-blue" type="submit">Preview changes</button></div>
-        <small id="rundownFileHint">Use the latest export. Maximum 10 MB. Invalid dates, duplicate days, excess quantities and future actual progress are rejected before saving.</small>
+        <div class="fab-ros-actions"><input id="rundownFile" name="rundown_file" type="file" accept=".xlsx" required aria-describedby="rundownFileHint"><button class="ob-btn ob-btn-blue" type="submit">Import workbook</button></div>
+        <small id="rundownFileHint">Maximum 10 MB. Enabled sheets are validated and saved immediately. Invalid dates, duplicate days, excess quantities and future actual progress are rejected before saving.</small>
       </form>
       {% endif %}
     </div>

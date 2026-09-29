@@ -2,6 +2,7 @@ from copy import deepcopy
 from io import BytesIO
 from unittest.mock import patch
 
+from django.core import signing
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
@@ -10,6 +11,7 @@ from openpyxl import load_workbook
 from apps.accounts.models import User
 from apps.core import rundown_workbook as wb
 from apps.core.models import RundownImport
+from apps.core.rundown_views import PREVIEW_SALT
 from .test_rundown_modes_ui import rundown_modes_fixture
 
 
@@ -34,6 +36,7 @@ class RundownWorkbookTests(TestCase):
     def test_round_trip_and_empty_sample_templates(self):
         parsed = wb.parse_workbook(self.content, self.current)
         self.assertEqual(parsed["updates"], {})
+        self.assertFalse(parsed["rebased"])
         book = load_workbook(BytesIO(self.content), data_only=True)
         self.assertEqual(len(book.sheetnames), 8)
         for title in wb.SHEETS.values():
@@ -92,13 +95,155 @@ class RundownWorkbookTests(TestCase):
             wb.parse_workbook(self.edit(future), self.current)
         self.assertFalse(RundownImport.objects.exists())
 
-    def test_missing_sheet_and_stale_source_are_rejected(self):
+    def test_missing_sheet_is_rejected(self):
         content = self.edit(lambda book: book.remove(book["Electrical - Fabrication"]))
         with self.assertRaisesRegex(ValueError, "Missing sheet"):
             wb.parse_workbook(content, self.current)
+
+    def test_older_source_workbook_is_compared_with_current_tables(self):
         self.modes["fabrication"]["disciplines"]["piping"]["kpis"]["scope_total"] += 1
-        with self.assertRaisesRegex(ValueError, "changed since export"):
-            wb.parse_workbook(self.content, wb.current_state())
+        current = wb.current_state()
+        parsed = wb.parse_workbook(self.content, current)
+        self.assertTrue(parsed["rebased"])
+        self.assertEqual(parsed["revision"], current["revision"])
+        self.assertEqual(parsed["fingerprint"], current["fingerprint"])
+        self.assertEqual(parsed["export_revision"], self.current["revision"])
+        self.assertEqual(parsed["export_fingerprint"], self.current["fingerprint"])
+        self.assertEqual(parsed["changes"][0]["before_scope"], 11)
+        self.assertEqual(parsed["changes"][0]["scope"], 10)
+        batch = wb.apply_import(parsed, "older-source.xlsx", "abc", self.admin)
+        self.assertEqual(batch.payload["fabrication:piping"]["scope"], 10)
+
+    def test_old_workbook_preserves_current_sheets_marked_no(self):
+        first_content = self.edit(lambda book: setattr(book["Structural - Fabrication"]["D10"], "value", 4))
+        first = wb.apply_import(wb.parse_workbook(first_content, self.current), "first.xlsx", "first", self.admin)
+        current = wb.current_state()
+
+        def change(book):
+            book["Piping - Fabrication"]["D10"] = 2
+            book["Structural - Fabrication"]["B5"] = "NO"
+
+        parsed = wb.parse_workbook(self.edit(change), current)
+        self.assertTrue(parsed["rebased"])
+        self.assertEqual(set(parsed["updates"]), {"fabrication:piping"})
+        batch = wb.apply_import(parsed, "older.xlsx", "older", self.admin)
+        self.assertEqual(batch.base_revision, str(first.revision))
+        self.assertEqual(batch.payload["fabrication:structural"], first.payload["fabrication:structural"])
+        self.assertEqual(batch.payload["fabrication:piping"]["rows"][0][3], 2)
+        after = wb.current_state()
+        for key, table in current["tables"].items():
+            if key != "fabrication:piping":
+                self.assertEqual(after["tables"][key], table)
+
+    def test_stale_workbook_still_rejects_invalid_data(self):
+        self.modes["fabrication"]["disciplines"]["piping"]["kpis"]["scope_total"] += 1
+        current = wb.current_state()
+        for cell, value, message in [("D10", 11, "exceeds"), ("D10", -1, "non-negative"),
+                                     ("A10", "invalid", "valid date"), ("B4", "tonnes", "unit")]:
+            with self.subTest(cell=cell, value=value):
+                content = self.edit(lambda book: setattr(book["Piping - Fabrication"][cell], "value", value))
+                with self.assertRaisesRegex(ValueError, message):
+                    wb.parse_workbook(content, current)
+        self.assertFalse(RundownImport.objects.exists())
+
+    def test_invalid_workbook_identity_and_schema_are_rejected(self):
+        metadata = {"schema": 1, "revision": self.current["revision"], "fingerprint": self.current["fingerprint"]}
+        invalid_metadata = [{**metadata, "schema": 2}, {**metadata, "schema": True},
+                            {**metadata, "revision": ""}, {**metadata, "revision": 1},
+                            {**metadata, "fingerprint": "invalid"}, {**metadata, "fingerprint": None},
+                            {**metadata, "extra": "invalid"}, {"schema": 1}, []]
+        tokens = ["not-a-signature", *[signing.dumps(value, salt=wb.SALT) for value in invalid_metadata]]
+        for token in tokens:
+            with self.subTest(token=token):
+                content = self.edit(lambda book: setattr(book["_metadata"]["A1"], "value", token))
+                with self.assertRaises(ValueError):
+                    wb.parse_workbook(content, self.current)
+        content = self.edit(lambda book: book.remove(book["_metadata"]))
+        with self.assertRaisesRegex(ValueError, "identity"):
+            wb.parse_workbook(content, self.current)
+        self.assertFalse(RundownImport.objects.exists())
+
+    def test_reuploading_older_workbook_without_changes_adds_no_history(self):
+        content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 2))
+        wb.apply_import(wb.parse_workbook(content, self.current), "updated.xlsx", "abc", self.admin)
+        parsed = wb.parse_workbook(content, wb.current_state())
+        self.assertTrue(parsed["rebased"])
+        self.assertEqual(parsed["updates"], {})
+        self.assertEqual(parsed["changes"], [])
+        self.assertIsNone(wb.apply_import(parsed, "same.xlsx", "abc", self.admin))
+        self.assertEqual(RundownImport.objects.count(), 1)
+
+    def test_default_upload_imports_directly(self):
+        content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 2))
+        response = self.client.post(reverse("core:import_rundown"), {
+            "rundown_file": SimpleUploadedFile("direct.xlsx", content),
+        })
+        self.assertRedirects(response, reverse("core:home") + "#s03", fetch_redirect_response=False)
+        batch = RundownImport.objects.get()
+        self.assertEqual(batch.original_filename, "direct.xlsx")
+        self.assertEqual(batch.imported_by_id, self.admin.pk)
+        self.assertEqual(batch.payload["fabrication:piping"]["rows"][0][3], 2)
+
+    def test_modal_direct_import_accepts_old_export_and_repeated_upload(self):
+        url = reverse("core:import_rundown")
+        headers = {"HTTP_X_RUNDOWN_MODAL": "1"}
+        first_content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 3))
+        first = wb.apply_import(wb.parse_workbook(first_content, self.current), "first.xlsx", "first", self.admin)
+        content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 2))
+        response = self.client.post(url, {"action": "import", "rundown_file": SimpleUploadedFile("older.xlsx", content)}, **headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(response.json()["payloads"]["fabrication:piping"]["kpis"]["actual_progress_pct"], 20)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(RundownImport.objects.count(), 2)
+        latest = RundownImport.objects.first()
+        self.assertEqual(latest.base_revision, str(first.revision))
+        self.assertTrue(latest.metadata["rebased"])
+        self.assertEqual(latest.metadata["export_revision"], self.current["revision"])
+        self.assertEqual(latest.metadata["export_fingerprint"], self.current["fingerprint"])
+        response = self.client.post(url, {"rundown_file": SimpleUploadedFile("older.xlsx", content)}, **headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["ok"])
+        self.assertEqual(response.json()["payloads"], {})
+        self.assertEqual(RundownImport.objects.count(), 2)
+
+    def test_direct_import_validates_data_permissions_and_csrf(self):
+        url = reverse("core:import_rundown")
+        invalid = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", -1))
+        response = self.client.post(url, {"rundown_file": SimpleUploadedFile("invalid.xlsx", invalid)})
+        self.assertContains(response, "non-negative", status_code=400)
+        viewer = User.objects.create_user(username="direct-viewer", role="viewer")
+        self.client.force_login(viewer)
+        response = self.client.post(url, {"rundown_file": SimpleUploadedFile("unauthorized.xlsx", self.content)})
+        self.assertEqual(response.status_code, 403)
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.force_login(self.admin)
+        response = csrf_client.post(url, {"rundown_file": SimpleUploadedFile("no-csrf.xlsx", self.content)})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(RundownImport.objects.exists())
+
+    def test_old_export_preview_uses_current_state_and_rejects_later_changes(self):
+        url = reverse("core:import_rundown")
+        first_content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 3))
+        wb.apply_import(wb.parse_workbook(first_content, self.current), "first.xlsx", "first", self.admin)
+        current = wb.current_state()
+        content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 2))
+        response = self.client.post(url, {"action": "preview", "rundown_file": SimpleUploadedFile("older.xlsx", content)})
+        self.assertEqual(response.status_code, 200)
+        token = response.context["preview_token"]
+        parsed = signing.loads(token, salt=PREVIEW_SALT)["parsed"]
+        self.assertTrue(parsed["rebased"])
+        self.assertEqual(parsed["revision"], current["revision"])
+        self.assertEqual(parsed["fingerprint"], current["fingerprint"])
+        self.assertIn({"sheet": "Piping - Fabrication", "day": "2026-09-01", "field": "Actual daily", "before": 3, "after": 2}, parsed["details"])
+        self.assertEqual(RundownImport.objects.count(), 1)
+        self.modes["fabrication"]["disciplines"]["structural"]["kpis"]["scope_total"] += 1
+        response = self.client.post(url, {"action": "apply", "preview_token": token})
+        self.assertContains(response, "Upload the same workbook again.", status_code=400)
+        self.assertEqual(RundownImport.objects.count(), 1)
+        response = self.client.post(url, {"rundown_file": SimpleUploadedFile("older.xlsx", content)})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(RundownImport.objects.count(), 2)
 
     def test_preview_apply_permissions_and_user_bound_token(self):
         url = reverse("core:import_rundown")
@@ -106,7 +251,7 @@ class RundownWorkbookTests(TestCase):
         self.assertEqual(exported.status_code, 200)
         self.assertEqual(exported["Cache-Control"], "no-store")
         content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 2))
-        response = self.client.post(url, {"rundown_file": SimpleUploadedFile("updated.xlsx", content)})
+        response = self.client.post(url, {"action": "preview", "rundown_file": SimpleUploadedFile("updated.xlsx", content)})
         self.assertEqual(response.status_code, 200)
         self.assertFalse(RundownImport.objects.exists())
         token = response.context["preview_token"]
@@ -135,7 +280,7 @@ class RundownWorkbookTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertContains(response, "Choose the exported", status_code=400)
         content = self.edit(lambda book: setattr(book["Piping - Fabrication"]["D10"], "value", 2))
-        response = self.client.post(url, {"rundown_file": SimpleUploadedFile("updated.xlsx", content)}, **headers)
+        response = self.client.post(url, {"action": "preview", "rundown_file": SimpleUploadedFile("updated.xlsx", content)}, **headers)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(RundownImport.objects.exists())
         response = self.client.post(url, {"action": "apply", "preview_token": response.context["preview_token"]}, **headers)

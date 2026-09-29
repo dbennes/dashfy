@@ -1,4 +1,4 @@
-/* Rundown import stays in the dashboard; the server validates every step. */
+/* Rundown import stays in the dashboard; the server validates before saving. */
 (function () {
   "use strict";
   var dialog = document.getElementById("rundownImportDialog");
@@ -16,8 +16,8 @@
     close.disabled = true;
     body.setAttribute("aria-busy", "true");
     var data = form ? new FormData(form) : null;
-    var applying = data && data.get("action") === "apply";
-    status.textContent = applying ? "Applying changes…" : form ? "Checking workbook…" : "Loading import…";
+    var importing = data && data.get("action") !== "preview";
+    status.textContent = importing ? "Importing workbook…" : form ? "Checking workbook…" : "Loading import…";
     body.querySelectorAll("button, input").forEach(function (el) { el.disabled = true; });
     try {
       var response = await fetch(opener.href, {
@@ -47,7 +47,7 @@
         status.textContent = response.ok ? "" : "Please correct the issue shown below.";
       }
     } catch (error) {
-      status.textContent = applying ? error.message + " Check the latest data before retrying." : error.message;
+      status.textContent = importing ? error.message + " Check the latest data before retrying." : error.message;
       if (!body.childElementCount) {
         var retry = document.createElement("button");
         retry.type = "button"; retry.className = "ob-btn"; retry.textContent = "Try again";

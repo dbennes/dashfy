@@ -15,10 +15,10 @@ included. Each row is a daily quantity feeding the chart, not an individual ISO.
    Formulas in editable fields use the calculated results saved by Excel. Recalculate
    and save before uploading; the server does not execute formulas. Missing cached
    results and Excel errors are rejected. Auxiliary columns after H are ignored.
-5. An administrator opens **Import** in the rundown toolbar. The modal lets them
-   upload, review changed sheets/fields and select **Apply changes** without
-   leaving the dashboard. The chart refreshes while keeping the selected mode and
-   discipline. History is available in the same modal.
+5. An administrator opens **Import** in the rundown toolbar, chooses the workbook
+   and selects **Import workbook**. Valid data is saved immediately without a
+   preview or confirmation step. The chart refreshes while keeping the selected
+   mode and discipline. History is available in the same modal.
 
 Dates must be unique and valid. Quantities must be non-negative whole units and
 each series total must not exceed Scope. Actual reports cannot be later than the
@@ -32,10 +32,13 @@ Electrical fabrication is also an empty template until a schedule is supplied.
 
 Accepted updates are append-only `core.RundownImport` records in the default
 database, with author, filename, file hash, revision and changed-sheet summaries.
-Each import retains previous overrides for unchanged sheets. Only the latest
-export/source state can be imported. Previews expire after 30 minutes and are
-bound to the administrator who uploaded the workbook. Concurrent/stale updates
-are rejected rather than overwriting newer work.
+Each import retains previous overrides for unchanged or disabled sheets. Signed
+workbooks from earlier exports are accepted, even when the rundown has changed
+since export; enabled sheets use the uploaded values. Workbook identity, dates,
+quantities and permissions are still validated before saving. The legacy
+preview/apply endpoint remains available for compatibility: previews expire after
+30 minutes, belong to the administrator who uploaded them and cannot be applied
+if the rundown changes after preview.
 
 These updates feed the rundown card. The existing ROS/Skyline workflow, DATAFY
 package records, stage percentages and 3D progress colours keep their existing
@@ -58,9 +61,9 @@ ZIP entries. Worksheets are processed one row at a time, discarding empty format
 cells and auxiliary columns after H. Dimensions are rebuilt from retained cells,
 so formatting through Excel's final row does not count as imported daily rows.
 The retained workbook data still has a 50 MiB limit. No change is made to the
-user's original file. Dates, quantities, scope, identity and revision are validated
+user's original file. Dates, quantities, scope and signed identity are validated
 after compaction, including values obtained from saved formula results.
-The preview log records uploaded byte count and SHA-256 to identify the exact file
+The upload log records uploaded byte count and SHA-256 to identify the exact file
 without logging its data. A valid unchanged workbook reports no changes and is not saved.
 The modal/diagnostic update adds no migration beyond the existing core.0008.
 

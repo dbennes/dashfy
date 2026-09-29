@@ -84,7 +84,7 @@ def export_workbook(current):
              "Grey columns are recalculated on import. Formulas in yellow cells use results saved by Excel: recalculate and save before uploading. Auxiliary columns after H are ignored.",
              "Baseline/lookahead balances are at the start of the day. Actual remaining and Progress % are at the end of the reported day.",
              "Sample Installation data is deliberately exported as empty templates. Fill with real data and choose YES to replace a sample view.",
-             "Import previews changes before applying. Only the latest export can be applied; export again if another user or a source updated the data.",
+             "Import validates and applies the enabled sheets directly against the current data. Earlier exports are accepted; no new export is needed.",
              "Updates feed the Rundown card and are stored in DASHFY history. DATAFY package progress, Skyline and the 3D progress colours remain source-managed."]
     for index, note in enumerate(notes):
         info.write(index, 0, note, header if index == 0 else None)
@@ -183,8 +183,17 @@ def parse_workbook(content, current):
             meta = signing.loads(book["_metadata"].cell(1, 1).value, salt=SALT)
         except (signing.BadSignature, KeyError, TypeError) as exc:
             raise ValueError("Workbook identity is invalid. Export a new workbook.") from exc
-        if meta != {"schema": 1, "revision": current["revision"], "fingerprint": current["fingerprint"]}:
-            raise ValueError("Rundown changed since export. Export again and copy your edits into the new workbook.")
+        if (not isinstance(meta, dict) or set(meta) != {"schema", "revision", "fingerprint"}
+                or type(meta["schema"]) is not int or meta["schema"] != 1
+                or not isinstance(meta["revision"], str) or not meta["revision"]
+                or not isinstance(meta["fingerprint"], str) or len(meta["fingerprint"]) != 64
+                or any(char not in "0123456789abcdef" for char in meta["fingerprint"])):
+            raise ValueError("Workbook identity is invalid. Export a new workbook.")
+        # The signature identifies an exported template, not a write lock.
+        # Compare the uploaded values with the current state even for an older
+        # export. apply_import still checks that this state has not changed
+        # during validation before saving the enabled sheets atomically.
+        rebased = meta["revision"] != current["revision"] or meta["fingerprint"] != current["fingerprint"]
         updates, changes, details = {}, [], []
         detail_count = 0
         for key, title in SHEETS.items():
@@ -231,7 +240,8 @@ def parse_workbook(content, current):
                 detail_count += len(differences)
                 details.extend(dict(item, sheet=title) for item in differences[:max(0, 200-len(details))])
         return {"revision": current["revision"], "fingerprint": current["fingerprint"], "updates": updates,
-                "changes": changes, "details": details, "detail_count": detail_count}
+                "changes": changes, "details": details, "detail_count": detail_count,
+                "rebased": rebased, "export_revision": meta["revision"], "export_fingerprint": meta["fingerprint"]}
     except ParseError as exc:
         raise ValueError("Workbook XML is invalid. Export a new workbook.") from exc
     finally:
@@ -244,7 +254,7 @@ def apply_import(parsed, filename, file_hash, user):
             previous = RundownImport.objects.select_for_update().first()
             current = current_state()
             if parsed["revision"] != current["revision"] or parsed["fingerprint"] != current["fingerprint"]:
-                raise ValueError("Rundown changed after preview. Export again before importing.")
+                raise ValueError("Rundown changed while processing this workbook. Upload the same workbook again.")
             if not parsed["updates"]:
                 return None
             payload = current["overrides"]
@@ -253,9 +263,12 @@ def apply_import(parsed, filename, file_hash, user):
                 payload[key] = table
             return RundownImport.objects.create(base_revision=current["revision"],
                 original_filename=Path(filename.replace("\\", "/")).name[:255], file_hash=file_hash,
-                imported_by_id=user.pk, payload=payload, metadata={"changes": parsed["changes"]})
+                imported_by_id=user.pk, payload=payload, metadata={"changes": parsed["changes"],
+                    "export_revision": parsed.get("export_revision", parsed["revision"]),
+                    "export_fingerprint": parsed.get("export_fingerprint", parsed["fingerprint"]),
+                    "rebased": parsed.get("rebased", False)})
     except IntegrityError as exc:
-        raise ValueError("Another import was applied. Export the latest workbook and retry.") from exc
+        raise ValueError("Another import was applied. Upload the same workbook again.") from exc
 
 
 def chart_payload(key, table, filename):
