@@ -8,7 +8,10 @@ from .fabrication_source import _as_dict, _weekly_overall_value, overall_value, 
 
 
 def line_key(value):
-    return re.sub(r"\s+", "", str(value or "").strip().lstrip("/")).upper()
+    tag = re.sub(r"\s+", "", str(value or "").strip().lstrip("/")).upper()
+    # The model may quote a numeric class (e.g. -"750"-); inch marks,
+    # fractional diameters and branch suffixes remain part of the exact tag.
+    return re.sub(r'-"(\d+)"(?=-|$)', r'-\1', tag)
 
 
 def line_tags(value):
@@ -16,6 +19,34 @@ def line_tags(value):
         text.strip() for text in re.split(r"[,;\n\r]+", str(value or ""))
         if line_key(text) not in {"", "-", "N/A", "NA", "NONE"}
     ))
+
+
+def document_line_tags(document):
+    tags = line_tags(document.get("piping_line_number"))
+    drawing_number = str(document.get("drawing_number") or "").strip()
+    if len(tags) != 1 or not drawing_number:
+        return tags
+    stored_key = line_key(tags[0])
+    rows = str(document.get("raw_text") or "").splitlines()
+    rows = [row.strip() for row in rows]
+    candidates = {}
+    for index in range(len(rows) - 4):
+        if rows[index + 4] != drawing_number:
+            continue
+        candidate = rows[index]
+        match = re.fullmatch(r'TAM26-TP-?\d+[A-Z]*(?:/\d+[A-Z]*)*-(.+)', candidate, re.IGNORECASE)
+        if not match:
+            continue
+        sheet, total, pipe_class = rows[index + 1:index + 4]
+        if not (re.fullmatch(r"[1-9]\d*", sheet) and re.fullmatch(r"[1-9]\d*", total)
+                and int(sheet) <= int(total) and re.fullmatch(r"[A-Z][A-Z0-9]*", pipe_class, re.IGNORECASE)):
+            continue
+        # Only the drawing's title block can restore an authored tie-in tag.
+        # CONT./CONN. references elsewhere in the PDF must not become links.
+        suffix = line_key(match.group(1))
+        if suffix == stored_key or suffix.startswith(stored_key + "/"):
+            candidates.setdefault(line_key(candidate), candidate)
+    return list(candidates.values()) if len(candidates) == 1 else tags
 
 
 def package_state(package):
@@ -58,7 +89,7 @@ def build_review(documents, packages):
     drawings = []
     by_line = {}
     for doc in documents:
-        tags = line_tags(doc.get("piping_line_number"))
+        tags = document_line_tags(doc)
         discipline = review_discipline(doc.get("discipline")) if doc.get("discipline") else ("piping" if tags else "other")
         if discipline != "piping":
             tags = []
@@ -82,7 +113,7 @@ def review_payload():
     with _datafy_conn() as conn:
         cur = conn.cursor()
         documents = _rows(cur, """
-            select id, drawing_number, title, discipline, piping_line_number
+            select id, drawing_number, title, discipline, piping_line_number, raw_text
             from core_document
             order by drawing_number, id
         """)

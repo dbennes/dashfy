@@ -1,6 +1,8 @@
 /* Discipline navigation and exact-geometry fabrication colours for the 3D review. */
 (function () {
-  const key = value => String(value || '').trim().replace(/^\/+/, '').replace(/\s+/g, '').toUpperCase();
+  // Optional quotes around a numeric class are formatting; inch marks and branches are identity.
+  const key = value => String(value || '').trim().replace(/^\/+/, '').replace(/\s+/g, '')
+    .toUpperCase().replace(/-"(\d+)"(?=-|$)/g, '-$1');
   const labels = {not_started: 'Not started', started: 'Started', completed: 'Completed', unlinked: 'No fabrication link'};
   const colors = {not_started: 0x94a3b8, started: 0xf59e0b, completed: 0x38bdf8, unlinked: 0x94a3b8};
   const authError = () => Object.assign(new Error('Session unavailable. Sign in again to load the 3D geometry.'), {code: 'AUTH_REQUIRED'});

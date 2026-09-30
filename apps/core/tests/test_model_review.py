@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase, RequestFactory
 
-from apps.core.model_review import aggregate_status, build_review, line_tags, package_state
+from apps.core.model_review import aggregate_status, build_review, line_key, line_tags, package_state
 from apps.core.views import model_review_view
 
 
@@ -33,6 +33,47 @@ class ModelReviewTests(SimpleTestCase):
 
     def test_fractional_sizes_preserved_and_placeholder_lines_removed(self):
         self.assertEqual(line_tags('3/4"-PM-043117-80-B; N/A\n-'), ['3/4"-PM-043117-80-B'])
+
+    def test_numeric_class_quotes_are_optional_without_losing_tag_identity(self):
+        for quoted, plain in [
+            ('/4"-PG-313047-"750"-FFLT-1H', '4"-PG-313047-750-FFLT-1H'),
+            ('/4"-PG-313050-"750"-FFLT-1H', '4"-PG-313050-750-FFLT-1H'),
+            ('/1-1/2"-CM-423050-"281"-J2', '1-1/2"-CM-423050-281-J2'),
+            ('/3/4"-CM-423050-"281"-J2/B1', '3/4"-CM-423050-281-J2/B1'),
+            ('4"-PG-313050-"750"', '4"-PG-313050-750'),
+        ]:
+            with self.subTest(quoted=quoted):
+                self.assertEqual(line_key(quoted), plain)
+        canonical = line_key('4"-PG-313050-"750"-FFLT-1H')
+        for distinct in ['4-PG-313050-750-FFLT-1H', '6"-PG-313050-750-FFLT-1H',
+                         '4"-PG-313050-750-FFLT-2H', '4"-PG-313050-750-FFLT-1H/B1',
+                         'PG-313050', '3050']:
+            with self.subTest(distinct=distinct):
+                self.assertNotEqual(line_key(distinct), canonical)
+        for unchanged in ['4"-PG-313050-"750A"-FFLT-1H', '4"-PG-313050-"750-FFLT-1H',
+                          '4"-PG-313050-750"-FFLT-1H']:
+            with self.subTest(unchanged=unchanged):
+                self.assertEqual(line_key(unchanged), unchanged)
+
+    def test_quoted_and_unquoted_lines_share_progress_and_unlinked_coverage(self):
+        plain = '4"-PG-313050-750-FFLT-1H'
+        quoted = '4"-PG-313050-"750"-FFLT-1H'
+        docs = [{"id": 1, "drawing_number": "10113", "piping_line_number": plain},
+                {"id": 2, "drawing_number": "10114", "piping_line_number": quoted},
+                {"id": 3, "drawing_number": "10115", "piping_line_number": plain},
+                {"id": 4, "drawing_number": "OTHER-SIZE", "piping_line_number": quoted.replace('4"-', '6"-')},
+                {"id": 5, "drawing_number": "OTHER-SUFFIX", "piping_line_number": quoted.replace('-1H', '-2H')},
+                {"id": 6, "drawing_number": "BRANCH", "piping_line_number": quoted + '/B1'}]
+        packages = [{"document_id": 1, "discipline": "piping", "stages": {"welding": {"pct": 100}}},
+                    {"document_id": 2, "discipline": "piping", "stages": {"welding": {"pct": 20}}}]
+        payload = build_review(docs, packages)
+        self.assertEqual(len(payload["lines"]), 4)
+        line = next(line for line in payload["lines"] if line["key"] == plain)
+        self.assertEqual(line["tag"], plain)
+        self.assertEqual(line["drawing_ids"], ["1", "2", "3"])
+        self.assertEqual(line["status"], "started")
+        self.assertTrue(line["unlinked"])
+        self.assertEqual([doc["lines"] for doc in payload["drawings"][:3]], [[plain], [quoted], [plain]])
 
     def test_all_drawings_aggregate_by_exact_line_and_nonpiping_progress_is_ignored(self):
         docs = [{"id": 1, "drawing_number": "A", "piping_line_number": '4"-DN-123-STD-H'},

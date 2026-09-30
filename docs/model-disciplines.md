@@ -80,3 +80,32 @@ Local benchmark on eight active piping lines, with no selection cache:
 19.039 seconds before, 0.936 seconds after; all eight GLBs had identical SHA256
 hashes. This measures geometry generation, not production network/download time.
 Deploy code and static assets, then restart the application; no migration needed.
+
+## Drawing and line identifiers
+
+Line matching uses the complete tag. Optional paired quotes around a numeric
+class are ignored in both the drawing index and model hierarchy: for example,
+`4"-PG-313050-750-FFLT-1H` matches `/4"-PG-313050-"750"-FFLT-1H`.
+Diameter inch marks, fractional sizes, line numbers, suffixes and branches remain
+significant. Searching for a drawing or the last digits of a line does not create
+an association to a different line.
+
+For TAM26 tie-ins, the stored line field can omit the tie-in prefix or truncate a
+fraction. The review recovers the complete identifier only from a unique title
+block in that same drawing's extracted text: identifier, sheet number, total
+sheets, class, then the exact drawing number. The suffix must match the stored
+tag, or continue that tag at a slash. Continuation references elsewhere in the
+drawing are excluded. Tie-ins keep their own geometry and fabrication status,
+separate from the main line. Extracted text is not sent to the browser and source
+records are not modified.
+
+If neither exact identifier exists in the model, the viewer continues to report
+`no exact 3D match`; resolving that case requires correcting the source data or
+supplying the missing geometry.
+
+Identifier regressions:
+
+```powershell
+node --test apps/core/tests/test_model_review.cjs
+python manage.py test apps.core.tests.test_model_review apps.core.tests.test_model_review_tie_ins apps.core.tests.test_model_selection
+```
