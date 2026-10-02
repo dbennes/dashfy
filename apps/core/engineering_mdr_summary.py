@@ -71,15 +71,23 @@ def mdr_scope_summaries(documents, discipline_order):
                 "discipline": discipline, "total": len(group), "pct": pct(len(group)),
                 "status_cells": [{"value": group_counts[name], "tone": tone, "label": name} for tone, name in columns],
             })
-        finalized = counts["DOCUMENT FINALIZED UNDER FOE"] + counts["DOCUMENT FINALIZED UNDER DED"]
+        finalized = counts["DOCUMENT FINALIZED UNDER FOE"]
         cpy_review = counts["UNDER CPY REVIEW (FOE)"]
         working = sum(count for name, count in counts.items() if name.startswith("MABU WORKING UNDER FOE -"))
+        # KPI denominators cover FOE work only. DED and unclassified records
+        # remain visible in the full MDR chart/table but are not FOE progress.
+        foe_total = finalized + cpy_review + working
+
+        def foe_pct(value):
+            return 100 * value / foe_total if foe_total else 0
+
         result.append({
             "key": key, "label": label, "total": total, "total_pct": 100 if total else 0,
             "available": key == "overall" or category_available,
             "status_rows": status_rows, "discipline_rows": discipline_rows,
-            "finalized": finalized, "finalized_pct": pct(finalized),
-            "cpy_review": cpy_review, "cpy_review_pct": pct(cpy_review),
-            "working": working, "working_pct": pct(working),
+            "foe_total": foe_total,
+            "finalized": finalized, "finalized_pct": foe_pct(finalized),
+            "cpy_review": cpy_review, "cpy_review_pct": foe_pct(cpy_review),
+            "working": working, "working_pct": foe_pct(working),
         })
     return result

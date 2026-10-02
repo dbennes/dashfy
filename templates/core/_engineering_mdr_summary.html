@@ -1,10 +1,10 @@
 {% load humanize tz %}
 {% for scope in monitor.mdr_scopes %}
 <div class="kpi-strip" data-mdr-scope-panel="{{ scope.key }}" {% if not forloop.first %}hidden{% endif %}>
-  <div class="kpi"><div class="lbl"><span class="marker"></span><span>Documents</span></div><div class="val">{{ scope.total|intcomma }}</div><div class="sub">{{ scope.label }}</div></div>
-  <div class="kpi kpi-green"><div class="lbl"><span class="marker"></span><span>Finalized</span></div><div class="val">{{ scope.finalized_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.finalized|intcomma }} finalized under FOE / DED</div></div>
-  <div class="kpi kpi-cyan"><div class="lbl"><span class="marker"></span><span>CPY review</span></div><div class="val">{{ scope.cpy_review_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.cpy_review|intcomma }} under CPY review (FOE)</div></div>
-  <div class="kpi kpi-amber"><div class="lbl"><span class="marker"></span><span>MABU working</span></div><div class="val">{{ scope.working_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.working|intcomma }} working under FOE</div></div>
+  <div class="kpi"><div class="lbl"><span class="marker"></span><span>Documents (FOE)</span></div><div class="val">{{ scope.foe_total|intcomma }}</div><div class="sub">{{ scope.label }} · FOE only</div></div>
+  <div class="kpi kpi-green"><div class="lbl"><span class="marker"></span><span>Finalized (FOE)</span></div><div class="val">{{ scope.finalized_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.finalized|intcomma }} / {{ scope.foe_total|intcomma }} FOE documents</div></div>
+  <div class="kpi kpi-cyan"><div class="lbl"><span class="marker"></span><span>CPY review (FOE)</span></div><div class="val">{{ scope.cpy_review_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.cpy_review|intcomma }} / {{ scope.foe_total|intcomma }} FOE documents</div></div>
+  <div class="kpi kpi-amber"><div class="lbl"><span class="marker"></span><span>MABU working (FOE)</span></div><div class="val">{{ scope.working_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.working|intcomma }} / {{ scope.foe_total|intcomma }} FOE documents</div></div>
 </div>
 {% endfor %}
 

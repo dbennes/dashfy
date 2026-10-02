@@ -15,6 +15,11 @@ both panels between all documents and ENG. CATEGORY **CAT 0/1 + CAT 2**.
 The top-level AFC and Issued indicators retain the current **Code Status**
 classification. Historical DED Code Status columns are not used as current data.
 
+The four S01 KPI cards measure FOE only within the selected scope. Documents
+counts MABU working under FOE + CPY review (FOE) + Finalized FOE. Each percentage
+divides its FOE status count by that FOE total. Finalized DED and unknown statuses
+remain in the full MDR chart/table, but do not enter the FOE KPI denominators.
+
 ## First deployment
 
 Push/pull transfers code, not the PostgreSQL imports. Transfer the supplied

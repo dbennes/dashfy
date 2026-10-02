@@ -147,6 +147,35 @@ class MdrImportTests(TestCase):
 
 
 class MdrScopeSummaryTests(SimpleTestCase):
+    def test_foe_kpis_exclude_ded_in_each_scope_without_changing_full_mdr(self):
+        overall_counts = [35, 3, 5, 0, 275, 73, 264, 789]
+        fabrication_counts = [35, 3, 5, 0, 260, 71, 264, 429]
+        docs = [
+            {"document_status_original": label, "discipline": "PIPING",
+             "engineering_category": "CAT 2" if index < fabrication else "CAT 3"}
+            for (_, label), overall, fabrication in zip(MDR_STATUSES, overall_counts, fabrication_counts)
+            for index in range(overall)
+        ]
+        scopes = mdr_scope_summaries(docs, ["PIPING"])
+        for scope, total, foe, review, working in zip(scopes, (1444, 1067), (655, 638), (73, 71), (318, 303)):
+            with self.subTest(scope=scope["key"]):
+                self.assertEqual(scope["total"], total)
+                self.assertEqual(sum(row["value"] for row in scope["status_rows"]), total)
+                self.assertEqual(scope["foe_total"], foe)
+                self.assertEqual(scope["finalized"], 264)
+                self.assertAlmostEqual(scope["finalized_pct"], 264 / foe * 100)
+                self.assertAlmostEqual(scope["cpy_review_pct"], review / foe * 100)
+                self.assertAlmostEqual(scope["working_pct"], working / foe * 100)
+                self.assertAlmostEqual(scope["finalized_pct"] + scope["cpy_review_pct"] + scope["working_pct"], 100)
+
+    def test_ded_only_and_unknown_documents_do_not_create_foe_progress(self):
+        docs = [{"document_status_original": label, "discipline": "PIPING", "engineering_category": "CAT 2"}
+                for label in ("DOCUMENT FINALIZED UNDER DED", "NEW STATUS")]
+        for scope in mdr_scope_summaries(docs, ["PIPING"]):
+            self.assertEqual(scope["total"], 2)
+            for field in ("foe_total", "finalized", "finalized_pct", "cpy_review_pct", "working_pct"):
+                self.assertEqual(scope[field], 0)
+
     def test_scope_totals_status_columns_and_discipline_totals_reconcile(self):
         docs = [
             {"document_status_original": label, "discipline": "PIPING", "engineering_category": category}
