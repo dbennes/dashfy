@@ -59,6 +59,27 @@ class MdrCodeStatusTests(SimpleTestCase):
 
 
 class MdrImportTests(TestCase):
+    def test_legacy_active_base_never_appears_under_mdr_headings(self):
+        legacy = EngineeringMonitorImport.objects.create(
+            original_filename="old-engineering.xlsx", file_hash="legacy",
+            metadata={"import_mode": "official_aol"},
+            payload={"documents": [{"document_number": "OLD-1", "discipline": "PIPING",
+                                    "document_status_original": "ISSUED", "is_monitored": True,
+                                    "is_countable": True}]},
+        )
+        monitor = _engineering_monitor_from_snapshot({})
+        self.assertEqual(monitor["flow"]["total"], 0)
+        self.assertIn("current MDR", monitor["error"])
+        self.assertIsNone(monitor["import_id"])
+        self.assertTrue(all(len(scope["status_rows"]) == 8 for scope in monitor["mdr_scopes"]))
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "FOE MDR.xlsx"
+            path.write_bytes(mdr_upload().read())
+            call_command("import_engineering_mdr", str(path), initial_only=True, verbosity=0)
+        legacy.refresh_from_db()
+        self.assertFalse(legacy.is_active)
+        self.assertEqual(_engineering_monitor_from_snapshot({})["flow"]["total"], 2)
+
     def test_initial_command_imports_workbook_and_preserves_future_uploads(self):
         with TemporaryDirectory() as folder:
             path = Path(folder) / "FOE MDR.xlsx"

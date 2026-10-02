@@ -4122,6 +4122,10 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
         return _engineering_monitor_empty("Engineering monitor table is not migrated.")
     if latest is None:
         return _engineering_monitor_empty("No active engineering base import.")
+    if (latest.metadata or {}).get("import_mode") != "mdr_engineering":
+        return _engineering_monitor_empty(
+            "Import the current MDR spreadsheet provided by Engineering. The previous engineering base is not an MDR."
+        )
 
     payload = latest.payload or {}
     raw_docs = [_engineering_monitor_normalized_doc(dict(doc)) for doc in list(payload.get("documents") or [])]
