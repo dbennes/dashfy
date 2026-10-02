@@ -1,0 +1,9 @@
+.fab-batch-heading{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.fab-batch-heading h3{min-width:0}
+.fab-batch-import{position:relative;display:inline-flex;font-size:9px;white-space:nowrap;border:1px solid #ffffff24;border-radius:3px;padding:3px 6px;cursor:pointer;color:#cbd5e1}
+.fab-batch-import input{position:absolute;inset:0;width:100%;opacity:0;cursor:pointer}
+.fab-batch-import:focus-within{outline:1px solid #60a5fa}
+.fab-batch-controls{display:flex;flex-wrap:wrap;gap:3px;margin:5px 0}
+.fab-batch-controls button{border:1px solid transparent;border-radius:3px;background:transparent;color:#94a3b8;font:inherit;font-size:9px;padding:3px 6px;cursor:pointer}
+.fab-batch-controls button[aria-pressed="true"]{color:#f1f5f9;border-color:#ffffff30;background:#ffffff0d}
+.fab-batch-source{font-size:8px;color:#8491a5;line-height:1.5;margin-top:4px;overflow-wrap:anywhere}

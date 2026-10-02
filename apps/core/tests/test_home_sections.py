@@ -205,7 +205,7 @@ class HomeSectionLayoutTests(TestCase):
 
     def test_fabrication_section_has_the_three_charts_and_the_table(self):
         """O usuario pediu explicitamente os graficos e a tabela do SPDM."""
-        response = self.client.get(reverse("core:home"))
+        response = self.client.get(reverse("core:dashboard_content"))
         html = response.content.decode("utf-8")
 
         for canvas_id in ("fabCurve", "fabCampChart", "fabStageChart"):

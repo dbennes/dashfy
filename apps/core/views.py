@@ -33,7 +33,7 @@ from apps.core.p6_import import import_p6_curves_workbook
 from apps.core.supply_snapshot_filters import normalized_supply_snapshot_filters
 from apps.exports.models import ExportLog
 from apps.core import real_sources
-from apps.core import ros_workbook, rundown_workbook
+from apps.core import ros_workbook, rundown_workbook, fabrication_batches
 from apps.core.response_timing import ResponseTiming
 from apps.core.dashboard_cache import fresh_sources
 
@@ -511,6 +511,7 @@ def home_view(request):
         "announcements": announcements,
         "manager": manager,
         "fabrication": fabrication,
+        "fabrication_batches": fabrication_batches.current_batches(),
         "rundown": rundown,
         "rundown_disciplines": rundown_disciplines,
         "rundown_modes": rundown_modes,

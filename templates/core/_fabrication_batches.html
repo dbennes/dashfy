@@ -1,0 +1,26 @@
+{% load tz %}
+<div class="fab-chart-card fab-batches-card">
+  <div class="sn-rail" data-note-panel="fabrication-tonnage" data-note-label="Fabrication by batch"></div>
+  <div class="fab-batch-heading">
+    <h3><i class="bi bi-bar-chart"></i> Fabrication by batch</h3>
+    {% if user.is_admin %}
+    <form action="{% url 'core:import_fabrication_batches' %}" method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <label class="fab-batch-import">Import batches<input type="file" name="batch_file" accept=".xlsx" aria-label="Import batch workbook" onchange="this.form.requestSubmit()"></label>
+    </form>
+    {% endif %}
+  </div>
+  <div class="fab-batch-controls" role="group" aria-label="Batch discipline">
+    <button type="button" data-batch-scope="all" aria-pressed="true">All</button>
+    <button type="button" data-batch-scope="structural" aria-pressed="false">Structural · SPS</button>
+    <button type="button" data-batch-scope="piping" aria-pressed="false">Piping · Dummy spools</button>
+  </div>
+  <div class="sub" id="fabBatchSummary" aria-live="polite">Listed items · fabrication marked OK</div>
+  <div class="cv"><canvas id="fabCampChart" role="img" aria-label="Listed and fabricated items by batch"></canvas></div>
+  {% if fabrication_batches %}
+  <div class="fab-batch-source" title="{{ fabrication_batches.filename }}">Batch workbook · {{ fabrication_batches.filename }}<br>Imported {{ fabrication_batches.updated_at|timezone:"Africa/Lagos"|date:"d/m/Y H:i" }} WAT</div>
+  {% else %}
+  <div class="fab-batch-source">Import the SPS / Dummy Spools batch workbook.</div>
+  {% endif %}
+  {{ fabrication_batches.payload|default:None|json_script:"fabBatchData" }}
+</div>

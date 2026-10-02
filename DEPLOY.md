@@ -315,3 +315,26 @@ Atualize com `git pull --ff-only`, execute `python manage.py collectstatic
 --noinput` e `python manage.py check`, e reinicie o servico web. Nao ha novas
 migrations. Valide que History abre durante o carregamento e que os graficos,
 Rundown, filtros e 3D continuam funcionando apos a chegada dos dados.
+
+### Fabrication by batch (2 outubro 2026)
+
+O card de campanhas agora usa a planilha SPS / Dummy Spools. Antes de reiniciar,
+execute `python manage.py migrate --noinput` (core.0011), seguido de
+`python manage.py collectstatic --noinput` e `python manage.py check`.
+No dashboard, como administrador, use **Import batches** no card
+**Fabrication by batch** e selecione o arquivo XLSX original. Alternativa:
+
+```powershell
+python manage.py import_fabrication_batches "C:\dados\batch-workbook.xlsx"
+```
+
+A importacao e privada e persistida no banco. O XLSX nao e incluido no Git.
+Cada importacao substitui a visualizacao atual sem somar snapshots anteriores.
+O card mostra quantidades de linhas de itens, nao tonelagem: Structural =
+SPS com tag SPS-; Piping = Dummy Spools (incluindo angular). Linhas NA/no SPS
+required e cabecalhos nao entram. Codigos repetidos permanecem como linhas
+listadas, nao sao apresentados como suportes unicos. Apenas Fabrication = OK
+conta como fabricado; ONGOING e celulas vazias nao contam como concluidas.
+Dummy Spools usam o batch da linha associada, ou do desenho quando a linha
+nao coincide; conflitos/itens sem correspondencia aparecem em Unassigned.
+Os sub-batches sao mantidos. Data e nome do arquivo aparecem no rodape.

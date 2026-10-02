@@ -26,7 +26,7 @@ PANELS = {
     "supply-pending": ("s02", "Finalized drawings and material pending items"),
     "supply-materials": ("s02", "Drawing and material register"),
     "fabrication-curve": ("s03", "Piping ISO fabrication S-curve"),
-    "fabrication-tonnage": ("s03", "Tonnage by campaign"),
+    "fabrication-tonnage": ("s03", "Fabrication by batch"),
     "fabrication-stages": ("s03", "Progress by stage"),
     "fabrication-drawings": ("s03", "Fabrication drawing register"),
     "piping-rundown": ("s03", "Piping ISO rundown"),

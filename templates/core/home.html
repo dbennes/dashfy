@@ -7,6 +7,7 @@
 {% block project_horiz %}{{ manager.p6.kpis.start_label|default:"31/05/24" }} → {{ manager.p6.kpis.finish_label|default:"30/06/27" }}{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/fabrication-batches.css' %}?v=20261002">
 <link rel="stylesheet" href="{% static 'css/section-notes.css' %}?v=20260924-panels">
 <link rel="stylesheet" href="{% static 'css/rundown-import.css' %}?v=20260924">
 {# S03 · Dashboard de Fabricacao — ilha visual escopada em #s03 #}
@@ -387,7 +388,7 @@
     <div class="section-head">
       <div>
         <span class="tag">S01 · Engineering</span>
-        <h2>Engineering status monitor</h2>
+        <h2>Engineering Follow-up</h2>
       </div>
       <div class="meta p6-source-meta c3-meta-inline c3-engineering-source">
         <div class="c3-meta-line">
@@ -937,12 +938,7 @@
         <div class="sub">weekly, ending Friday · planned P6 Start/Finish vs actual ({% if fab.charts.curve.actual_source == "weekly_workbook" %}total % Progress from ISOlines update column W{% else %}dated piping progress entries{% endif %})</div>
         <div class="cv"><canvas id="fabCurve"></canvas></div>
       </div>
-      <div class="fab-chart-card">
-        <div class="sn-rail" data-note-panel="fabrication-tonnage" data-note-label="Tonnage by campaign"></div>
-        <h3><i class="bi bi-bar-chart"></i> Tonnage by campaign</h3>
-        <div class="sub">planned vs fabricated (weighted overall %)</div>
-        <div class="cv"><canvas id="fabCampChart"></canvas></div>
-      </div>
+      {% include 'core/_fabrication_batches.html' %}
       <div class="fab-chart-card">
         <div class="sn-rail" data-note-panel="fabrication-stages" data-note-label="Progress by stage"></div>
         <h3><i class="bi bi-bar-chart-steps"></i> Progress by stage</h3>
@@ -1763,6 +1759,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/fabrication-batches.js' %}?v=20261002"></script>
 <script src="{% static 'js/engineering-mdr.js' %}?v=20261002-status-scopes" defer></script>
 {% if not dashboard_fragment %}
 {% include 'core/_section_notes.html' %}
@@ -3928,26 +3925,7 @@
         curve.parentElement.innerHTML = '<div class="fab-chart-empty">No P6 schedule points yet.</div>';
       }
 
-      var camp = document.getElementById("fabCampChart");
-      if (camp && CHARTS.campaign.labels.length) {
-        new Chart(camp, {
-          type: "bar",
-          data: {
-            labels: CHARTS.campaign.labels,
-            datasets: [
-              { label: "Planned (t)", data: CHARTS.campaign.planned, backgroundColor: "rgba(255,255,255,0.12)", borderColor: "rgba(255,255,255,0.30)", borderWidth: 1 },
-              { label: "Fabricated (t)", data: CHARTS.campaign.done, backgroundColor: "rgba(34,197,94,.8)" }
-            ]
-          },
-          options: {
-            maintainAspectRatio: false,
-            plugins: { legend: { position: "top", align: "end", labels: { boxWidth: 10, boxHeight: 8 } } },
-            scales: { y: { beginAtZero: true, grid: { color: GRID } }, x: { grid: { display: false } } }
-          }
-        });
-      } else if (camp) {
-        camp.parentElement.innerHTML = '<div class="fab-chart-empty">No tonnage to show yet.</div>';
-      }
+      window.DashfyBatchChart.init();
 
       var st = document.getElementById("fabStageChart");
       if (st) {

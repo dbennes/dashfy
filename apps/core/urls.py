@@ -1,10 +1,11 @@
 from django.urls import path
 
-from . import views, ros_views, rundown_views, section_notes
+from . import views, ros_views, rundown_views, section_notes, fabrication_batches
 
 app_name = "core"
 
 urlpatterns = [
+    path("fabrication/batches/import/", fabrication_batches.import_batches_view, name="import_fabrication_batches"),
     path("section-notes/", section_notes.notes, name="section_notes"),
     path("section-notes/<int:pk>/status/", section_notes.change_status, name="section_note_status"),
     path("section-notes/minutes.xlsx", section_notes.export_minutes, name="section_minutes"),
