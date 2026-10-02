@@ -103,11 +103,13 @@ test('history fades against actual time rather than making old imports look rece
   const now = Date.parse('2026-09-28T12:00:00Z');
   const older = ui.trackStyle(Date.parse('2026-09-18T15:41:00Z'), now);
   const recent = ui.trackStyle(now, now);
-  assert.equal(older.color, '#94a3b8');
+  assert.equal(older.color, '#cbd5e1');
   assert.equal(recent.color, '#3b82f6');
-  assert.ok(older.weight < recent.weight && recent.weight < 2);
-  assert.ok(older.opacity < recent.opacity && older.opacity >= .5);
-  assert.equal(older.dashArray, '3 6');
+  assert.ok(older.weight >= 2.5 && older.weight < recent.weight);
+  assert.ok(older.opacity < recent.opacity && older.opacity >= .9);
+  assert.equal(older.dashArray, '6 5');
+  assert.equal(older.pane, 'vtTrackPane');
+  assert.equal(recent.pane, 'vtTrackPane');
   assert.equal(ui.trackStyle(now - 86400000, now).color, recent.color);
 });
 

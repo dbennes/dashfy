@@ -1,5 +1,5 @@
 {% extends dashboard_base|default:"base.html" %}
-{% load humanize static l10n %}
+{% load humanize static l10n tz %}
 {% block title %}Cockpit · {{ APP_NAME }}{% endblock %}
 {% block crumb_current %}COCKPIT{% endblock %}
 {% block project_code %}BN-EPC1{% endblock %}
@@ -27,12 +27,12 @@
   <span class="lbl">PLAN</span>
   <span class="val">{{ manager.p6.kpis.planned_today_pct|default:0|floatformat:2 }}%</span>
 </div>
-<div class="tb-ticker" title="DED documents in AFC / revision C">
+<div class="tb-ticker" title="MDR documents with AFC Code Status">
   <span class="lbl">AFC</span>
   <span class="val">{{ manager.construction.engineering_flow.afc_pct|default:0|floatformat:1 }}%</span>
   <span class="delta flat">{{ manager.construction.engineering_flow.afc|default:0|intcomma }}</span>
 </div>
-<div class="tb-ticker" title="Issued / released DED documents">
+<div class="tb-ticker" title="Issued / released MDR documents">
   <span class="lbl">ISSUED</span>
   <span class="val">{{ manager.construction.engineering_flow.issued_pct|default:0|floatformat:1 }}%</span>
   <span class="delta flat">{{ manager.construction.engineering_flow.issued|default:0|intcomma }}</span>
@@ -383,7 +383,7 @@
 {# ===== S01 — ENGINEERING ===== #}
 <section id="s01" class="section">
   {% with monitor=manager.construction.engineering_monitor %}
-  <div id="s01-monitor">
+  <div id="s01-monitor" data-mdr-monitor>
     <div class="section-head">
       <div>
         <span class="tag">S01 · Engineering</span>
@@ -391,9 +391,9 @@
       </div>
       <div class="meta p6-source-meta c3-meta-inline c3-engineering-source">
         <div class="c3-meta-line">
-          <b>{{ monitor.flow.total|default:0|intcomma }}</b> monitored docs · <b>{{ monitor.summary|length }}</b> disciplines
+          <b data-mdr-total>{{ monitor.flow.total|default:0|intcomma }}</b> monitored docs · <b>{{ monitor.summary|length }}</b> disciplines
           {% if monitor.source_mode == "postgres_import" %}
-            · Engineering base · import #{{ monitor.import_id }} · {{ monitor.imported_at|date:"d/m/Y H:i" }}
+            · MDR · import #{{ monitor.import_id }} · {% timezone "Africa/Lagos" %}{{ monitor.imported_at|date:"d/m/Y H:i" }} WAT{% endtimezone %}
           {% else %}
             · {{ monitor.error|default:"No active engineering base import" }}
           {% endif %}
@@ -404,16 +404,16 @@
         {% if monitor.source_mode == "postgres_import" or request.user.is_admin %}
           <div class="c3-source-actions" aria-label="Engineering monitor source actions">
             {% if monitor.source_mode == "postgres_import" %}
-              <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_engineering_monitor' %}" download title="Exportar base normalizada editavel">
+              <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_engineering_monitor' %}" download title="Exportar dados normalizados do MDR">
                 <i class="bi bi-download"></i><span>Exportar base</span>
               </a>
             {% endif %}
             {% if request.user.is_admin %}
             <form class="p6-import-form" action="{% url 'core:import_engineering_monitor' %}" method="post" enctype="multipart/form-data">
               {% csrf_token %}
-              <label class="p6-import-btn c3-monitor-action" title="Importar planilha bruta de engenharia ou base editada">
+              <label class="p6-import-btn c3-monitor-action" title="Importar planilha MDR fornecida pela Engenharia">
                 <input type="file" name="engineering_monitor_file" accept=".xlsx,.xlsm" onchange="this.form.submit()">
-                <span>Importar base</span>
+                <span>Importar MDR</span>
               </label>
             </form>
             {% endif %}
@@ -422,143 +422,7 @@
       </div>
     </div>
 
-    {% with mf=monitor.flow %}
-    <div class="kpi-strip">
-      <div class="kpi">
-        <div class="lbl"><span class="marker"></span><span>Documents</span></div>
-        <div class="val">{{ mf.total|default:0|intcomma }}</div>
-        <div class="sub">Monitored engineering documents</div>
-      </div>
-      <div class="kpi kpi-green">
-        <div class="lbl"><span class="marker"></span><span>AFC status</span></div>
-        <div class="val">{{ mf.afc_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
-        <div class="sub">{{ mf.afc|default:0|intcomma }} AFC 1 / AFC 3A documents</div>
-      </div>
-      <div class="kpi kpi-amber">
-        <div class="lbl"><span class="marker"></span><span>Under Review</span></div>
-        <div class="val">{{ mf.in_engineering_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
-        <div class="sub">{{ mf.in_engineering|default:0|intcomma }} MABU under review</div>
-      </div>
-      <div class="kpi kpi-cyan">
-        <div class="lbl"><span class="marker"></span><span>Issued / IFI</span></div>
-        <div class="val">{{ mf.issued_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
-        <div class="sub">{{ mf.issued|default:0|intcomma }} classified as issued</div>
-      </div>
-    </div>
-
-    <div class="row-2 c3-engineering-layout">
-      <div class="card">
-        <div class="sn-rail" data-note-panel="engineering-status" data-note-label="Monitor documents by status"></div>
-        <div class="card-head">
-          <div class="lhs">
-            <span class="tag">STATUS</span>
-            <h3>Monitor documents by status</h3>
-          </div>
-          <div class="rhs">DOCS · IFR · IFA · AFC 3 · UNDER REVIEW · AFC</div>
-        </div>
-        <div class="card-body flush">
-          {% if mf.total %}
-          <div class="barchart">
-            <div class="yaxis">
-              <span>{{ mf.total|intcomma }}</span>
-              <span>{% widthratio mf.total 4 3 %}</span>
-              <span>{% widthratio mf.total 2 1 %}</span>
-              <span>{% widthratio mf.total 4 1 %}</span>
-              <span>0</span>
-            </div>
-            <div class="plot">
-              <div class="bar is-total" style="--h: 100%"><span class="dlabel">{{ mf.total|intcomma }}</span></div>
-              <div class="bar is-ifr" style="--h: {% widthratio mf.ifr mf.total 100 %}%"><span class="dlabel">{{ mf.ifr|default:0|intcomma }}</span></div>
-              <div class="bar is-ifa" style="--h: {% widthratio mf.ifa mf.total 100 %}%"><span class="dlabel">{{ mf.ifa|default:0|intcomma }}</span></div>
-              <div class="bar is-afc3" style="--h: {% widthratio mf.afc_code3 mf.total 100 %}%"><span class="dlabel">{{ mf.afc_code3|default:0|intcomma }}</span></div>
-              <div class="bar is-under-review" style="--h: {% widthratio mf.in_engineering mf.total 100 %}%"><span class="dlabel">{{ mf.in_engineering|default:0|intcomma }}</span></div>
-              <div class="bar is-afc" style="--h: {% widthratio mf.afc mf.total 100 %}%"><span class="dlabel">{{ mf.afc|default:0|intcomma }}</span></div>
-            </div>
-            <div class="xaxis">
-              <span>DOCS</span><span>IFR</span><span>IFA</span><span>AFC 3</span><span>UNDER REVIEW</span><span>AFC</span>
-            </div>
-          </div>
-          <div class="legend">
-            <span><i style="background: var(--fg-0)"></i>Total</span>
-            <span><i style="background: var(--signal-cyan)"></i>IFR — issued for review</span>
-            <span><i style="background: var(--signal-amber)"></i>IFA — issued for approval</span>
-            <span><i style="background: var(--signal-violet)"></i>AFC 3 — separated</span>
-            <span><i style="background: var(--signal-red)"></i>Under Review</span>
-            <span><i style="background: var(--signal-green)"></i>AFC — AFC 1, AFC 3A</span>
-          </div>
-          {% else %}
-          <div class="card-body" style="text-align:center; color: var(--fg-3); padding: var(--s-5);">No engineering base imported.</div>
-          {% endif %}
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="sn-rail" data-note-panel="engineering-disciplines" data-note-label="Monitor status by discipline"></div>
-        <div class="card-head">
-          <div class="lhs">
-            <span class="tag">DOCS</span>
-            <h3>Monitor status by discipline</h3>
-          </div>
-          <div class="rhs"><b>{{ monitor.summary|length }}</b> disciplines</div>
-        </div>
-        <div class="card-body flush">
-          <div class="scroll-y c3-discipline-scroll c3-monitor-scroll" style="--max-h: 360px">
-            <table class="tbl c3-monitor-table">
-              <thead>
-                <tr>
-                  <th>Discipline</th>
-                  <th class="num">Docs</th>
-                  <th class="num">%</th>
-                  <th class="num">NI</th>
-                  <th class="num">IFR</th>
-                  <th class="num">IFA</th>
-                  <th class="num">IFI</th>
-                  <th class="num">AFC 1</th>
-                  <th class="num">AFC 3</th>
-                  <th class="num">AFC CODE 3A</th>
-                  <th class="num">UNDER REVIEW</th>
-                  <th class="num">Obs.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in monitor.summary %}
-                  <tr>
-                    <td><span class="pill">{{ row.discipline }}</span></td>
-                    <td class="num"><b>{{ row.total|intcomma }}</b></td>
-                    <td class="num dim">{{ row.pct_total|floatformat:1 }}%</td>
-                    <td class="num"><span class="rev-tag r">{{ row.not_issued|default:0 }}</span></td>
-                    <td class="num"><span class="rev-tag r">{{ row.ifr|default:0 }}</span></td>
-                    <td class="num"><span class="rev-tag a">{{ row.ifa|default:0 }}</span></td>
-                    <td class="num"><span class="rev-tag r">{{ row.ifi|default:0 }}</span></td>
-                    <td class="num"><span class="rev-tag c">{{ row.afc_code1|default:0 }}</span></td>
-                    <td class="num"><span class="rev-tag a">{{ row.afc_code3|default:0 }}</span></td>
-                    <td class="num"><span class="rev-tag code3a">{{ row.afc_code3a|default:0 }}</span></td>
-                    <td class="num"><span class="rev-tag c">{{ row.under_review|default:0 }}</span></td>
-                    <td class="num c3-note-cell">
-                      {% if row.remarks %}
-                        <button class="c3-note-popover" type="button" aria-label="Monitor note for {{ row.discipline }}" aria-expanded="false">
-                          <i class="bi bi-chat-left-text"></i>
-                          <span class="c3-note-tooltip" role="tooltip">
-                            <b>{{ row.discipline }}</b>
-                            <small>Monitor note</small>
-                            <em>{{ row.remarks }}</em>
-                          </span>
-                        </button>
-                      {% else %}
-                        <span class="c3-note-empty" aria-label="No note"><i class="bi bi-chat-left-text"></i></span>
-                      {% endif %}
-                    </td>
-                  </tr>
-                {% empty %}
-                  <tr><td colspan="12" style="text-align:center; color:var(--fg-3); padding: var(--s-4);">No monitor documents.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-    {% endwith %}
+    {% include "core/_engineering_mdr_summary.html" %}
   </div>
   {% endwith %}
 </section>
@@ -1899,6 +1763,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{% static 'js/engineering-mdr.js' %}?v=20261002-status-scopes" defer></script>
 {% if not dashboard_fragment %}
 {% include 'core/_section_notes.html' %}
 <script src="{% static 'js/section-notes.js' %}?v=20260928-priority" defer></script>
@@ -1912,7 +1777,7 @@
 </dialog>
 <script src="{% static 'js/rundown-import.js' %}?v=20260929-direct-import" defer></script>
 {% endif %}
-<script src="{% static 'js/vessel-tracking.js' %}?v=20260928-water-route" defer></script>
+<script src="{% static 'js/vessel-tracking.js' %}?v=20261002-visible-water-track" defer></script>
 <script src="{% static 'js/model-review-modal.js' %}?v=20260928" defer></script>
 <script type="module" src="{% static 'js/vessel-hologram.js' %}?v=20260928-modal-scroll"></script>
 {{ block.super }}

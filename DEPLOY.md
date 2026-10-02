@@ -104,6 +104,10 @@ python manage.py check --deploy
 
 ## 6. Rodar com Gunicorn
 
+Para a primeira carga da Engenharia MDR e futuras atualizacoes pelo botao
+**Importar MDR**, siga [o guia da Engenharia](docs/engineering-mdr.md).
+O comando `import_engineering_mdr --initial-only` preserva um MDR ja ativo.
+
 O rastreamento de embarcacoes usa importacao de relatorios por padrao. Nao
 precisa de chave AISStream nem de processo `listen_ais`. Aplique as migrations
 no PostgreSQL do DASHFY para armazenar navios e historico importado.

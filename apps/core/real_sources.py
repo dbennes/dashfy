@@ -16,7 +16,8 @@ from django.db.utils import OperationalError, ProgrammingError
 from apps.eclic.api_client import EclicAPIError, EclicClient
 from apps.core.datafy_drawings_scope import supply_scope_exclusions
 from apps.core.datafy_po_presence import blocked_material_ids
-from apps.core.engineering_monitor_import import monitor_discipline_order, normalize_monitor_discipline
+from apps.core.engineering_monitor_import import MDR_SOURCE, monitor_discipline_order, normalize_monitor_discipline
+from apps.core.engineering_mdr_summary import mdr_scope_summaries
 from apps.core.models import DatafySupplySnapshot, EngineeringMonitorImport, EngineeringStatusImport, P6CurveImport
 from apps.core.supply_snapshot_filters import (
     hash_supply_snapshot_filters,
@@ -4027,13 +4028,14 @@ _ENGINEERING_MONITOR_ISSUED_STATUSES = {*_ENGINEERING_MONITOR_AFC_STATUSES, "AFC
 
 def _engineering_monitor_empty(error: str = "") -> dict[str, Any]:
     return {
-        "source": "Engineering base monitor",
+        "source": MDR_SOURCE,
         "source_mode": "postgres_import_missing",
         "error": error,
         "import_id": None,
         "imported_at": None,
         "source_file_name": "",
         "detail_sheet": "",
+        "mdr_scopes": mdr_scope_summaries([], []),
         "document_count": 0,
         "raw_document_count": 0,
         "excluded_count": 0,
@@ -4082,6 +4084,10 @@ def _engineering_monitor_flow(docs: list[dict[str, Any]]) -> dict[str, Any]:
         "total": total,
         "afc": afc,
         "afc_pct": _engineering_monitor_pct(afc, total),
+        "not_issued": sum(doc.get("status_bucket") == "NI" for doc in docs),
+        "ifi": sum(doc.get("status_bucket") == "IFI" for doc in docs),
+        "rejected": sum(doc.get("status_bucket") == "REJECTED" for doc in docs),
+        "unclassified": sum(doc.get("status_bucket") == "UNCLASSIFIED" for doc in docs),
         "ifr": ifr,
         "ifr_pct": _engineering_monitor_pct(ifr, total),
         "ifa": ifa,
@@ -4188,6 +4194,7 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
             "afc_code3": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "AFC 3"),
             "afc_code3a": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in _ENGINEERING_MONITOR_AFC_3A_STATUSES),
             "under_review": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "UNDER REVIEW"),
+            "other": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in {"REJECTED", "UNCLASSIFIED", "N/A"}),
             "issued": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") in _ENGINEERING_MONITOR_ISSUED_STATUSES),
             "in_engineering": sum(1 for doc in docs_for_discipline if doc.get("status_bucket") == "UNDER REVIEW"),
             "excluded": sum(excluded_counts.values()),
@@ -4229,7 +4236,7 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
     )[:24]
 
     return {
-        "source": "Engineering base monitor",
+        "source": (latest.metadata or {}).get("source_label", "Engineering base monitor"),
         "source_mode": "postgres_import",
         "error": "",
         "import_id": latest.pk,
@@ -4238,6 +4245,7 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
         "detail_sheet": latest.detail_sheet,
         "document_count": total,
         "raw_document_count": latest.document_count,
+        "mdr_scopes": mdr_scope_summaries(filtered_docs, discipline_order),
         "excluded_count": latest.excluded_count,
         "flow": _engineering_monitor_flow(filtered_docs),
         "summary": summary,
@@ -4659,10 +4667,43 @@ def _engineering_from_eclic_api(filters: dict) -> dict:
     }
 
 
+def _engineering_dashboard_from_monitor(monitor: dict) -> dict:
+    """Use the same imported workbook for all cockpit engineering indicators."""
+    result = _engineering_empty(monitor["error"])
+    result.update({key: monitor.get(key) for key in (
+        "source", "source_mode", "import_id", "imported_at", "source_file_name", "detail_sheet",
+    )})
+    result.update({
+        "engineering_docs": monitor["flow"]["total"],
+        "engineering_flow": monitor["flow"],
+        "engineering_counts": {
+            "disciplines": len(monitor["summary"]),
+            "revisions": monitor["metadata"].get("revision_count", 0),
+            "issued": monitor["flow"]["issued"],
+            "in_engineering": monitor["flow"]["in_engineering"],
+        },
+        "engineering_summary": monitor["summary"],
+        "engineering_revision_rows": monitor["revision_rows"],
+        "engineering_status_rows": monitor["status_rows"],
+        "engineering_documents": monitor["documents"],
+        "engineering_discipline_groups": [
+            {"label": row["discipline"], "total": row["total"], "pct": row["pct_total"]}
+            for row in monitor["summary"]
+        ],
+    })
+    result["choices"]["engineering_disciplines"] = [
+        {"value": row["discipline"], "label": row["discipline"]} for row in monitor["summary"]
+    ]
+    result["choices"]["engineering_statuses"] = [
+        {"value": row["label"], "label": row["label"]} for row in monitor["status_rows"]
+    ]
+    return result
+
+
 def _construction_engineering_fallback(filters: dict, taskfy_error: Exception | str) -> dict:
     """Keep PostgreSQL engineering imports available when Taskfy is offline."""
-    engineering = _engineering_from_ded_snapshot(filters) or _engineering_from_eclic_api(filters)
     engineering_monitor = _engineering_monitor_from_snapshot(filters)
+    engineering = _engineering_dashboard_from_monitor(engineering_monitor)
     engineering_revision_rows = engineering["engineering_revision_rows"]
     engineering_status_rows = engineering["engineering_status_rows"]
 
@@ -5019,8 +5060,8 @@ def _construction_taskfy(filters: dict) -> dict:
         )
         jobcards = dict(cur.fetchone())
 
-    engineering = _engineering_from_ded_snapshot(filters) or _engineering_from_eclic_api(filters)
     engineering_monitor = _engineering_monitor_from_snapshot(filters)
+    engineering = _engineering_dashboard_from_monitor(engineering_monitor)
     engineering_docs = engineering["engineering_docs"]
     engineering_counts = engineering["engineering_counts"]
     engineering_summary = engineering["engineering_summary"]

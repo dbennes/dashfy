@@ -874,7 +874,7 @@ def import_engineering_status_view(request):
 @login_required
 @require_POST
 def import_engineering_monitor_view(request):
-    """Importa a planilha bruta de engenharia ou a base editada."""
+    """Importa o MDR fornecido pela Engenharia para o cockpit."""
     if not getattr(request.user, "is_admin", False):
         raise PermissionDenied("Somente administradores podem importar o monitor de engenharia.")
 
@@ -884,7 +884,7 @@ def import_engineering_monitor_view(request):
         return redirect(reverse("core:home") + "#s01-monitor")
 
     try:
-        batch = import_engineering_monitor_workbook(upload, imported_by=request.user)
+        batch = import_engineering_monitor_workbook(upload, imported_by=request.user, require_mdr=True)
     except Exception as exc:
         messages.error(request, f"Falha ao importar monitor de engenharia: {exc}")
     else:

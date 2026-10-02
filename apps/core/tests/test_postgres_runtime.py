@@ -13,6 +13,7 @@ from apps.core.models import DatafySupplySnapshot
 from apps.core.real_sources import (
     _construction_datafy_snapshot,
     _construction_filters,
+    _engineering_monitor_empty,
     management_dashboard,
 )
 from apps.core.views import export_datafy_supply_view
@@ -118,8 +119,9 @@ class PostgreSQLRuntimeTests(SimpleTestCase):
             "choices": {},
         }
         monitor_payload = {
+            **_engineering_monitor_empty(),
             "source_mode": "postgres_import",
-            "flow": {"total": 17},
+            "flow": {**_engineering_monitor_empty()["flow"], "total": 17},
         }
         engineering_monitor.return_value = monitor_payload
         datafy_supply.return_value = {
@@ -136,7 +138,8 @@ class PostgreSQLRuntimeTests(SimpleTestCase):
             payload["construction"]["engineering_monitor"],
             monitor_payload,
         )
-        self.assertEqual(payload["construction"]["engineering_flow"]["total"], 12)
+        self.assertEqual(payload["construction"]["engineering_flow"]["total"], 17)
+        engineering_import.assert_not_called()
 
     @patch("apps.core.views.ExportLog.objects.create")
     @patch("apps.core.views.real_sources._construction_datafy_snapshot")

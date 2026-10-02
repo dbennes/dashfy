@@ -1214,8 +1214,139 @@ button.c3-export-link {
   min-height: 0;
 }
 .cockpit-v3 .c3-engineering-layout {
-  grid-template-columns: minmax(360px, .82fr) minmax(680px, 1.28fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch;
+}
+.cockpit-v3 [data-mdr-scope-panel][hidden] { display: none !important; }
+.cockpit-v3 .sn-rail.c3-mdr-controls-rail {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+.cockpit-v3 .c3-mdr-switch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-2);
+  background: var(--bg-1);
+}
+.cockpit-v3 .c3-mdr-switch button {
+  border: 1px solid transparent;
+  border-radius: var(--r-1);
+  background: transparent;
+  color: var(--fg-2);
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+}
+.cockpit-v3 .c3-mdr-switch button[aria-pressed="true"] { background: var(--bg-3); border-color: var(--line-3); color: var(--fg-0); }
+.cockpit-v3 .c3-mdr-switch button:focus-visible { outline: 2px solid var(--signal-cyan); outline-offset: 2px; }
+.cockpit-v3 .c3-mdr-switch button:disabled { opacity: .45; cursor: not-allowed; }
+.cockpit-v3 .c3-mdr-status-card,
+.cockpit-v3 .c3-mdr-discipline-card { min-width: 0; }
+.cockpit-v3 .c3-mdr-status-card .card-head,
+.cockpit-v3 .c3-mdr-discipline-card .card-head { flex-wrap: wrap; gap: 6px; }
+.cockpit-v3 .c3-mdr-status-card .card-head .rhs { white-space: normal; font-size: 9px; }
+.cockpit-v3 .c3-mdr-status-card { display: flex; flex-direction: column; }
+.cockpit-v3 .c3-mdr-chart-panel { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.cockpit-v3 .c3-mdr-chart-scroll { overflow-x: auto; flex: 1; }
+.cockpit-v3 #s01 .c3-mdr-chart { min-width: 560px; height: 370px; padding-top: 26px; }
+.cockpit-v3 #s01 .c3-mdr-chart .plot { gap: 8px; padding: 0 8px; }
+.cockpit-v3 #s01 .c3-mdr-chart .bar { flex: 1 1 0; min-width: 0; }
+.cockpit-v3 #s01 .c3-mdr-chart .c3-mdr-bar { border-top-color: var(--mdr-color, var(--fg-2)); }
+.cockpit-v3 #s01 .c3-mdr-chart .bar:focus-visible { outline: 2px solid var(--fg-0); outline-offset: 3px; }
+.cockpit-v3 #s01 .c3-mdr-chart .xaxis { gap: 8px; padding: 8px 8px 0; font-size: 9px; letter-spacing: 0; }
+.cockpit-v3 #s01 .c3-mdr-chart .xaxis span { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.cockpit-v3 .c3-mdr-dot { display: inline-block; flex: 0 0 7px; width: 7px; height: 7px; border-radius: 2px; background: var(--mdr-color, #a8aeb8); }
+.cockpit-v3 [data-mdr-monitor] .is-ifr-new { --mdr-color: #f5d3bb; }
+.cockpit-v3 [data-mdr-monitor] .is-ifa-new { --mdr-color: #e9b78d; }
+.cockpit-v3 [data-mdr-monitor] .is-afc-new { --mdr-color: #e79962; }
+.cockpit-v3 [data-mdr-monitor] .is-ifi-new { --mdr-color: #e9dc49; }
+.cockpit-v3 [data-mdr-monitor] .is-final-issuance { --mdr-color: #f4b400; }
+.cockpit-v3 [data-mdr-monitor] .is-cpy-review { --mdr-color: #92c94e; }
+.cockpit-v3 [data-mdr-monitor] .is-finalized-foe { --mdr-color: #16b6d8; }
+.cockpit-v3 [data-mdr-monitor] .is-finalized-ded { --mdr-color: #a8aeb8; }
+.cockpit-v3 .c3-mdr-discipline-card { align-self: start; }
+.cockpit-v3 .c3-mdr-discipline-scroll { overflow: auto; max-height: 450px; }
+.cockpit-v3 .c3-mdr-discipline-table { width: 100%; min-width: 620px; table-layout: fixed; }
+.cockpit-v3 #s01 .c3-mdr-discipline-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-2);
+  white-space: normal;
+  overflow-wrap: normal;
+  padding: 6px 4px;
+  color: var(--fg-2);
+  font-size: 9px;
+  line-height: 12px;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+.cockpit-v3 #s01 .c3-mdr-discipline-name { width: 122px; left: 0; z-index: 3; }
+.cockpit-v3 #s01 th.c3-mdr-doc-count { width: 44px; }
+.cockpit-v3 #s01 th.c3-mdr-doc-pct { width: 46px; }
+.cockpit-v3 #s01 .c3-mdr-status-heading { text-align: center; }
+.cockpit-v3 .c3-mdr-status-heading .c3-mdr-dot { display: block; width: 16px; height: 2px; margin: 4px auto 0; }
+.cockpit-v3 #s01 .c3-mdr-discipline-table tbody th,
+.cockpit-v3 #s01 .c3-mdr-discipline-table tbody td {
+  height: 24px;
+  padding: 4px;
+  font-size: 11px;
+  line-height: 15px;
+  border-bottom: 1px solid var(--line-1);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.cockpit-v3 #s01 .c3-mdr-discipline-table tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg-1);
+  color: var(--fg-1);
+  font-size: 10px;
+  font-weight: 500;
+}
+.cockpit-v3 #s01 .c3-mdr-discipline-table tbody tr { cursor: default; }
+.cockpit-v3 #s01 .c3-mdr-discipline-table tbody td:not(.c3-mdr-doc-count):not(.c3-mdr-doc-pct) { text-align: center; }
+.cockpit-v3 #s01 .c3-mdr-discipline-table .c3-mdr-doc-pct { color: var(--fg-2); font-size: 10px; }
+.cockpit-v3 #s01 .c3-mdr-discipline-table .c3-mdr-zero { color: var(--fg-3); }
+.cockpit-v3 #s01 .c3-mdr-discipline-table .c3-mdr-total th,
+.cockpit-v3 #s01 .c3-mdr-discipline-table .c3-mdr-total td { background: var(--bg-3); border-top: 1px solid var(--line-3); font-weight: 700; color: var(--fg-0); }
+@media (max-width: 700px) {
+  .cockpit-v3 .c3-mdr-switch { width: 100%; }
+  .cockpit-v3 .c3-mdr-switch button { padding: 4px 8px; }
+}
+.cockpit-v3 .c3-engineering-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 9px;
+  margin-bottom: var(--s-3);
+  border: 1px solid #e5c453;
+  border-left: 3px solid #c28a08;
+  border-radius: var(--radius, 6px);
+  background: #fff3bf;
+  color: #614700;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.cockpit-v3 .c3-engineering-warning > i { flex: 0 0 auto; font-size: 12px; }
+.cockpit-v3 .c3-engineering-warning > div {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cockpit-v3 .c3-engineering-warning strong { font-size: 12px; }
+.cockpit-v3 .c3-engineering-warning-update { margin-left: auto; }
+@media (max-width: 700px) {
+  .cockpit-v3 .c3-engineering-warning-update { margin-left: 0; }
 }
 .cockpit-v3 .c3-revision-card,
 .cockpit-v3 .c3-discipline-card {

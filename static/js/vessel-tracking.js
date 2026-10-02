@@ -114,8 +114,8 @@
   }
   function trackStyle(time, now) {
     var old = time < now - 24 * 60 * 60 * 1000;
-    return { color: old ? "#94a3b8" : "#3b82f6", weight: old ? 1.25 : 1.6,
-      opacity: old ? .55 : .85, dashArray: "3 6", lineCap: "round",
+    return { color: old ? "#cbd5e1" : "#3b82f6", weight: old ? 2.5 : 3,
+      opacity: old ? .9 : 1, dashArray: "6 5", lineCap: "round", pane: "vtTrackPane",
       smoothFactor: 0, interactive: false };
   }
   function waterRouteParts(route, now) {
@@ -340,6 +340,11 @@
       mapLoading = false;
       if (!state.active) return;
       map = global.L.map(query("map"), { center: [4, 5], zoom: 5, minZoom: 2, preferCanvas: true, scrollWheelZoom: true, zoomAnimation: false, markerZoomAnimation: false });
+      // Keep the recorded journey above both imagery and place-name tiles,
+      // but below vessel markers and endpoint labels.
+      map.createPane("vtTrackPane");
+      map.getPane("vtTrackPane").style.zIndex = "450";
+      map.getPane("vtTrackPane").style.pointerEvents = "none";
       var tileUrl = typeof config.tile_url === "string" && config.tile_url.indexOf("https://") === 0 ? config.tile_url : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
       // Attribution is a fixed public-source link; no API or vessel text is inserted as HTML.
       var attribution = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
@@ -557,12 +562,19 @@
         lineLayer = global.L.layerGroup().addTo(map);
         // Water-constrained estimates are a separate layer from measured AIS
         // fixes. Never fall back to a straight line through unverified terrain.
-        if (routes.older.length) global.L.polyline(routes.older, trackStyle(now - 86400001, now)).addTo(lineLayer);
-        if (routes.recent.length) global.L.polyline(routes.recent, trackStyle(now, now)).addTo(lineLayer);
+        function drawRoute(parts, style) {
+          if (!parts.length) return;
+          global.L.polyline(parts, Object.assign({}, style, {
+            color: "#0f172a", weight: style.weight + 2, opacity: .85
+          })).addTo(lineLayer);
+          global.L.polyline(parts, style).addTo(lineLayer);
+        }
+        drawRoute(routes.older, trackStyle(now - 86400001, now));
+        drawRoute(routes.recent, trackStyle(now, now));
         state.points.forEach(function (point) {
           var style = trackStyle(point.time, now);
           global.L.circleMarker([point.latitude, point.longitude], {
-            radius: 2, weight: .7, color: style.color, opacity: style.opacity,
+            pane: "vtTrackPane", radius: 3, weight: 1, color: "#0f172a", opacity: 1,
             fillColor: style.color, fillOpacity: style.opacity, interactive: true
           }).bindTooltip("Recorded AIS position · " + utcLabel(point.timestamp)).addTo(lineLayer);
         });

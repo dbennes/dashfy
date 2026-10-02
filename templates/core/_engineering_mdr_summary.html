@@ -1,0 +1,75 @@
+{% load humanize tz %}
+{% for scope in monitor.mdr_scopes %}
+<div class="kpi-strip" data-mdr-scope-panel="{{ scope.key }}" {% if not forloop.first %}hidden{% endif %}>
+  <div class="kpi"><div class="lbl"><span class="marker"></span><span>Documents</span></div><div class="val">{{ scope.total|intcomma }}</div><div class="sub">{{ scope.label }}</div></div>
+  <div class="kpi kpi-green"><div class="lbl"><span class="marker"></span><span>Finalized</span></div><div class="val">{{ scope.finalized_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.finalized|intcomma }} finalized under FOE / DED</div></div>
+  <div class="kpi kpi-cyan"><div class="lbl"><span class="marker"></span><span>CPY review</span></div><div class="val">{{ scope.cpy_review_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.cpy_review|intcomma }} under CPY review (FOE)</div></div>
+  <div class="kpi kpi-amber"><div class="lbl"><span class="marker"></span><span>MABU working</span></div><div class="val">{{ scope.working_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.working|intcomma }} working under FOE</div></div>
+</div>
+{% endfor %}
+
+<aside class="c3-engineering-warning" role="note" aria-label="Engineering data source">
+  <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+  <div>
+    <strong>Warning · MDR spreadsheet provided by Engineering</strong>
+    <span>This information no longer comes from eClic.</span>
+    <span class="c3-engineering-warning-update" title="File: {{ monitor.source_file_name }} · Classification: Document Status"><b>Last dashboard update:</b> {% if monitor.imported_at %}{% timezone "Africa/Lagos" %}{{ monitor.imported_at|date:"d/m/Y H:i" }} WAT{% endtimezone %}{% else %}Awaiting MDR import{% endif %}</span>
+  </div>
+</aside>
+
+<div class="row-2 c3-engineering-layout">
+  <div class="card c3-mdr-status-card">
+    <div class="sn-rail c3-mdr-controls-rail" data-note-panel="engineering-status" data-note-label="MDR document status">
+      <div class="c3-mdr-switch" role="group" aria-label="Engineering document scope">
+        {% for scope in monitor.mdr_scopes %}
+          <button type="button" data-mdr-scope="{{ scope.key }}" data-total="{{ scope.total|intcomma }}" data-label="{{ scope.label }}" aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}" {% if not scope.available %}disabled title="Import the MDR with ENG. CATEGORY to enable this scope"{% endif %}>{{ scope.label }}</button>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="card-head"><div class="lhs"><span class="tag">STATUS</span><h3>MDR document status</h3></div><div class="rhs" data-mdr-scope-label>Overall</div></div>
+    {% for scope in monitor.mdr_scopes %}
+    <div class="c3-mdr-chart-panel" data-mdr-scope-panel="{{ scope.key }}" {% if not forloop.first %}hidden{% endif %}>
+      {% if scope.total %}
+      <div class="c3-mdr-chart-scroll" tabindex="0" role="region" aria-label="MDR document status chart — {{ scope.label }}">
+        <div class="barchart c3-mdr-chart">
+          <div class="yaxis"><span>{{ scope.total|intcomma }}</span><span>{% widthratio scope.total 4 3 %}</span><span>{% widthratio scope.total 2 1 %}</span><span>{% widthratio scope.total 4 1 %}</span><span>0</span></div>
+          <div class="plot">
+            <div class="bar is-total" style="--h:100%" title="Total: {{ scope.total|intcomma }} documents"><span class="dlabel">{{ scope.total|intcomma }}</span></div>
+            {% for row in scope.status_rows %}
+            <div class="bar c3-mdr-bar is-{{ row.tone }}" style="--h:{{ row.pct_css }}%" tabindex="0" role="img" aria-label="{{ row.label }}: {{ row.value|intcomma }} documents, {{ row.pct|floatformat:1 }}%" title="{{ row.label }}: {{ row.value|intcomma }} documents · {{ row.pct|floatformat:1 }}%"><span class="dlabel">{{ row.value|intcomma }}</span></div>
+            {% endfor %}
+          </div>
+          <div class="xaxis"><span>Total</span>{% for row in scope.status_rows %}<span title="{{ row.label }}">{{ row.short_label }}</span>{% endfor %}</div>
+        </div>
+      </div>
+      <div class="legend c3-mdr-chart-legend">{% for row in scope.status_rows %}<span title="{{ row.label }}"><i class="c3-mdr-dot is-{{ row.tone }}"></i>{{ row.short_label }} · {{ row.pct|floatformat:0 }}%</span>{% endfor %}</div>
+      {% else %}<div class="card-body">No MDR documents in this scope.</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card c3-mdr-discipline-card">
+    <div class="sn-rail" data-note-panel="engineering-disciplines" data-note-label="MDR status by discipline"></div>
+    <div class="card-head"><div class="lhs"><span class="tag">DISCIPLINES</span><h3>MDR status by discipline</h3></div><div class="rhs"><b>{{ monitor.mdr_scopes.0.discipline_rows|length }}</b> disciplines</div></div>
+    <div class="c3-mdr-discipline-scroll" tabindex="0" role="region" aria-label="Engineering disciplines and document statuses">
+      <table class="tbl c3-mdr-discipline-table" aria-label="MDR document status by discipline">
+        <thead>
+          <tr>
+            <th scope="col" class="c3-mdr-discipline-name">Discipline</th>
+            <th scope="col" class="num c3-mdr-doc-count">Docs</th>
+            <th scope="col" class="num c3-mdr-doc-pct" title="Percentage of documents in the selected scope">%</th>
+            {% for status in monitor.mdr_scopes.0.status_rows %}<th scope="col" class="c3-mdr-status-heading" title="{{ status.label }}" aria-label="{{ status.label }}"><span>{{ status.short_label }}</span><i class="c3-mdr-dot is-{{ status.tone }}" aria-hidden="true"></i></th>{% endfor %}
+          </tr>
+        </thead>
+        {% for scope in monitor.mdr_scopes %}
+        <tbody data-mdr-scope-panel="{{ scope.key }}" {% if not forloop.first %}hidden{% endif %}>
+          {% for row in scope.discipline_rows %}
+          <tr><th scope="row">{{ row.discipline }}</th><td class="num c3-mdr-doc-count"><b>{{ row.total|intcomma }}</b></td><td class="num c3-mdr-doc-pct">{{ row.pct|floatformat:1 }}%</td>{% for cell in row.status_cells %}<td class="num{% if not cell.value %} c3-mdr-zero{% endif %}">{{ cell.value|intcomma }}</td>{% endfor %}</tr>
+          {% empty %}<tr><td colspan="{{ scope.status_rows|length|add:3 }}">No MDR documents in this scope.</td></tr>{% endfor %}
+          <tr class="c3-mdr-total"><th scope="row">TOTAL</th><td class="num c3-mdr-doc-count">{{ scope.total|intcomma }}</td><td class="num c3-mdr-doc-pct">{{ scope.total_pct }}%</td>{% for status in scope.status_rows %}<td class="num">{{ status.value|intcomma }}</td>{% endfor %}</tr>
+        </tbody>
+        {% endfor %}
+      </table>
+    </div>
+  </div>
+</div>

@@ -31,6 +31,99 @@ MONITOR_OFFICIAL_HEADERS = {
     "Status normalizado",
 }
 
+MDR_REQUIRED_HEADERS = {"MABU DOC NUMBER", "DOCUMENT TITLE", "DISCIPLINE", "Document Status"}
+MDR_SOURCE = "MDR spreadsheet provided by Engineering"
+
+MDR_DISCIPLINES = {
+    "CONSTRUCTION": "CONSTRUCTION",
+    "ELECTRICAL ENGINEERING": "ELECTRICAL",
+    "INSTRUMENTATION ENGINEERING": "INSTRUMENTATION",
+    "MATERIALS ENGINEERING": "MATERIALS",
+    "PROCESS ENGINEERING": "PROCESS",
+    "PIPING ENGINEERING": "PIPING",
+    "PIPING ENGINEERING (ISOMETRICS)": "PIPING ISOMETRIC",
+    "STRUCTURAL ENGINEERING": "STRUCTURAL",
+    "STRUCTURAL ENGINEERING (SPECIAL PIPE SUPPORTS)": "STRUCTURAL",
+    "TECHNICAL SAFETY ENGINEERING": "TECHNICAL SAFETY",
+    "HEALTH, SAFETY, ENVIRONMENTAL AND SECURITY": "TECHNICAL SAFETY",
+    "INFORMATION TECHNOLOGY": "IT / IM",
+    "INFORMATION MANAGEMENT": "IT / IM",
+    "PROJECT MANAGEMENT": "PMT",
+    "PROJECT MANAGEMENT AND ENGINEERING": "PMT",
+    "MECHANICAL ENGINEERING": "MECHANICAL",
+    "MECHANICAL ROTATING ENGINEERING": "MECHANICAL",
+    "MECHANICAL STATIC ENGINEERING": "MECHANICAL",
+    "QUALITY MANAGEMENT": "QUALITY",
+}
+
+
+def _mdr_status(value: Any) -> str:
+    text = _norm_text(value)
+    if text.startswith("PENDING FIRST ISSUE"):
+        return "NI"
+    if text.startswith(("UNDER REVIEW", "FOE WORKFLOW IN PROGRESS")):
+        return "UNDER REVIEW"
+    if text.startswith("IFR"):
+        return "IFR"
+    if text.startswith("IFA"):
+        return "IFA"
+    if text.startswith(("IFI", "ISSUED FOR INFORMATION")):
+        return "IFI"
+    if text.startswith("APPROVED FOR CONSTRUCTION"):
+        return "AFC 1"
+    if text.startswith("AFC/AFU"):
+        code = re.search(r"\bCODE\s*(3A|\d+)\b", text)
+        if code:
+            return {"1": "AFC 1", "3": "AFC 3", "3A": "AFC CODE 3A", "4": "REJECTED"}.get(code[1], "UNCLASSIFIED")
+    return "UNCLASSIFIED"
+
+
+def _parse_mdr_rows(ws: Any) -> tuple[list[dict[str, Any]], dict[str, str]]:
+    header_row = _worksheet_header_row(ws, MDR_REQUIRED_HEADERS)
+    iterator = ws.iter_rows(min_row=header_row, values_only=True)
+    headers = [_norm_text(value) for value in next(iterator)]
+
+    if "ENG. CATEGORY" not in headers:
+        raise ValueError("MDR requires the ENG. CATEGORY column for Fabrication & Installation.")
+
+    def current_column(prefix: str) -> int:
+        matches = [i for i, header in enumerate(headers) if header.startswith(prefix) and "DED COMPLETION" not in header]
+        if len(matches) != 1:
+            raise ValueError(f"MDR requires one current {prefix} column (excluding DED Completion).")
+        return matches[0]
+
+    revision_column = current_column("REV. STATUS")
+    status_column = current_column("CODE STATUS")
+    rows = []
+    for row_number, values in enumerate(iterator, start=header_row + 1):
+        raw = dict(zip(headers, values))
+        number = _clean_text(raw.get("MABU DOC NUMBER"))
+        if not number:
+            continue
+        title = _clean_text(raw.get("DOCUMENT TITLE"))
+        source_discipline = _norm_text(raw.get("DISCIPLINE"))
+        discipline = MDR_DISCIPLINES.get(source_discipline, source_discipline or "UNSPECIFIED")
+        revision = _norm_text(values[revision_column])
+        family, revision_number = _revision_parts(revision)
+        code_status = _clean_text(values[status_column])
+        status_bucket = _mdr_status(code_status)
+        doc_status, group, afc_code = _status_parts_from_bucket(status_bucket)
+        document_status = _clean_text(raw.get("DOCUMENT STATUS"))
+        rows.append({
+            "row_number": row_number, "document_number": number, "title": title,
+            "directory": "", "discipline": discipline, "source_discipline": source_discipline,
+            "revision": revision, "revision_family": family, "revision_number": revision_number,
+            "status_bucket": status_bucket, "doc_status": doc_status, "doc_status_group": group,
+            "afc_code": afc_code, "issue_status": code_status, "approval_code": code_status,
+            "document_status_original": document_status, "document_status_effective": document_status,
+            "engineering_category": _norm_text(raw.get("ENG. CATEGORY")),
+            "purpose_next_issue": "", "last_transmittal_purpose": "", "fabrication_ref": "",
+            "is_monitored": True, "is_countable": True, "is_in_sample": True,
+            "is_transmittal": False, "excluded_reason": "",
+        })
+    return rows, {"revision_column": headers[revision_column], "status_column": headers[status_column],
+                  "document_status_column": "Document Status", "category_column": "ENG. CATEGORY"}
+
 MONITOR_SAMPLE_ROOTS = (
     "BNO / 02-DED",
     "BNO / 02.5-FOE",
@@ -504,7 +597,7 @@ def _parse_official_rows(ws: Any) -> list[dict[str, Any]]:
     return rows
 
 
-def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any = None) -> EngineeringMonitorImport:
+def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any = None, require_mdr: bool = False) -> EngineeringMonitorImport:
     filename = Path(getattr(uploaded_file, "name", "") or "engineering-monitor.xlsx").name
     if not filename.lower().endswith((".xlsx", ".xlsm")):
         raise ValueError("Upload an engineering monitor workbook in .xlsx or .xlsm format.")
@@ -516,10 +609,17 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
     from openpyxl import load_workbook
 
     workbook = load_workbook(BytesIO(content), data_only=True, read_only=True)
+    mdr_ws = _find_sheet(workbook, MDR_REQUIRED_HEADERS)
+    if require_mdr and mdr_ws is None:
+        workbook.close()
+        raise ValueError("Import the MDR spreadsheet provided by Engineering, with MABU DOC NUMBER, DOCUMENT TITLE, DISCIPLINE and current Code Status columns.")
     official_ws = workbook["Base Engenharia"] if "Base Engenharia" in workbook.sheetnames else workbook["Base AOL"] if "Base AOL" in workbook.sheetnames else _find_sheet(workbook, MONITOR_OFFICIAL_HEADERS)
     detail_ws = None
     import_mode = "official_aol" if official_ws is not None else "raw_engineering"
-    if official_ws is None:
+    if mdr_ws is not None:
+        detail_ws = mdr_ws
+        import_mode = "mdr_engineering"
+    elif official_ws is None:
         preferred_ws = workbook["Sheet1"] if "Sheet1" in workbook.sheetnames else None
         detail_ws = (
             preferred_ws
@@ -530,7 +630,11 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
         if official_ws is None:
             raise ValueError("The document detail sheet was not found in the monitor workbook.")
 
-    rows = _parse_official_rows(official_ws) if official_ws is not None else _parse_monitor_rows(detail_ws)
+    source_columns = {}
+    if mdr_ws is not None:
+        rows, source_columns = _parse_mdr_rows(mdr_ws)
+    else:
+        rows = _parse_official_rows(official_ws) if official_ws is not None else _parse_monitor_rows(detail_ws)
     if not rows:
         raise ValueError("No valid documents were found in the monitor workbook.")
 
@@ -575,6 +679,8 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
         "source_documents": len(rows),
         "sample_documents": len(countable_rows),
     }
+    if import_mode == "mdr_engineering":
+        sample_rules = {"population": "All MDR documents", "classification": "Current Code Status"}
     if import_mode == "raw_engineering":
         outside_roots = int(excluded_counts.get("Outside configured sample folders", 0))
         excluded_folders = int(excluded_counts.get("Excluded sample folder", 0))
@@ -618,13 +724,15 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
             file_size=len(content),
             file_hash=file_hash,
             imported_by=user,
-            detail_sheet=(official_ws or detail_ws).title,
+            detail_sheet=(mdr_ws or official_ws or detail_ws).title,
             document_count=len(rows),
             monitored_document_count=len(countable_rows),
             discipline_count=len(discipline_counts),
             excluded_count=len(excluded_rows),
             payload=payload,
             metadata={
+                "source_label": MDR_SOURCE if mdr_ws is not None else "Engineering base monitor",
+                "source_columns": source_columns,
                 "sheet_names": workbook.sheetnames,
                 "total_sheet_count": len(workbook.sheetnames),
                 "import_mode": import_mode,
@@ -639,5 +747,6 @@ def import_engineering_monitor_workbook(uploaded_file: Any, *, imported_by: Any 
             },
         )
 
+    workbook.close()
     cache.clear()
     return batch
