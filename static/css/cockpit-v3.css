@@ -5506,3 +5506,40 @@ button.c3-export-link {
 }
 
 .cockpit-v3 .trk-table td .chip { text-transform: uppercase; }
+
+/* DED is a compact summary above the full-size FOE KPI row. */
+.cockpit-v3 .kpi-strip.c3-ded-strip .kpi {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 42px;
+  padding: 7px 14px;
+}
+.cockpit-v3 .kpi-strip.c3-ded-strip .kpi .lbl {
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+.cockpit-v3 .kpi-strip.c3-ded-strip .kpi .val {
+  flex: 0 0 auto;
+  margin-top: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.cockpit-v3 .kpi-strip.c3-ded-strip .kpi .val .unit { font-size: 10px; }
+.cockpit-v3 .kpi-strip.c3-ded-strip .kpi .sub { display: none; }
+@media (max-width: 860px) {
+  .cockpit-v3 .kpi-strip.c3-ded-strip:not(.tight) .kpi {
+    min-height: 44px;
+    padding: 7px 10px;
+  }
+  .cockpit-v3 .kpi-strip.c3-ded-strip:not(.tight) .kpi .lbl {
+    font-size: 10px;
+    white-space: normal;
+  }
+  .cockpit-v3 .kpi-strip.c3-ded-strip:not(.tight) .kpi .val {
+    font-size: 18px;
+  }
+}

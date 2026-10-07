@@ -20,6 +20,11 @@ counts MABU working under FOE + CPY review (FOE) + Finalized FOE. Each percentag
 divides its FOE status count by that FOE total. Finalized DED and unknown statuses
 remain in the full MDR chart/table, but do not enter the FOE KPI denominators.
 
+A second KPI row measures DED documents with its own denominator and follows
+the same scope switch. The September snapshot shows 789 DED documents Overall
+(429 for Fabrication & Installation), 100% finalized, 0% CPY review and 0% MABU
+working. Empty DED scopes display zero percentages.
+
 ## First deployment
 
 Push/pull transfers code, not the PostgreSQL imports. Transfer the supplied

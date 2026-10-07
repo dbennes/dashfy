@@ -1,5 +1,11 @@
 {% load humanize tz %}
 {% for scope in monitor.mdr_scopes %}
+<div class="kpi-strip c3-ded-strip" data-mdr-scope-panel="{{ scope.key }}" {% if not forloop.first %}hidden{% endif %}>
+  <div class="kpi"><div class="lbl"><span class="marker"></span><span>Documents (DED)</span></div><div class="val">{{ scope.ded_total|intcomma }}</div><div class="sub">{{ scope.label }} · DED only</div></div>
+  <div class="kpi kpi-green"><div class="lbl"><span class="marker"></span><span>Finalized (DED)</span></div><div class="val">{{ scope.ded_finalized_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.ded_finalized|intcomma }} / {{ scope.ded_total|intcomma }} DED documents</div></div>
+  <div class="kpi kpi-cyan"><div class="lbl"><span class="marker"></span><span>CPY review (DED)</span></div><div class="val">{{ scope.ded_review_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.ded_review|intcomma }} / {{ scope.ded_total|intcomma }} DED documents</div></div>
+  <div class="kpi kpi-amber"><div class="lbl"><span class="marker"></span><span>MABU working (DED)</span></div><div class="val">{{ scope.ded_working_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.ded_working|intcomma }} / {{ scope.ded_total|intcomma }} DED documents</div></div>
+</div>
 <div class="kpi-strip" data-mdr-scope-panel="{{ scope.key }}" {% if not forloop.first %}hidden{% endif %}>
   <div class="kpi"><div class="lbl"><span class="marker"></span><span>Documents (FOE)</span></div><div class="val">{{ scope.foe_total|intcomma }}</div><div class="sub">{{ scope.label }} · FOE only</div></div>
   <div class="kpi kpi-green"><div class="lbl"><span class="marker"></span><span>Finalized (FOE)</span></div><div class="val">{{ scope.finalized_pct|floatformat:1 }}<span class="unit">%</span></div><div class="sub">{{ scope.finalized|intcomma }} / {{ scope.foe_total|intcomma }} FOE documents</div></div>

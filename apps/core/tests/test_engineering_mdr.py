@@ -162,6 +162,11 @@ class MdrScopeSummaryTests(SimpleTestCase):
                 self.assertEqual(scope["total"], total)
                 self.assertEqual(sum(row["value"] for row in scope["status_rows"]), total)
                 self.assertEqual(scope["foe_total"], foe)
+                self.assertEqual(scope["ded_total"], total - foe)
+                self.assertEqual(scope["ded_finalized"], total - foe)
+                self.assertEqual(scope["ded_finalized_pct"], 100)
+                self.assertEqual(scope["ded_review_pct"], 0)
+                self.assertEqual(scope["ded_working_pct"], 0)
                 self.assertEqual(scope["finalized"], 264)
                 self.assertAlmostEqual(scope["finalized_pct"], 264 / foe * 100)
                 self.assertAlmostEqual(scope["cpy_review_pct"], review / foe * 100)
@@ -197,3 +202,6 @@ class MdrScopeSummaryTests(SimpleTestCase):
         self.assertEqual(scopes[0]["status_rows"][3]["value"], 0)
         self.assertFalse(scopes[1]["available"])
         self.assertEqual(scopes[1]["total_pct"], 0)
+        for scope in scopes:
+            for field in ("ded_total", "ded_finalized_pct", "ded_review_pct", "ded_working_pct"):
+                self.assertEqual(scope[field], 0)

@@ -77,6 +77,13 @@ def mdr_scope_summaries(documents, discipline_order):
         # KPI denominators cover FOE work only. DED and unclassified records
         # remain visible in the full MDR chart/table but are not FOE progress.
         foe_total = finalized + cpy_review + working
+        ded_finalized = counts["DOCUMENT FINALIZED UNDER DED"]
+        ded_review = counts["UNDER CPY REVIEW (DED)"]
+        ded_working = sum(count for name, count in counts.items() if name.startswith("MABU WORKING UNDER DED -"))
+        ded_total = ded_finalized + ded_review + ded_working
+
+        def ded_pct(value):
+            return 100 * value / ded_total if ded_total else 0
 
         def foe_pct(value):
             return 100 * value / foe_total if foe_total else 0
@@ -89,5 +96,9 @@ def mdr_scope_summaries(documents, discipline_order):
             "finalized": finalized, "finalized_pct": foe_pct(finalized),
             "cpy_review": cpy_review, "cpy_review_pct": foe_pct(cpy_review),
             "working": working, "working_pct": foe_pct(working),
+            "ded_total": ded_total,
+            "ded_finalized": ded_finalized, "ded_finalized_pct": ded_pct(ded_finalized),
+            "ded_review": ded_review, "ded_review_pct": ded_pct(ded_review),
+            "ded_working": ded_working, "ded_working_pct": ded_pct(ded_working),
         })
     return result
