@@ -8,8 +8,8 @@
 - Also rejected for Engenharia: one heavy combined panel where all charts feel glued together. Prefer separated chart cards with visible percentages for status, revisions, and discipline concentration.
 - Also rejected for Engenharia: three upper chart cards using the same row/list/bar structure. The three upper charts should use visibly different models, such as stacked status rail, vertical revision columns, and lollipop/ranking bars.
 
-## Premature Tracking Publication
+## Container Shipment Tracking
 
-- Rejected: displaying S04 Tracking / Trackfy before the user explicitly approves its release.
-- Keep the section, navigation entry, client initialization and Taskfy query behind `DASHFY_SHOW_TRACKING`, disabled by default.
-- The hidden Tracking section must not change the S03 Fabrication or S05 3D positions.
+- Rejected: displaying S04 Tracking / Trackfy container shipments in the dashboard.
+- Remove its section, navigation entry, client initialization and Taskfy query permanently; do not restore it through a configuration flag.
+- Keep AIS Vessels and S05 3D in their current positions after S03 Fabrication.

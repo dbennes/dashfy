@@ -24,7 +24,7 @@ from django.views.decorators.cache import never_cache
 
 from apps.accounts.models import User
 from apps.accounts.permissions import has_module_permission
-from apps.core import fabrication_source, rundown_source, rundown_discipline_source, skyline_source, skyline_aveon_source, skyline_installation_source, tracking_source
+from apps.core import fabrication_source, rundown_source, rundown_discipline_source, skyline_source, skyline_aveon_source, skyline_installation_source
 from apps.core.datafy_supply import refresh_supply_snapshot, supply_filters_hash
 from apps.core.engineering_import import import_engineering_status_workbook
 from apps.core.engineering_monitor_import import import_engineering_monitor_workbook, normalize_monitor_discipline
@@ -498,12 +498,6 @@ def home_view(request):
             key: installation_skyline.get(key) for key in ("available", "error", "source", "kpis", "charts")
         },
     }
-    # S04 · Tracking fica atras de uma flag ate a secao estar pronta para
-    # publicacao. Desligada, a home tambem evita consultar o Taskfy.
-    show_tracking = settings.DASHFY_SHOW_TRACKING
-    tracking = tracking_source.tracking_dashboard_safe() if show_tracking else None
-    timing.mark("tracking")
-
     context = {
         "dashboard_fragment": getattr(request, "dashboard_fragment", False),
         "dashboard_base": "core/dashboard_fragment.html" if getattr(request, "dashboard_fragment", False) else "base.html",
@@ -518,8 +512,6 @@ def home_view(request):
         "skyline": skyline,
         "skyline_schedules": skyline_schedules,
         "ros_schedule": ros_schedule,
-        "tracking": tracking,
-        "show_tracking": show_tracking,
         "vessel_tracking_config": {
             "poll_seconds": settings.AIS_POLL_SECONDS,
             "tile_url": settings.AIS_MAP_TILE_URL,

@@ -126,7 +126,7 @@ class FabricationSkylineStyleTests(SimpleTestCase):
 
 
 class HomeSectionLayoutTests(TestCase):
-    """A home mantem Tracking oculto ate sua liberacao explicita."""
+    """The cockpit has no container shipment tracking section."""
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(
@@ -136,16 +136,14 @@ class HomeSectionLayoutTests(TestCase):
         )
         self.client.force_login(self.user)
 
-    @override_settings(DASHFY_SHOW_TRACKING=False, AISSTREAM_API_KEY="private-ais-home-test-key")
-    @patch("apps.core.views.tracking_source.tracking_dashboard_safe")
-    def test_home_exposes_fabrication_and_model_without_tracking(self, tracking_safe):
-        response = self.client.get(reverse("core:home"))
+    @override_settings(AISSTREAM_API_KEY="private-ais-home-test-key")
+    def test_home_exposes_fabrication_and_model_without_tracking(self):
+        response = self.client.get(reverse("core:dashboard_content"))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode("utf-8")
 
-        tracking_safe.assert_not_called()
-        self.assertIs(response.context["show_tracking"], False)
-        self.assertIsNone(response.context["tracking"])
+        self.assertNotIn("show_tracking", response.context)
+        self.assertNotIn("tracking", response.context)
         self.assertIn('id="s03"', html)
         self.assertIn("S03 · Engineering · Fabrication", html)
         self.assertIn("<em>Fabrication</em> progress", html)
@@ -167,33 +165,16 @@ class HomeSectionLayoutTests(TestCase):
         self.assertNotIn("private-ais-home-test-key", html)
 
     @override_settings(DASHFY_SHOW_TRACKING=True)
-    @patch("apps.core.views.tracking_source.tracking_dashboard_safe")
-    def test_tracking_section_reads_taskfy_and_ships_charts(self, tracking_safe):
-        """A S04 vem do banco do Taskfy (read-only) com os graficos do cockpit."""
-        tracking_safe.return_value = {
-            "available": True,
-            "kpis": {},
-            "charts": {},
-            "charts_json": "{}",
-            "open_shipments": [],
-            "recent_received": [],
-            "recent_issues": [],
-        }
-        response = self.client.get(reverse("core:home"))
+    def test_legacy_tracking_flag_cannot_restore_container_section(self):
+        response = self.client.get(reverse("core:dashboard_content"))
         html = response.content.decode("utf-8")
 
-        tracking_safe.assert_called_once_with()
-        self.assertIs(response.context["show_tracking"], True)
-        tracking = response.context["tracking"]
-        self.assertIn("available", tracking)
-        self.assertIn("kpis", tracking)
-        self.assertIn("charts", tracking)
-        self.assertIn('data-target="s04"', html)
-        self.assertIn('id="s04"', html)
-        self.assertIn('id="trkChartsData"', html)
-        self.assertIn("trkInit", html)
+        self.assertNotIn('data-target="s04"', html)
+        self.assertNotIn('id="s04"', html)
+        self.assertNotIn('id="trkChartsData"', html)
+        self.assertNotIn("trkInit", html)
         for canvas_id in ("trkFlowChart", "trkItemsChart", "trkFleetChart"):
-            self.assertIn(f'id="{canvas_id}"', html)
+            self.assertNotIn(f'id="{canvas_id}"', html)
 
     def test_fabrication_section_ships_its_own_scoped_stylesheet(self):
         """A S03 e uma ilha visual: precisa da folha propria e do Chart.js."""

@@ -145,12 +145,6 @@
     <span class="num">S03</span><span>Fabrication</span>
     <span class="chip amber" title="Average fabrication progress from the latest authorized source">{{ fabrication.kpis.avg|default:0|floatformat:2 }}%</span>
   </a>
-  {% if show_tracking %}
-  <a class="sn-tab" data-target="s04" href="#s04">
-    <span class="num">S04</span><span>Tracking</span>
-    <span class="chip amber" title="Open shipments (draft + sent) in Trackfy">{{ tracking.kpis.shipments_open|default:0 }}</span>
-  </a>
-  {% endif %}
   <a class="sn-tab" data-target="vessel-tracking" href="#vessel-tracking">
     <span class="num">AIS</span><span>Vessels</span>
   </a>
@@ -1375,248 +1369,6 @@
   </div>
   {% endwith %}
 </section>
-
-{% if show_tracking %}
-{# ===== S04 — TRACKING (Trackfy / Taskfy) ===== #}
-{# Dashboard de envios de container lido SOMENTE-LEITURA do PostgreSQL do  #}
-{# Taskfy (apps/core/tracking_source.py), no design do cockpit.           #}
-<section id="s04" class="section">
-  {% with trk=tracking k=tracking.kpis %}
-  <div class="section-head">
-    <div>
-      <span class="tag">S04 · Tracking</span>
-      <h2>Container shipments · Trackfy</h2>
-    </div>
-    <div class="meta p6-source-meta c3-meta-inline">
-      <div class="c3-meta-line">
-        <b>{{ k.total_containers|default:0|intcomma }}</b> containers · <b>{{ k.total_shipments|default:0|intcomma }}</b> shipments
-        {% if trk.available %} · Taskfy · PostgreSQL live{% else %} · Taskfy · PostgreSQL unavailable{% endif %}
-      </div>
-      <div class="c3-source-actions" aria-label="Tracking source actions">
-        <a class="c3-export-link c3-monitor-action" href="{{ TASKFY_BASE_URL }}/trackfy/" target="_blank" rel="noopener" title="Abrir o Trackfy no Taskfy">
-          <i class="bi bi-box-arrow-up-right"></i><span>Abrir no Taskfy</span>
-        </a>
-      </div>
-    </div>
-  </div>
-
-  {% if not trk.available %}
-    <div class="c3-msg" style="border-left-color: var(--signal-red);">
-      Trackfy unavailable: {{ trk.error|default:"nao foi possivel ler o PostgreSQL do Taskfy." }}
-    </div>
-  {% else %}
-
-  <script id="trkChartsData" type="application/json">{{ trk.charts_json|safe }}</script>
-
-  <div class="kpi-strip">
-    <div class="kpi">
-      <div class="lbl"><span class="marker"></span><span>Containers</span></div>
-      <div class="val">{{ k.total_containers|default:0|intcomma }}</div>
-      <div class="sub">{{ k.containers_in_transit|default:0 }} in transit · {{ k.containers_available|default:0 }} available</div>
-    </div>
-    <div class="kpi kpi-amber">
-      <div class="lbl"><span class="marker"></span><span>In transit</span></div>
-      <div class="val">{{ k.utilization_pct|default:0|floatformat:1 }}<span class="unit">%</span></div>
-      <div class="sub">{{ k.containers_in_transit|default:0 }} of {{ k.total_containers|default:0 }} containers</div>
-    </div>
-    <div class="kpi kpi-cyan">
-      <div class="lbl"><span class="marker"></span><span>Open shipments</span></div>
-      <div class="val">{{ k.shipments_open|default:0|intcomma }}</div>
-      <div class="sub">avg open age {{ k.avg_open_age_days|default:0 }} d</div>
-    </div>
-    <div class="kpi kpi-green">
-      <div class="lbl"><span class="marker"></span><span>Received</span></div>
-      <div class="val">{{ k.shipments_received|default:0|intcomma }}</div>
-      <div class="sub">{{ k.shipments_received_7d|default:0 }} in the last 7 days</div>
-    </div>
-    <div class="kpi kpi-amber">
-      <div class="lbl"><span class="marker"></span><span>Avg lead time</span></div>
-      <div class="val">{{ k.avg_lead_days|default:0 }}<span class="unit">d</span></div>
-      <div class="sub">sent → received</div>
-    </div>
-    <div class="kpi {% if k.issues_total %}kpi-red{% else %}kpi-green{% endif %}">
-      <div class="lbl"><span class="marker"></span><span>Quality index</span></div>
-      <div class="val">{{ k.quality_index|default:0|floatformat:1 }}<span class="unit">%</span></div>
-      <div class="sub">{{ k.issues_total|default:0 }} issue(s) · missing + damaged items</div>
-    </div>
-  </div>
-
-  <div class="row-3">
-    <div class="card">
-      <div class="sn-rail" data-note-panel="shipments-month" data-note-label="Shipments per month"></div>
-      <div class="card-head">
-        <div class="lhs"><span class="tag">FLOW</span><h3>Shipments per month</h3></div>
-        <div class="rhs">SENT × RECEIVED</div>
-      </div>
-      <div class="card-body"><div class="trk-chart"><canvas id="trkFlowChart"></canvas></div></div>
-      <div class="legend">
-        <span><i style="background: var(--signal-amber)"></i>Sent</span>
-        <span><i style="background: var(--signal-green)"></i>Received</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="sn-rail" data-note-panel="shipment-receipts" data-note-label="Item receive status"></div>
-      <div class="card-head">
-        <div class="lhs"><span class="tag">QUALITY</span><h3>Item receive status</h3></div>
-        <div class="rhs"><b>{{ k.items_total|default:0|intcomma }}</b> ITEMS</div>
-      </div>
-      <div class="card-body"><div class="trk-chart"><canvas id="trkItemsChart"></canvas></div></div>
-      <div class="legend">
-        <span><i style="background: var(--signal-green)"></i>OK {{ k.items_ok|default:0 }}</span>
-        <span><i style="background: var(--fg-3)"></i>Pending {{ k.items_pending|default:0 }}</span>
-        <span><i style="background: var(--signal-red)"></i>Missing {{ k.items_missing|default:0 }}</span>
-        <span><i style="background: var(--signal-amber)"></i>Damaged {{ k.items_damaged|default:0 }}</span>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="sn-rail" data-note-panel="container-status" data-note-label="Containers by status"></div>
-      <div class="card-head">
-        <div class="lhs"><span class="tag">FLEET</span><h3>Containers by status</h3></div>
-        <div class="rhs"><b>{{ k.total_containers|default:0 }}</b> CONTAINERS</div>
-      </div>
-      <div class="card-body"><div class="trk-chart"><canvas id="trkFleetChart"></canvas></div></div>
-    </div>
-  </div>
-
-  <div class="row-2">
-    <div class="card">
-      <div class="sn-rail" data-note-panel="open-shipments" data-note-label="Open shipments"></div>
-      <div class="card-head">
-        <div class="lhs"><span class="tag">ACTION</span><h3>Open shipments — waiting to be received</h3></div>
-        <div class="rhs"><b>{{ trk.open_shipments|length }}</b> OPEN · OLDEST FIRST</div>
-      </div>
-      <div class="card-body flush">
-        <table class="tbl trk-table">
-          <thead>
-            <tr>
-              <th>Report</th>
-              <th>Container</th>
-              <th>Owner</th>
-              <th>Route</th>
-              <th>Sent</th>
-              <th class="num">Items</th>
-              <th class="num">Days open</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for s in trk.open_shipments %}
-              <tr>
-                <td><a class="c3-probe-link" href="{{ TASKFY_BASE_URL }}/trackfy/shipments/{{ s.id }}/" target="_blank" rel="noopener">{{ s.report }}</a></td>
-                <td class="mono">{{ s.container }}</td>
-                <td>{{ s.owner }}</td>
-                <td><span class="dim">{{ s.origin }}</span> → {{ s.destination }}</td>
-                <td class="mono">{{ s.sent }}</td>
-                <td class="num">{{ s.items }}</td>
-                <td class="num">
-                  {% if s.days_open >= 15 %}<span class="chip red">{{ s.days_open }} d</span>
-                  {% elif s.days_open >= 7 %}<span class="chip amber">{{ s.days_open }} d</span>
-                  {% else %}<span class="chip green">{{ s.days_open }} d</span>{% endif %}
-                </td>
-                <td>
-                  {% if s.status == "sent" %}<span class="chip amber">Sent</span>
-                  {% else %}<span class="chip">{{ s.status_label }}</span>{% endif %}
-                </td>
-              </tr>
-            {% empty %}
-              <tr><td colspan="8" style="text-align:center; color:var(--fg-3); padding: var(--s-4);">Nothing waiting — every shipment has been received. ✔</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-
-        <div class="sn-rail" data-note-panel="received-shipments" data-note-label="Recently received"></div>
-        <div class="card-head" style="border-top: 1px solid var(--line-1);">
-          <div class="lhs"><span class="tag">DONE</span><h3>Recently received</h3></div>
-          <div class="rhs">LAST {{ trk.recent_received|length }} · LEAD = SENT → RECEIVED</div>
-        </div>
-        <table class="tbl trk-table">
-          <thead>
-            <tr>
-              <th>Report</th>
-              <th>Container</th>
-              <th>Route</th>
-              <th>Received</th>
-              <th class="num">Items</th>
-              <th class="num">Issues</th>
-              <th class="num">Lead</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for s in trk.recent_received %}
-              <tr>
-                <td><a class="c3-probe-link" href="{{ TASKFY_BASE_URL }}/trackfy/shipments/{{ s.id }}/" target="_blank" rel="noopener">{{ s.report }}</a></td>
-                <td class="mono">{{ s.container }}</td>
-                <td><span class="dim">{{ s.origin }}</span> → {{ s.destination }}</td>
-                <td class="mono">{{ s.received }}</td>
-                <td class="num">{{ s.items }}</td>
-                <td class="num">{% if s.issues %}<span class="chip red">{{ s.issues }}</span>{% else %}<span class="dim">0</span>{% endif %}</td>
-                <td class="num mono">{% if s.lead_days is not None %}{{ s.lead_days }} d{% else %}—{% endif %}</td>
-              </tr>
-            {% empty %}
-              <tr><td colspan="7" style="text-align:center; color:var(--fg-3); padding: var(--s-4);">No received shipments yet.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="sn-rail" data-note-panel="shipment-aging" data-note-label="Aging and receive issues"></div>
-      <div class="card-head">
-        <div class="lhs"><span class="tag">RISK</span><h3>Aging and receive issues</h3></div>
-        <div class="rhs">WHAT NEEDS ATTENTION</div>
-      </div>
-      <div class="card-body">
-        <div class="trk-side">
-          <div>
-            <div class="trk-block-title">Open shipments aging</div>
-            <div class="trk-bars">
-              <div class="trk-bar-row">
-                <span class="lbl">&lt; 7 d</span>
-                <span class="track"><i style="--tone: var(--signal-green); --w: {% widthratio k.aging_lt7|default:0 k.shipments_open|default:1 100 %}%"></i></span>
-                <span class="val">{{ k.aging_lt7|default:0 }}</span>
-              </div>
-              <div class="trk-bar-row">
-                <span class="lbl">7–14 d</span>
-                <span class="track"><i style="--tone: var(--signal-amber); --w: {% widthratio k.aging_7_14|default:0 k.shipments_open|default:1 100 %}%"></i></span>
-                <span class="val">{{ k.aging_7_14|default:0 }}</span>
-              </div>
-              <div class="trk-bar-row">
-                <span class="lbl">≥ 15 d</span>
-                <span class="track"><i style="--tone: var(--signal-red); --w: {% widthratio k.aging_gte15|default:0 k.shipments_open|default:1 100 %}%"></i></span>
-                <span class="val">{{ k.aging_gte15|default:0 }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div class="trk-block-title">Receive issues — missing / damaged</div>
-            <div class="trk-list">
-              {% for i in trk.recent_issues %}
-                <div class="trk-issue">
-                  <div class="l1">
-                    <a class="c3-probe-link" href="{{ TASKFY_BASE_URL }}/trackfy/shipments/{{ i.shipment_id }}/" target="_blank" rel="noopener">{{ i.report }}</a>
-                    <span class="dim">{{ i.container }}</span>
-                    {% if i.kind == "missing" %}<span class="chip red">Missing</span>{% else %}<span class="chip amber">Damaged</span>{% endif %}
-                  </div>
-                  <div class="l2" title="{{ i.description }}">{{ i.description|truncatechars:70 }}</div>
-                </div>
-              {% empty %}
-                <div class="trk-list-row"><span class="dim">No missing or damaged items.</span></div>
-              {% endfor %}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  {% endif %}
-  {% endwith %}
-</section>
-{% endif %}
 
 {% include "vessels/_dashboard.html" %}
 {{ vessel_tracking_config|json_script:"vesselTrackingConfig" }}
@@ -5291,125 +5043,6 @@
     });
   }
 
-  {% if show_tracking %}
-  // ===== S04 · Tracking (Trackfy / Taskfy) — graficos no visual do cockpit =====
-  function trkInit() {
-    var node = document.getElementById("trkChartsData");
-    if (!node || typeof Chart === "undefined") return;
-    var data;
-    try { data = JSON.parse(node.textContent || "{}"); } catch (err) { return; }
-    if (!data.monthly) return;
-
-    var GRID = "rgba(255,255,255,0.07)";
-    var PALETTE = ["#84cc16", "#6b7280", "#ef4444", "#fbbf24", "#38bdf8", "#a78bfa", "#5eead4", "#94a3b8"];
-
-    function renderFlow() {
-      var el = document.getElementById("trkFlowChart");
-      if (!el || el.dataset.trkRendered === "1") return;
-      el.dataset.trkRendered = "1";
-      if (!data.monthly.labels.length) {
-        el.parentElement.innerHTML = '<div class="fab-chart-empty" style="color:#6b7280;display:grid;place-items:center;height:100%;font-size:10px;">No shipments yet.</div>';
-        return;
-      }
-      new Chart(el, {
-        type: "bar",
-        data: {
-          labels: data.monthly.labels,
-          datasets: [
-            { label: "Sent", data: data.monthly.sent, backgroundColor: "rgba(251,191,36,.85)", borderRadius: 3, maxBarThickness: 26 },
-            { label: "Received", data: data.monthly.received, backgroundColor: "rgba(132,204,22,.85)", borderRadius: 3, maxBarThickness: 26 }
-          ]
-        },
-        options: {
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
-          scales: {
-            y: { beginAtZero: true, grid: { color: GRID }, ticks: { precision: 0 } },
-            x: { grid: { display: false } }
-          }
-        }
-      });
-    }
-
-    function renderItems() {
-      var el = document.getElementById("trkItemsChart");
-      if (!el || el.dataset.trkRendered === "1") return;
-      el.dataset.trkRendered = "1";
-      var values = data.items.values || [];
-      if (!values.length || values.reduce(function (a, b) { return a + b; }, 0) === 0) {
-        el.parentElement.innerHTML = '<div style="color:#6b7280;display:grid;place-items:center;height:100%;font-size:10px;">No shipment items yet.</div>';
-        return;
-      }
-      new Chart(el, {
-        type: "doughnut",
-        data: {
-          labels: data.items.labels,
-          datasets: [{
-            data: values,
-            backgroundColor: ["#84cc16", "#6b7280", "#ef4444", "#fbbf24"],
-            borderColor: "#0f1115",
-            borderWidth: 2,
-            hoverOffset: 6
-          }]
-        },
-        options: {
-          maintainAspectRatio: false,
-          cutout: "62%",
-          plugins: { legend: { display: false } }
-        }
-      });
-    }
-
-    function renderFleet() {
-      var el = document.getElementById("trkFleetChart");
-      if (!el || el.dataset.trkRendered === "1") return;
-      el.dataset.trkRendered = "1";
-      var labels = data.containers.labels || [];
-      if (!labels.length) {
-        el.parentElement.innerHTML = '<div style="color:#6b7280;display:grid;place-items:center;height:100%;font-size:10px;">No containers registered.</div>';
-        return;
-      }
-      // cor pelo significado do status, nao pela posicao
-      function fleetColor(label, i) {
-        var t = String(label).toLowerCase();
-        if (t.indexOf("unavailable") >= 0) return "#6b7280";
-        if (t.indexOf("transit") >= 0) return "#fbbf24";
-        if (t.indexOf("available") >= 0 || t.indexOf("on board") >= 0) return "#84cc16";
-        return PALETTE[i % PALETTE.length];
-      }
-      new Chart(el, {
-        type: "bar",
-        data: {
-          labels: labels,
-          datasets: [{
-            label: "Containers",
-            data: data.containers.values,
-            backgroundColor: labels.map(function (l, i) { return fleetColor(l, i); }),
-            borderRadius: 3,
-            maxBarThickness: 22
-          }]
-        },
-        options: {
-          maintainAspectRatio: false,
-          indexAxis: "y",
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { beginAtZero: true, grid: { color: GRID }, ticks: { precision: 0 } },
-            y: { grid: { display: false }, ticks: { autoSkip: false, font: { size: 9 } } }
-          }
-        }
-      });
-    }
-
-    Chart.defaults.font.family = "'IBM Plex Sans', Inter, sans-serif";
-    Chart.defaults.font.size = 9;
-    Chart.defaults.color = "#a8aeb8";
-    c3WhenVisible(document.getElementById("trkFlowChart"), renderFlow);
-    c3WhenVisible(document.getElementById("trkItemsChart"), renderItems);
-    c3WhenVisible(document.getElementById("trkFleetChart"), renderFleet);
-  }
-  {% endif %}
-
   function c3SetGridCell(row, col, value, suffix) {
     var cell = row ? row.querySelector('[data-col="' + col + '"]') : null;
     if (!cell) return;
@@ -6182,9 +5815,6 @@
     fabInit();
     fabRundownInit();
     fabSkylineInit();
-    {% if show_tracking %}
-    trkInit();
-    {% endif %}
     initC3PendingExports();
     setupPoPlacedResize();
     initC3ForecastControls();
@@ -6202,17 +5832,11 @@
     var navMeta3d = '<span>Model · <b>Bonga North Project</b></span><span>·</span><span><b>Local GLB</b> · 3D hierarchy</span>';
     var navMetaFab = '<span>Source · <b>P6 schedule</b></span><span>·</span><span><b>SPDM</b> · fabrication packages</span>';
     var navMetaVessels = '<span>Source · <b>AIS reports</b></span><span>·</span><span><b>AIS</b> · received positions and stored history</span>';
-    {% if show_tracking %}
-    var navMetaTrk = '<span>Source · <b>Trackfy</b></span><span>·</span><span><b>Taskfy</b> · container shipments</span>';
-    {% endif %}
     function activate(id){
       tabs.forEach(function(t){ t.classList.toggle('active', t.dataset.target === id); });
       if (!navMeta) return;
       if (id === 's05') navMeta.innerHTML = navMeta3d;
       else if (id === 'vessel-tracking') navMeta.innerHTML = navMetaVessels;
-      {% if show_tracking %}
-      else if (id === 's04') navMeta.innerHTML = navMetaTrk;
-      {% endif %}
       else if (id === 's03') navMeta.innerHTML = navMetaFab;
       else navMeta.innerHTML = navMetaDefault;
     }
@@ -6235,7 +5859,7 @@
         activate(t.dataset.target);
       });
     });
-    var secs = ['s00','s01','s02','s03'{% if show_tracking %},'s04'{% endif %},'vessel-tracking','s05'];
+    var secs = ['s00','s01','s02','s03','vessel-tracking','s05'];
     window.addEventListener('scroll', function(){
       var pos = sectionNavOffset() + 2;
       var cur = secs[0];
