@@ -9,6 +9,43 @@ from apps.core.views import model_review_view
 
 
 class ModelReviewTests(SimpleTestCase):
+    def test_missing_package_link_uses_unique_exact_current_drawing(self):
+        tag = '4"-LO-403236-40S-SS-P'
+        number = "BNO-MABU-300-MP-2343-10162"
+        docs = [{"id": 840, "project_id": 1, "revision": "C03", "drawing_number": number,
+                 "discipline": "piping", "piping_line_number": tag}]
+        for progress, expected in [(60, "started"), (100, "completed")]:
+            with self.subTest(progress=progress):
+                package = {"document_id": None, "drawing_number": number, "discipline": "piping",
+                           "stages": {"welding": {"pct": progress}}}
+                result = build_review(docs, [package])
+                self.assertEqual(result["lines"][0]["status"], expected)
+                self.assertFalse(result["lines"][0]["unlinked"])
+                self.assertEqual(result["lines"][0]["drawing_ids"], ["840"])
+
+    def test_superseded_revision_does_not_prevent_completed_colour(self):
+        docs = [{"id": pk, "project_id": 1, "revision": revision, "drawing_number": "ISO-1",
+                 "discipline": "piping", "piping_line_number": '4"-LO-403236-40S-SS-P'}
+                for pk, revision in [(1, "C02"), (2, "C03")]]
+        for linked_id in (None, 1, 2):
+            with self.subTest(linked_id=linked_id):
+                result = build_review(docs, [{"document_id": linked_id, "drawing_number": "ISO-1",
+                                             "discipline": "piping", "stages": {"welding": {"pct": 100}}}])
+                self.assertEqual(len(result["drawings"]), 1)
+                self.assertEqual(result["lines"][0]["status"], "completed")
+                self.assertEqual(result["lines"][0]["drawing_ids"], ["2"])
+
+    def test_unlinked_package_does_not_guess_project_discipline_or_partial_number(self):
+        doc = {"id": 1, "project_id": 1, "revision": "C03", "drawing_number": "ISO-10162",
+               "discipline": "piping", "piping_line_number": '4"-LO-403236-40S-SS-P'}
+        package = {"document_id": None, "drawing_number": "ISO-10162", "discipline": "piping",
+                   "stages": {"welding": {"pct": 100}}}
+        for docs, pkg in [([doc, {**doc, "id": 2, "project_id": 2}], package),
+                          ([doc], {**package, "discipline": "structural"}),
+                          ([doc], {**package, "drawing_number": "10162"})]:
+            with self.subTest(docs=docs, pkg=pkg):
+                self.assertTrue(all(line["status"] == "unlinked" for line in build_review(docs, [pkg])["lines"]))
+
     def test_drawings_without_piping_lines_remain_in_their_discipline(self):
         docs = [{"id": 1, "drawing_number": "STR-1", "discipline": "structural", "piping_line_number": "N/A"},
                 {"id": 2, "drawing_number": "ELE-1", "discipline": "electrical", "piping_line_number": ""},

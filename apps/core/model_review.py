@@ -5,6 +5,7 @@ import re
 from collections import defaultdict
 
 from .fabrication_source import _as_dict, _weekly_overall_value, overall_value, stage_value, stage_is_applicable, STAGE_KEYS
+from .datafy_drawings_scope import _canonical_excluded_document_ids
 
 
 def line_key(value):
@@ -82,10 +83,34 @@ def review_discipline(value):
 
 
 def build_review(documents, packages):
+    documents = list(documents)
+    all_documents = {doc["id"]: doc for doc in documents}
+    # Superseded revisions must not add an unlinked state to the current line.
+    versioned = [{**doc, "pk": doc["id"]} for doc in documents if doc.get("project_id") is not None]
+    excluded = _canonical_excluded_document_ids(versioned)
+    documents = [doc for doc in documents if doc["id"] not in excluded]
+    current_ids = {doc["id"] for doc in documents}
+    by_number = defaultdict(list)
+    for doc in documents:
+        number = str(doc.get("drawing_number") or "").strip().upper()
+        if number:
+            by_number[number].append(doc)
     by_document = defaultdict(list)
     for package in packages:
-        if package.get("document_id"):
-            by_document[(package["document_id"], review_discipline(package.get("discipline")))].append(package_state(package))
+        document_id = package.get("document_id")
+        discipline = review_discipline(package.get("discipline"))
+        if document_id not in current_ids:
+            # Revision replacement can clear the package FK (SET_NULL). Match
+            # the full drawing number only; never guess from a partial line tag.
+            previous = all_documents.get(document_id, {})
+            number = str(package.get("drawing_number") or previous.get("drawing_number") or "").strip().upper()
+            candidates = [doc for doc in by_number.get(number, [])
+                          if review_discipline(doc.get("discipline")) == discipline
+                          and (previous.get("project_id") is None
+                               or doc.get("project_id") == previous["project_id"])]
+            document_id = candidates[0]["id"] if len(candidates) == 1 else None
+        if document_id is not None:
+            by_document[(document_id, discipline)].append(package_state(package))
     drawings = []
     by_line = {}
     for doc in documents:
@@ -113,12 +138,12 @@ def review_payload():
     with _datafy_conn() as conn:
         cur = conn.cursor()
         documents = _rows(cur, """
-            select id, drawing_number, title, discipline, piping_line_number, raw_text
+            select id, project_id, revision, uploaded_at, drawing_number, title, discipline, piping_line_number, raw_text
             from core_document
             order by drawing_number, id
         """)
         packages = _rows(cur, """
-            select document_id, discipline, stages, actual_start
+            select document_id, drawing_number, discipline, stages, actual_start
             from fabrication_fabricationpackage where is_active = true
         """)
     return build_review(documents, packages)
