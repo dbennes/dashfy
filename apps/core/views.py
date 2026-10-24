@@ -30,7 +30,10 @@ from apps.core.engineering_import import import_engineering_status_workbook
 from apps.core.engineering_monitor_import import import_engineering_monitor_workbook, normalize_monitor_discipline
 from apps.core.model_selection import SelectionTooLarge, selection_glb_path
 from apps.core.p6_import import import_p6_curves_workbook
-from apps.core.supply_snapshot_filters import normalized_supply_snapshot_filters
+from apps.core.supply_snapshot_filters import (
+    normalized_supply_snapshot_filters, scope_supply_filters, supply_snapshot_matches_scope,
+)
+from apps.core.release_scope import current_release_scope
 from apps.exports.models import ExportLog
 from apps.core import real_sources
 from apps.core import ros_workbook, rundown_workbook, fabrication_batches
@@ -42,6 +45,7 @@ from .models import Announcement, DatafySupplySnapshot, EngineeringMonitorImport
 
 def _dashboard_filters_from_request(request):
     return {
+        "release_scope": getattr(request, "release_scope", current_release_scope()),
         "date_from": request.GET.get("date_from", ""),
         "date_to": request.GET.get("date_to", ""),
         "discipline": request.GET.get("discipline", ""),
@@ -946,7 +950,13 @@ def export_engineering_monitor_view(request):
         return redirect(reverse("core:home") + "#s01-monitor")
 
     payload = latest.payload or {}
-    docs = [_monitor_export_doc(dict(doc)) for doc in list(payload.get("documents") or [])]
+    try:
+        scoped_documents = real_sources.engineering_scope_documents(list(payload.get("documents") or []))
+    except Exception:
+        logging.getLogger(__name__).exception("Unable to resolve engineering export drawing scope")
+        messages.error(request, "The drawing classification is unavailable. Please retry the export.")
+        return redirect(reverse("core:home") + "#s01-monitor")
+    docs = [_monitor_export_doc(dict(doc)) for doc in scoped_documents]
     docs.sort(key=lambda doc: (int(doc.get("row_number") or 0), str(doc.get("document_number") or "")))
 
     output = io.BytesIO()
@@ -1043,9 +1053,9 @@ def export_engineering_monitor_view(request):
     summary_sheet.write(1, 0, "Edite Contabilizar e Status normalizado. Depois importe este arquivo novamente para tornar a base oficial.", text_fmt)
     summary_rows = [
         ("Importacao", f"#{latest.pk} - {latest.original_filename}"),
-        ("Linhas brutas", latest.document_count),
-        ("Contabilizadas", latest.monitored_document_count),
-        ("Desconsideradas", latest.excluded_count),
+        ("Linhas brutas", len(docs)),
+        ("Contabilizadas", sum(1 for doc in docs if doc.get("is_monitored") and doc.get("is_countable"))),
+        ("Desconsideradas", sum(1 for doc in docs if not (doc.get("is_monitored") and doc.get("is_countable")))),
         ("Aba para editar", "Base Engenharia"),
     ]
     summary_sheet.write_row(3, 0, ["Item", "Valor"], header_fmt)
@@ -1152,13 +1162,19 @@ def _engineering_status_export_queryset(request):
             | Q(responsible__icontains=query)
             | Q(fabrication_ref__icontains=query)
         )
-    return latest, qs
+    scoped_rows = real_sources.engineering_scope_documents(list(qs.values("pk", "document_number")))
+    return latest, qs.filter(pk__in=[row["pk"] for row in scoped_rows])
 
 
 @login_required
 def export_engineering_status_view(request):
     """Exporta desenhos/documentos DED e status do snapshot ativo."""
-    latest, qs = _engineering_status_export_queryset(request)
+    try:
+        latest, qs = _engineering_status_export_queryset(request)
+    except Exception:
+        logging.getLogger(__name__).exception("Unable to resolve DED export drawing scope")
+        messages.error(request, "The drawing classification is unavailable. Please retry the export.")
+        return redirect(reverse("core:home") + "#s01")
     if latest is None or qs is None:
         messages.error(request, "Nao ha snapshot DED ativo na base do sistema para exportar.")
         return redirect(reverse("core:home") + "#s01")
@@ -1318,7 +1334,7 @@ def export_datafy_supply_view(request):
         return redirect(_supply_snapshot_redirect(request))
 
     exported_at = timezone.now()
-    exported_filters = _json_ready(filters)
+    exported_filters = _json_ready(scope_supply_filters(filters))
     exported_payload = _json_ready(current_payload)
     total_materials, total_drawings, material_rows = _supply_snapshot_counts(exported_payload)
     source_created_at = current_payload.get("snapshot_refreshed_at") or exported_at
@@ -1388,6 +1404,10 @@ def import_datafy_supply_view(request):
             raise ValueError("Payload do snapshot invalido.")
         if not isinstance(filters, dict):
             raise ValueError("Filtros do snapshot invalidos.")
+        if not supply_snapshot_matches_scope(filters, current_release_scope()):
+            raise ValueError("Snapshot does not match the selected drawing scope. Export a current snapshot for this selection.")
+        if payload.get("drawing_release_scope") != f"{current_release_scope()}-v2":
+            raise ValueError("Snapshot drawing classification is missing or does not match this selection.")
         filters = _json_ready(filters)
         payload = _json_ready(payload)
         filters_hash = supply_filters_hash(filters)

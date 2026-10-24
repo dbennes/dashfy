@@ -10,6 +10,8 @@ from django.conf import settings
 from django.core.cache import cache as django_cache
 from django.utils import timezone
 
+from .release_scope import current_release_scope
+
 # Bounded locks coalesce concurrent first loads in each Waitress process.
 _LOCKS = [RLock() for _ in range(32)]
 _FRESH = ContextVar("dashboard_fresh_sources", default=False)
@@ -29,12 +31,15 @@ def fresh_sources():
 
 
 class SourceCache:
-    def get(self, key, default=None, **kwargs):
-        return default if _FRESH.get() else django_cache.get(key, default, **kwargs)
+    def _key(self, key):
+        return f"drawing-scope:v1:{current_release_scope()}:{key}"
 
-    def set(self, *args, **kwargs):
+    def get(self, key, default=None, **kwargs):
+        return default if _FRESH.get() else django_cache.get(self._key(key), default, **kwargs)
+
+    def set(self, key, value, *args, **kwargs):
         if not _FRESH.get():
-            return django_cache.set(*args, **kwargs)
+            return django_cache.set(self._key(key), value, *args, **kwargs)
 
     def __getattr__(self, name):
         return getattr(django_cache, name)
@@ -50,10 +55,10 @@ def cached_dashboard_source(name):
             ttl = getattr(settings, "DASHFY_SOURCE_CACHE_SECONDS", 45)
             if ttl <= 0 or _FRESH.get():
                 return loader(*args, **kwargs)
-            identity = json.dumps([name, timezone.localdate().isoformat(), args, kwargs],
+            identity = json.dumps([name, current_release_scope(), timezone.localdate().isoformat(), args, kwargs],
                                   sort_keys=True, default=str)
             digest = sha256(identity.encode()).hexdigest()
-            key = f"dashboard-source:v1:{digest}"
+            key = f"dashboard-source:v3-release-scope:{digest}"
             value = cache.get(key)
             if value is not None:
                 return value

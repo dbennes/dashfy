@@ -41,6 +41,7 @@
     try {
       const url = new URL(target.dataset.contentUrl, location.origin);
       url.search = location.search;
+      url.searchParams.set("release_scope", target.dataset.releaseScope || "official");
       const response = await fetch(url, {credentials:"same-origin", cache:"no-store"});
       if (response.redirected || response.headers.get("X-Dashboard-Content") !== "1")
         throw Error("Your session expired or the service is unavailable. Reload the page and sign in again.");

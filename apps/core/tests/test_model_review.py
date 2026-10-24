@@ -5,10 +5,63 @@ from unittest.mock import patch
 from django.test import SimpleTestCase, RequestFactory
 
 from apps.core.model_review import aggregate_status, build_review, line_key, line_tags, package_state
+from apps.core.release_scope import release_scope_context
 from apps.core.views import model_review_view
 
 
 class ModelReviewTests(SimpleTestCase):
+    def test_both_keeps_each_release_family_and_its_revision_progress(self):
+        official = {"id": 1, "project_id": 1, "revision": "A01", "drawing_number": "ISO-1",
+                    "discipline": "piping", "piping_line_number": '4"-LO-403236-40S-SS-P',
+                    "release_status": "official"}
+        preparing = {**official, "id": 2, "revision": "C03", "release_status": "preparing"}
+        newer_preparing = {**preparing, "id": 3, "revision": "C04"}
+        packages = [{"document_id": 1, "discipline": "piping", "stages": {"welding": {"pct": 20}}},
+                    {"document_id": 2, "discipline": "piping", "stages": {"welding": {"pct": 100}}}]
+        for scope, expected in [("official", [("1", "started")]), ("preparing", [("3", "completed")]),
+                                ("all", [("1", "started"), ("3", "completed")])]:
+            with self.subTest(scope=scope), release_scope_context(scope):
+                result = build_review([official, preparing, newer_preparing], packages)
+                self.assertEqual([(doc["id"], doc["status"]) for doc in result["drawings"]], expected)
+                self.assertTrue(all(doc["release_status"] in {"official", "preparing"} for doc in result["drawings"]))
+
+    def test_known_preparing_orphan_recovers_only_exact_unique_preparing_drawing(self):
+        document = {"id": 1, "drawing_number": "PREP-1", "release_status": "preparing",
+                    "discipline": "piping", "piping_line_number": '4"-LO-403236-40S-SS-P'}
+        package = {"document_id": None, "drawing_number": "PREP-1", "release_status": "preparing",
+                   "discipline": "piping", "stages": {"welding": {"pct": 100}}}
+        with release_scope_context("preparing"):
+            self.assertEqual(build_review([document], [package])["drawings"][0]["status"], "completed")
+        self.assertEqual(build_review([document], [package])["drawings"], [])
+
+    def test_ambiguous_orphan_in_both_never_assigns_progress_between_release_families(self):
+        doc = {"id": 1, "drawing_number": "ISO-1", "discipline": "piping",
+               "piping_line_number": '4"-LO-403236-40S-SS-P', "release_status": "official"}
+        package = {"document_id": None, "drawing_number": "ISO-1", "discipline": "piping",
+                   "stages": {"welding": {"pct": 100}}}
+        with release_scope_context("all"):
+            result = build_review([doc, {**doc, "id": 2, "release_status": "preparing"}], [package])
+        self.assertEqual([row["status"] for row in result["drawings"]], ["unlinked", "unlinked"])
+
+    def test_preparing_never_appears_or_reconnects_progress_to_official(self):
+        official = {"id": 1, "project_id": 1, "revision": "A01", "drawing_number": "ISO-1",
+                    "discipline": "piping", "piping_line_number": '4"-LO-403236-40S-SS-P',
+                    "release_status": "official"}
+        preparing = {**official, "id": 2, "revision": "C03", "release_status": "preparing"}
+        package = {"document_id": 2, "drawing_number": "ISO-1", "discipline": "piping",
+                   "stages": {"welding": {"pct": 100}}}
+        result = build_review([official, preparing], [package])
+        self.assertEqual([doc["id"] for doc in result["drawings"]], ["1"])
+        self.assertEqual(result["lines"][0]["status"], "unlinked")
+        self.assertEqual(build_review([preparing], [package])["drawings"], [])
+
+    def test_preparing_package_with_removed_link_does_not_use_number_fallback(self):
+        document = {"id": 1, "drawing_number": "ISO-1", "discipline": "piping",
+                    "piping_line_number": '4"-LO-403236-40S-SS-P'}
+        package = {"document_id": None, "drawing_number": "ISO-1", "discipline": "piping",
+                   "release_status": "preparing", "stages": {"welding": {"pct": 100}}}
+        self.assertEqual(build_review([document], [package])["lines"][0]["status"], "unlinked")
+
     def test_missing_package_link_uses_unique_exact_current_drawing(self):
         tag = '4"-LO-403236-40S-SS-P'
         number = "BNO-MABU-300-MP-2343-10162"

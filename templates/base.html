@@ -20,6 +20,7 @@
 
   <link href="{% static 'css/dashfy.css' %}?v=20260928-modal-scroll" rel="stylesheet">
   <link href="{% static 'css/cockpit-v3.css' %}?v=20261002-mdr-dense-disciplines" rel="stylesheet">
+  <link href="{% static 'css/release-scope.css' %}?v=20261023" rel="stylesheet">
 
   <style>
     :root {
@@ -30,7 +31,7 @@
   </style>
   {% block extra_css %}{% endblock %}
 </head>
-<body class="cockpit-v3{% if show_login_boot %} has-login-boot{% endif %}" data-theme="dark">
+<body class="cockpit-v3{% if show_login_boot %} has-login-boot{% endif %}" data-theme="dark" data-drawing-release-scope="{{ drawing_release_scope|default:'official' }}">
 <script>(function(){try{document.body.dataset.theme=localStorage.getItem('c3-theme')||'dark';}catch(e){}})();</script>
 {% if user.is_authenticated and show_login_boot %}
   {% include "partials/_login_boot.html" %}
@@ -48,8 +49,8 @@
       </div>
       <nav class="sb-nav">
         <div class="sb-section-label">WS</div>
-        <a class="sb-item {% if request.resolver_match.namespace == 'core' %}active{% endif %} {% if not user.is_admin and not user.is_superuser %}is-disabled{% endif %}"
-           {% if user.is_admin or user.is_superuser %}href="{% url 'core:home' %}" title="Cockpit"{% else %}role="link" aria-disabled="true" tabindex="-1" title="Administrator access only"{% endif %}>
+        <a class="sb-item {% if request.resolver_match.namespace == 'core' %}active{% endif %}"
+           href="{% url 'core:home' %}?release_scope={{ drawing_release_scope }}" title="Cockpit">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
           <span class="sb-label">Cockpit</span>
         </a>
@@ -106,7 +107,7 @@
         <div class="sb-avatar" title="{{ user.username }}">{{ user.username|slice:":2"|upper }}</div>
         <div class="sb-user">
           <strong>{{ user.username }}</strong>
-          <small>{% if user.is_superuser %}ADMIN{% else %}USER{% endif %}</small>
+          <small>{% if user.is_superuser %}ADMIN{% else %}{{ user.get_role_display }}{% endif %}</small>
         </div>
       </div>
     </aside>
@@ -126,6 +127,19 @@
         <span class="name">{% block project_name %}Bonga North Project{% endblock %}</span>
         <span class="horiz mono">{% block project_horiz %}Jun-2024 → Jun-2027{% endblock %}</span>
       </div>
+
+      {% if can_view_preparing %}
+      <form class="tb-release-scope" method="get" action="{{ request.path }}" onsubmit="var section = document.querySelector('#c3-section-nav .sn-tab.active'); this.action = this.action.split('#')[0] + (section ? '#' + section.dataset.target : window.location.hash)">
+        {% for key, values in request.GET.lists %}{% if key != 'release_scope' %}{% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}{% endif %}{% endfor %}
+        <label for="drawing-release-scope">Drawings</label>
+        <select id="drawing-release-scope" name="release_scope" aria-label="Drawing release scope" onchange="this.form.requestSubmit()">
+          <option value="official"{% if drawing_release_scope == 'official' %} selected{% endif %}>Official</option>
+          <option value="preparing"{% if drawing_release_scope == 'preparing' %} selected{% endif %}>Preparing</option>
+          <option value="all"{% if drawing_release_scope == 'all' %} selected{% endif %}>Both</option>
+        </select>
+        <noscript><button type="submit">Apply</button></noscript>
+      </form>
+      {% endif %}
 
       <div class="tb-tickers">
         {% block tickers %}
@@ -246,7 +260,7 @@
 {% block vendor_js %}{% endblock %}
 {% block app_js %}
 <script src="{% static 'js/model-review.js' %}?v=20260930-line-class-quotes"></script>
-<script src="{% static 'js/dashfy.js' %}?v=20260928-download-bytes"></script>
+<script src="{% static 'js/dashfy.js' %}?v=20261023-release-scope"></script>
 {% endblock %}
 {% block extra_js %}{% endblock %}
 </body>

@@ -15,6 +15,7 @@ from django.views.decorators.http import require_POST
 from openpyxl import load_workbook
 
 from .models import FabricationBatchImport
+from .release_scope import current_release_scope
 
 MAX_BYTES = 10 * 1024 * 1024
 
@@ -92,20 +93,70 @@ def parse_workbook(content):
 
 
 def import_workbook(upload, user=None):
+    release_scope = current_release_scope()
+    if release_scope == 'all':
+        raise ValueError('Choose Official or Preparing before importing a batch workbook.')
     content = upload.read(MAX_BYTES + 1)
     if len(content) > MAX_BYTES:
         raise ValueError('Maximum file size is 10 MB.')
     payload = parse_workbook(content)
+    payload.update(release_scope=release_scope, release_scope_version=1)
     return FabricationBatchImport.objects.create(
         original_filename=Path(upload.name).name[:255],
         file_hash=hashlib.sha256(content).hexdigest(), payload=payload, imported_by_id=user.pk if user else None,
     )
 
 
+def _payload_release_scope(payload):
+    if not isinstance(payload, dict):
+        return None
+    # Existing workbooks predate Preparing and remain the Official baseline.
+    if 'release_scope' not in payload:
+        return 'official'
+    if payload.get('release_scope_version') == 1 and payload.get('release_scope') in {'official', 'preparing'}:
+        return payload['release_scope']
+    return None
+
+
+def _combined_batch_payload(snapshots):
+    payloads = [snapshot.payload for snapshot in snapshots]
+    labels = sorted({label for payload in payloads for label in payload['labels']},
+                    key=lambda label: (int(re.search(r'\d+', label)[0]), label)
+                    if label != 'Unassigned' else (99999, label))
+    combined = {'labels': labels, 'scopes': {}, 'release_scope': 'all', 'release_scope_version': 1,
+                'excluded_sps_rows': sum(payload.get('excluded_sps_rows', 0) for payload in payloads),
+                'unassigned_items': sum(payload.get('unassigned_items', 0) for payload in payloads)}
+    for scope in ('all', 'structural', 'piping'):
+        totals, completed = defaultdict(int), defaultdict(int)
+        for payload in payloads:
+            for label, total, done in zip(payload['labels'], payload['scopes'][scope]['total'],
+                                           payload['scopes'][scope]['done'], strict=True):
+                totals[label] += total
+                completed[label] += done
+        total = [totals[label] for label in labels]
+        done = [completed[label] for label in labels]
+        combined['scopes'][scope] = {'total': total, 'done': done,
+                                    'item_count': sum(total), 'done_count': sum(done)}
+    return combined
+
+
 def current_batches():
-    snapshot = FabricationBatchImport.objects.first()
-    return {'payload': snapshot.payload, 'filename': snapshot.original_filename,
-            'updated_at': snapshot.created_at} if snapshot else {}
+    release_scope = current_release_scope()
+    requested = {'official', 'preparing'} if release_scope == 'all' else {release_scope}
+    latest = {}
+    for snapshot in FabricationBatchImport.objects.all():
+        scope = _payload_release_scope(snapshot.payload)
+        if scope in requested and scope not in latest:
+            latest[scope] = snapshot
+        if requested <= latest.keys():
+            break
+    if not latest:
+        return {}
+    snapshots = [latest[scope] for scope in ('official', 'preparing') if scope in latest]
+    payload = _combined_batch_payload(snapshots) if release_scope == 'all' else snapshots[0].payload
+    return {'payload': payload, 'filename': ' + '.join(snapshot.original_filename for snapshot in snapshots),
+            'updated_at': max(snapshot.created_at for snapshot in snapshots),
+            'release_scope': release_scope}
 
 
 @login_required
@@ -122,4 +173,4 @@ def import_batches_view(request):
         messages.error(request, str(exc))
     else:
         messages.success(request, f"Batch fabrication updated: {snapshot.payload['scopes']['all']['item_count']} listed items.")
-    return redirect(reverse('core:home') + '#s03')
+    return redirect(reverse('core:home') + f'?release_scope={current_release_scope()}#s03')

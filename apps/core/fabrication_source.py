@@ -28,6 +28,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 from .dashboard_cache import cached_dashboard_source
+from .release_scope import current_release_scope
 
 # (key, rotulo curto, rotulo completo, peso de fallback) — igual a SPDM.
 STAGES: list[tuple[str, str, str, int]] = [
@@ -436,10 +437,11 @@ select p.id, p.code, p.name, p.campaign, p.discipline, p.drawing_number, p.dwg_k
        p.plan_start, p.plan_finish, p.actual_start, p.actual_finish,
        p.stages, p.sort_order,
        d.drawing_number as doc_drawing_number, d.title as doc_title,
-       d.revision as doc_revision, d.priority as doc_priority
+       d.revision as doc_revision, d.priority as doc_priority, {package_release_status} as release_status
   from fabrication_fabricationpackage p
   left join core_document d on d.id = p.document_id
  where p.is_active = true
+   and {package_scope}
  order by p.sort_order, p.id
 """
 
@@ -447,7 +449,9 @@ _PROGRESS_SQL = """
 select e.progress_date, sum(e.tons_delta) as total
  from fabrication_fabricationprogressentry e
   join fabrication_fabricationpackage p on p.id = e.package_id
+  left join core_document d on d.id = p.document_id
  where p.is_active = true
+   and {package_scope}
    and p.discipline = 'piping'
  group by e.progress_date
  order by e.progress_date
@@ -465,15 +469,23 @@ select id, report_date, reported_overall_pct
 """
 
 _IMPORT_SQL = """
-select original_filename, imported_at, packages_total, packages_linked, activities_total
-  from fabrication_p6import
- order by imported_at desc
+select i.original_filename, i.imported_at, i.activities_total,
+       count(p.id) filter (where {package_scope}) as packages_total,
+       count(p.document_id) filter (where {document_scope:d}) as packages_linked
+  from fabrication_p6import i
+  left join fabrication_fabricationpackage p on p.latest_import_id = i.id
+  left join core_document d on d.id = p.document_id
+ group by i.id
+ order by i.imported_at desc
  limit 1
 """
 
 
 def _weekly_progress_report_rows(cursor, rows_reader) -> list[dict]:
     """Read report rows only after PostgreSQL confirms the new table exists."""
+    # Workbook totals have Official scope and cannot describe Preparing/Both.
+    if current_release_scope() != "official":
+        return []
     relation_rows = rows_reader(cursor, _WEEKLY_PROGRESS_REPORT_RELATION_SQL)
     if not relation_rows or not relation_rows[0].get("relation_name"):
         return []
@@ -525,11 +537,11 @@ doc_tables as (
              then 1 else 0 end) as has_explicit_fab
     from core_document d
     left join core_extractedtable t on t.document_id = d.id
-    where d.id = any(?)
+    where d.id = any(?) and {document_scope:d}
     group by d.id
 )
 select mi.id as material_item_id,
-       d.id as document_id,
+       d.id as document_id, d.release_status,
        t.id as table_id,
        t.name as table_name,
        t.page_number,
@@ -570,7 +582,7 @@ left join catalog_catalogitem ci on ci.id = cm.catalog_item_id
 left join alloc on alloc.material_item_id = mi.id
 left join stock on stock.catalog_item_id = ci.id
 left join doc_tables dt on dt.document_id = d.id
-where d.id = any(?)
+where d.id = any(?) and {document_scope:d}
 order by d.id, t.page_number, t."order", mi.row_order
 """
 
@@ -1245,6 +1257,7 @@ def fabrication_progress() -> dict:
 
         rows.append({
             "pk": package["id"],
+            "release_status": package.get("release_status"),
             "code": package.get("code") or "",
             "p6_ref": p6_reference(stages, package.get("p6_ref") or ""),
             "travel_pack_no": package.get("travel_pack_no") or "",
@@ -1368,10 +1381,11 @@ def fabrication_progress_safe() -> dict:
 _PACKAGE_ONE_SQL = """
 select p.id, p.code, p.name, p.document_id, p.p6_ref, p.stages, p.plan_start,
        p.drawing_number, p.dwg_key,
-       d.drawing_number as doc_drawing_number, d.title as doc_title
+       d.drawing_number as doc_drawing_number, d.title as doc_title, {package_release_status} as release_status
   from fabrication_fabricationpackage p
   left join core_document d on d.id = p.document_id
  where p.id = ?
+   and {package_scope}
 """
 
 
@@ -1521,6 +1535,7 @@ select p.code, p.document_id, d.priority
   from fabrication_fabricationpackage p
   join core_document d on d.id = p.document_id
  where p.is_active = true
+   and {document_scope:d}
 """
 
 

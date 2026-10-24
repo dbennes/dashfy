@@ -7,12 +7,15 @@ from uuid import UUID
 
 from django.contrib.auth.decorators import login_required
 from django.db import DatabaseError, transaction
+from django.db.models import Q
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_GET
 import xlsxwriter
 
+from apps.accounts.permissions import can_view_preparing
 from .models import SectionNote, SectionNoteEvent
+from .release_scope import current_release_scope
 
 SECTIONS = {"s00": "Planning", "s01": "Engineering", "s02": "Supply",
             "s03": "Fabrication", "s04": "Logistics", "s05": "3D model", "ais": "Marine operations"}
@@ -62,8 +65,18 @@ def note_scope(data):
     return section, ""
 
 
+def authorized_release_scope(user):
+    return current_release_scope() if can_view_preparing(user) else "official"
+
+
 def scope(user):
-    return SectionNote.objects.filter(project=PROJECT, client_id=user.client_id)
+    records = SectionNote.objects.filter(project=PROJECT, client_id=user.client_id)
+    release = authorized_release_scope(user)
+    if release == "all":
+        return records
+    if release == "preparing":
+        return records.filter(context__release_scope="preparing")
+    return records.filter(Q(context__release_scope="official") | ~Q(context__has_key="release_scope"))
 
 
 def reply(data, status=200):
@@ -94,12 +107,13 @@ def payload(request):
 
 
 def serialize(note):
+    context = {"release_scope": "official", **(note.context or {})}
     return {"id": note.pk, "section": note.section, "panel": note.panel, "author": note.author_name,
             "author_id": note.author_id, "date": note.note_date.isoformat(),
             "created_at": note.created_at.isoformat(), "body": note.body,
             "due_date": note.due_date.isoformat() if note.due_date else None,
             "information_only": note.information_only, "status": note.status,
-            "version": note.version, "context": note.context,
+            "version": note.version, "context": context,
             "events": [{"at": event.created_at.isoformat(), "actor": event.actor_name,
                         "from": event.previous_status, "to": event.status}
                        for event in note.events.all()]}
@@ -160,6 +174,7 @@ def notes(request):
         raise ValueError("Invalid context.")
     context = {key: str(context[key])[:160] for key in
                ("date_from", "date_to", "discipline", "campaign", "contract_week", "panel_mode", "panel_discipline", "vessel") if context.get(key)}
+    context["release_scope"] = authorized_release_scope(request.user)
     if not isinstance(data.get("request_id"), str):
         raise ValueError("Open a new record to continue.")
     with transaction.atomic():
@@ -169,7 +184,8 @@ def notes(request):
             "note_date": note_date, "body": body.strip(), "due_date": None if info else due,
             "information_only": info, "context": context})
         if not created and (note.project != PROJECT or note.author_id != request.user.pk or note.client_id != request.user.client_id
-                            or note.section != section or note.panel != panel or note.body != body.strip()):
+                            or note.section != section or note.panel != panel or note.body != body.strip()
+                            or (note.context or {}).get("release_scope", "official") != context["release_scope"]):
             return reply({"error": "This identifier is already in use. Open a new record."}, 409)
         if created:
             SectionNoteEvent.objects.create(note_id=note.pk, actor_id=request.user.pk,
@@ -213,7 +229,8 @@ def export_minutes(request):
         styles[cancelled] = book.add_format({"text_wrap": True, "valign": "top", "font_size": 10,
             "font_color": "#7C8592" if cancelled else "#172033", "font_strikeout": cancelled})
     sheet.merge_range("A1:N1", "DASHFY | BN-EPC1 | FOLLOW-UP MINUTES", title)
-    sheet.merge_range("A2:N2", "Comments across all panels · one row per comment · status history included", subtitle)
+    release_label = {"official": "Official", "preparing": "Preparing", "all": "Both"}[authorized_release_scope(request.user)]
+    sheet.merge_range("A2:N2", f"Drawings: {release_label} · Comments across all panels · one row per comment · status history included", subtitle)
     now = timezone.localtime()
     sheet.merge_range("A3:N3", f"Generated on {now:%d/%m/%Y %H:%M %Z} · {request.user}", subtitle)
     headers = ["Record", "Section / Panel", "Note date", "Created at", "Author", "Note", "Type", "Due date",
@@ -234,7 +251,7 @@ def export_minutes(request):
                   "Information" if note.information_only else "Follow-up", note.due_date.isoformat() if note.due_date else "—",
                   STATUSES[note.status], timezone.localtime(latest.created_at if latest else note.created_at).strftime("%d/%m/%Y %H:%M:%S %Z"),
                   latest.actor_name if latest else note.author_name, sum(bool(event.previous_status) for event in events), history,
-                  "; ".join(f"{k}: {v}" for k, v in note.context.items())]
+                  "; ".join(f"{k}: {v}" for k, v in {"release_scope": "official", **(note.context or {})}.items())]
         sheet.write_row(row, 0, values, styles[note.status == "cancelled"])
         sheet.set_row(row, min(180, max(60, len(events)*30)))
         row += 1

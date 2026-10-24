@@ -2,6 +2,20 @@
   "use strict";
   const dialog = document.getElementById("sectionNotesDialog");
   if (!dialog || !dialog.showModal) return;
+  const requestedReleaseScope = document.body.dataset.drawingReleaseScope || dialog.dataset.releaseScope;
+  const releaseScope = ["official", "preparing", "all"].includes(requestedReleaseScope) ? requestedReleaseScope : "official";
+  const releaseLabels = {official:"Official", preparing:"Preparing", all:"Both"};
+  function scopedUrl(value, params = {}) {
+    const url = new URL(value, location.href);
+    Object.entries(params).forEach(([key, entry]) => url.searchParams.set(key, entry));
+    url.searchParams.set("release_scope", releaseScope);
+    return url.href;
+  }
+  function statusUrl(noteId) {
+    const url = new URL(dialog.dataset.statusUrl, location.href);
+    url.pathname = url.pathname.replace(/\/0(?=\/)/, "/" + noteId);
+    return url.href;
+  }
   const legacyLabels = {s00:"Planning", s01:"Engineering", s02:"Supply", s03:"Fabrication", s04:"Logistics", s05:"3D model"};
   const panels = new Map(Array.from(document.querySelectorAll("[data-note-panel]"), node => [node.dataset.notePanel, node]));
   const panelKeys = new Set(panels.keys());
@@ -11,7 +25,7 @@
   const legacyLabel = dialog.querySelector("[data-sn-legacy-label]");
   function scopeParams() { return panelKeys.has(section) ? {panel:section} : {section}; }
   const statuses = {pending:"Pending", resolved:"Resolved", cancelled:"Cancelled"};
-  const contextLabels = {date_from:"From",date_to:"To",discipline:"Discipline",campaign:"Campaign",contract_week:"Week",panel_mode:"Mode",panel_discipline:"Discipline",vessel:"Vessel"};
+  const contextLabels = {date_from:"From",date_to:"To",discipline:"Discipline",campaign:"Campaign",contract_week:"Week",panel_mode:"Mode",panel_discipline:"Discipline",vessel:"Vessel",release_scope:"Drawings"};
   const form = dialog.querySelector("[data-sn-form]");
   const history = dialog.querySelector("[data-sn-history]");
   const list = dialog.querySelector("[data-sn-list]");
@@ -39,7 +53,7 @@
     return new Date(time ? value : value+"T12:00:00").toLocaleString("en-GB", time ? {dateStyle:"short",timeStyle:"short"} : {dateStyle:"short"});
   }
   async function api(url, data) {
-    const response = await fetch(url, {method:data ? "POST":"GET", credentials:"same-origin", cache:"no-store",
+    const response = await fetch(scopedUrl(url), {method:data ? "POST":"GET", credentials:"same-origin", cache:"no-store",
       headers:data ? {"Content-Type":"application/json", "X-CSRFToken":form.elements.csrfmiddlewaretoken.value} : {},
       body:data ? JSON.stringify(data) : undefined});
     if (response.redirected || !(response.headers.get("Content-Type") || "").includes("application/json"))
@@ -100,14 +114,14 @@
     const meta=el("div",undefined,"sn-entry-meta");
     meta.append(el("span","Date: "+dateText(note.date)),el("span","Created: "+dateText(note.created_at,true)),el("span","Due: "+dateText(note.due_date)));
     article.append(meta);
-    if(Object.keys(note.context).length) article.append(el("p",Object.entries(note.context).map(([k,v])=>(contextLabels[k]||k)+": "+v).join(" · "),"sn-context"));
+    if(Object.keys(note.context).length) article.append(el("p",Object.entries(note.context).map(([k,v])=>(contextLabels[k]||k)+": "+(k === "release_scope" ? releaseLabels[v] || v : v)).join(" · "),"sn-context"));
     const actions=el("div",undefined,"sn-status-form"),label=el("label","Status"),select=el("select");
     select.setAttribute("aria-label","Comment status for "+note.author);
     Object.entries(statuses).forEach(([key,value])=>{const opt=el("option",value);opt.value=key;select.append(opt);});
     select.value=note.status;label.append(select);
     actions.append(label,button("Save status",()=>run(async()=>{
       message.textContent="Saving changes…";
-      await api(dialog.dataset.statusUrl.replace("/0/","/"+note.id+"/"),{status:select.value,version:note.version});
+      await api(statusUrl(note.id),{status:select.value,version:note.version});
       await loadHistory(); message.textContent="Status updated. Author, date and time recorded."; await summary();
     })));
     article.append(actions);
@@ -117,7 +131,7 @@
     details.append(events);article.append(details);return article;
   }
   async function loadHistory() {
-    const data=await api(dialog.dataset.api+"?"+new URLSearchParams({...scopeParams(),status:filter.value,page}));
+    const data=await api(scopedUrl(dialog.dataset.api,{...scopeParams(),status:filter.value,page}));
     list.replaceChildren();
     data.notes.forEach(note=>list.append(renderNote(note)));
     if(!data.notes.length) list.append(el("p","No records match this filter.","sn-help"));

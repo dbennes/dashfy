@@ -14,7 +14,8 @@ from .dashboard_cache import cache, fresh_sources_requested
 from django.db.utils import OperationalError, ProgrammingError
 
 from apps.eclic.api_client import EclicAPIError, EclicClient
-from apps.core.datafy_drawings_scope import supply_scope_exclusions
+from apps.core.datafy_drawings_scope import scoped_document_query, supply_scope_exclusions
+from .release_scope import current_release_scope, document_scope_sql
 from apps.core.datafy_po_presence import blocked_material_ids
 from apps.core.engineering_monitor_import import MDR_SOURCE, monitor_discipline_order, normalize_monitor_discipline
 from apps.core.engineering_mdr_summary import mdr_scope_summaries
@@ -22,6 +23,8 @@ from apps.core.models import DatafySupplySnapshot, EngineeringMonitorImport, Eng
 from apps.core.supply_snapshot_filters import (
     hash_supply_snapshot_filters,
     normalized_supply_snapshot_filters,
+    scope_supply_filters,
+    supply_snapshot_matches_scope,
 )
 
 
@@ -879,6 +882,7 @@ def _supply_build_drawing_line_rows(
         )
         group = groups.setdefault(key, {
             "document_id": row.get("document_id"),
+            "release_status": row.get("release_status", "official"),
             "drawing_number": drawing_number,
             "revision": row.get("revision") or "-",
             "revision_detail": row.get("revision_detail") or "-",
@@ -1214,6 +1218,7 @@ def _supply_forecast_items_from_rows(material_rows: list[dict[str, Any]]) -> lis
             continue
         items.append({
             "document_id": row.get("document_id"),
+            "release_status": row.get("release_status", "official"),
             "drawing": row.get("drawing_number") or row.get("original_filename") or "-",
             "scope": scope,
             "campaign": _campaign_label(row.get("campaign")),
@@ -1918,11 +1923,11 @@ def _supply_filters_hash(filters: dict[str, Any]) -> str:
 
 
 def _rows(cursor, query: str, params: tuple = ()) -> list[dict[str, Any]]:
-    return [dict(row) for row in cursor.execute(query, params).fetchall()]
+    return [dict(row) for row in cursor.execute(scoped_document_query(query), params).fetchall()]
 
 
 def _scalar(cursor, query: str, params: tuple = (), default: Any = 0) -> Any:
-    row = cursor.execute(query, params).fetchone()
+    row = cursor.execute(scoped_document_query(query), params).fetchone()
     if row is None:
         return default
     value = next(iter(row.values()), default) if isinstance(row, dict) else row[0]
@@ -3327,28 +3332,39 @@ def datafy_dashboard() -> dict:
 def _datafy_dashboard() -> dict:
     with _datafy_conn() as conn:
         cur = conn.cursor()
-        total_materials = int(_scalar(cur, "select count(*) from core_materialitem"))
-        covered_materials = int(_scalar(cur, "select count(distinct material_item_id) from catalog_allocation"))
+        total_materials = int(_scalar(cur, """select count(*) from core_materialitem mi
+                join core_extractedtable t on t.id = mi.table_id
+                join core_document d on d.id = t.document_id
+                where {document_scope:d}"""))
+        covered_materials = int(_scalar(cur, """select count(distinct a.material_item_id) from catalog_allocation a
+                join core_materialitem mi on mi.id = a.material_item_id
+                join core_extractedtable t on t.id = mi.table_id
+                join core_document d on d.id = t.document_id
+                where {document_scope:d}"""))
         missing_materials = max(total_materials - covered_materials, 0)
-        documents = int(_scalar(cur, "select count(*) from core_document"))
-        drawings_ok = int(_scalar(cur, "select count(*) from core_document where status='success'"))
+        documents = int(_scalar(cur, "select count(*) from core_document d where {document_scope:d}"))
+        drawings_ok = int(_scalar(cur, "select count(*) from core_document d where {document_scope:d} and status='success'"))
         pos = int(_scalar(cur, "select count(*) from core_purchaseorder"))
         po_items = int(_scalar(cur, "select count(*) from core_purchaseorderitem"))
         stock_pieces = int(_scalar(cur, "select count(*) from catalog_stockpiece"))
-        allocations = int(_scalar(cur, "select count(*) from catalog_allocation"))
-        eclic_docs = int(_scalar(cur, "select count(*) from eclic_eclicdocument"))
+        allocations = int(_scalar(cur, """select count(*) from catalog_allocation a
+                join core_materialitem mi on mi.id = a.material_item_id
+                join core_extractedtable t on t.id = mi.table_id
+                join core_document d on d.id = t.document_id
+                where {document_scope:d}"""))
+        eclic_docs = int(_scalar(cur, "select count(*) from eclic_eclicdocument d where {document_scope:d}"))
         eclic_alerts = int(_scalar(
             cur,
-            "select count(*) from eclic_eclicdocument where has_update = true or needs_processing = true",
+            "select count(*) from eclic_eclicdocument d where {document_scope:d} and (has_update = true or needs_processing = true)",
         ))
 
         status_rows = _rows(
             cur,
-            "select status as label, count(*) as value from core_document group by status order by value desc",
+            "select status as label, count(*) as value from core_document d where {document_scope:d} group by status order by value desc",
         )
         discipline_rows = _rows(
             cur,
-            "select discipline as label, count(*) as value from core_document group by discipline order by value desc",
+            "select discipline as label, count(*) as value from core_document d where {document_scope:d} group by discipline order by value desc",
         )
         po_status_rows = _rows(
             cur,
@@ -3357,9 +3373,10 @@ def _datafy_dashboard() -> dict:
         recent_documents = _rows(
             cur,
             """
-            select id, drawing_number, original_filename, title, revision, revision_detail,
+            select id, drawing_number, original_filename, title, revision, revision_detail, release_status,
                    discipline, status, priority, uploaded_at, processed_at
-            from core_document
+            from core_document d
+            where {document_scope:d}
             order by priority asc, uploaded_at desc
             limit 12
             """,
@@ -3427,7 +3444,9 @@ def datafy_documents(
 
 
 def _datafy_documents(q: str, status: str, discipline: str, revision: str, priority: str, limit: int) -> dict:
-    where = []
+    # The new SPDM release_status migration is required before deployment.
+    # A missing column fails closed through _safe_source, never exposes Preparing.
+    where = [document_scope_sql()]
     params: list[Any] = []
     if q:
         where.append("(drawing_number ilike ? or original_filename ilike ? or title ilike ?)")
@@ -3454,7 +3473,8 @@ def _datafy_documents(q: str, status: str, discipline: str, revision: str, prior
                 select coalesce(nullif(status, ''), '-') as value,
                        coalesce(nullif(status, ''), '-') as label,
                        count(*) as total
-                from core_document
+                from core_document d
+                where {document_scope:d}
                 group by coalesce(nullif(status, ''), '-')
                 order by count(*) desc, value
                 """,
@@ -3465,7 +3485,8 @@ def _datafy_documents(q: str, status: str, discipline: str, revision: str, prior
                 select coalesce(nullif(discipline, ''), '-') as value,
                        coalesce(nullif(discipline, ''), '-') as label,
                        count(*) as total
-                from core_document
+                from core_document d
+                where {document_scope:d}
                 group by coalesce(nullif(discipline, ''), '-')
                 order by count(*) desc, value
                 """,
@@ -3476,7 +3497,8 @@ def _datafy_documents(q: str, status: str, discipline: str, revision: str, prior
                 select coalesce(nullif(upper(trim(revision)), ''), '-') as value,
                        coalesce(nullif(upper(trim(revision)), ''), '-') as label,
                        count(*) as total
-                from core_document
+                from core_document d
+                where {document_scope:d}
                 group by coalesce(nullif(upper(trim(revision)), ''), '-')
                 order by value
                 """,
@@ -3487,18 +3509,18 @@ def _datafy_documents(q: str, status: str, discipline: str, revision: str, prior
                 select cast(priority as text) as value,
                        cast(priority as text) as label,
                        count(*) as total
-                from core_document
-                where priority is not null
+                from core_document d
+                where {document_scope:d} and priority is not null
                 group by priority
                 order by priority asc
                 """,
             ),
         }
-        total = int(_scalar(cur, f"select count(*) from core_document{clause}", tuple(params)))
+        total = int(_scalar(cur, f"select count(*) from core_document d{clause}", tuple(params)))
         rows = _rows(
             cur,
             f"""
-            select d.id, d.drawing_number, d.original_filename, d.title, d.revision,
+            select d.id, d.drawing_number, d.original_filename, d.title, d.revision, d.release_status,
                    d.revision_detail, d.discipline, d.status, d.priority,
                    d.uploaded_at, d.processed_at,
                    count(distinct t.id) as tables_count,
@@ -3758,6 +3780,8 @@ def _construction_filters(raw: dict | None) -> dict:
     if start > end:
         start, end = end, start
     return {
+        "release_scope": current_release_scope(),
+        "release_scope_version": 1,
         "start": start,
         "end": end,
         "date_from": start.isoformat(),
@@ -4115,6 +4139,60 @@ def _engineering_monitor_normalized_doc(doc: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
+class EngineeringScopeUnavailable(RuntimeError):
+    pass
+
+
+def _engineering_release_index() -> dict[str, set[str]]:
+    identity = [settings.DATAFY_DB_HOST, settings.DATAFY_DB_PORT, settings.DATAFY_DB_NAME]
+    key = "engineering-release-index:v1:" + hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+    found = cache.get(key)
+    if found is not None:
+        return found
+    try:
+        with _datafy_conn() as conn:
+            rows = _rows(conn.cursor(), """
+                select drawing_number as code, release_status from core_document
+                union
+                select code, release_status from eclic_eclicdocument
+            """)
+    except Exception as exc:
+        raise EngineeringScopeUnavailable("DATAFY drawing classification is unavailable; engineering scope cannot be verified.") from exc
+    result: dict[str, set[str]] = {}
+    for row in rows:
+        code = " ".join(str(row.get("code") or "").strip().upper().split())
+        status = row.get("release_status")
+        if code and status in {"official", "preparing"}:
+            result.setdefault(code, set()).add(status)
+    cache.set(key, result, timeout=45)
+    return result
+
+
+def engineering_scope_documents(rows) -> list[dict]:
+    """Apply the authorized release scope to legacy engineering imports/API.
+
+    Unknown legacy codes remain Official. Exact known Preparing codes are
+    isolated; Both keeps one classified row per distinct release family.
+    """
+    rows = list(rows)
+    if not rows:
+        return []
+    index = _engineering_release_index()
+    scope = current_release_scope()
+    allowed = {"official", "preparing"} if scope == "all" else {scope}
+    output = []
+    for source in rows:
+        row = dict(source)
+        codes = [" ".join(str(row.get(field) or "").strip().upper().split())
+                 for field in ("document_number", "codigo", "Code", "code", "drawing_number")]
+        known = set().union(*(index[code] for code in codes if code in index))
+        explicit = row.get("release_status")
+        statuses = {explicit} if explicit in {"official", "preparing"} else known or {"official"}
+        for status in sorted(statuses & allowed):
+            output.append({**row, "release_status": status})
+    return output
+
+
 def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
     try:
         latest = EngineeringMonitorImport.objects.filter(is_active=True).first()
@@ -4128,7 +4206,11 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
         )
 
     payload = latest.payload or {}
-    raw_docs = [_engineering_monitor_normalized_doc(dict(doc)) for doc in list(payload.get("documents") or [])]
+    try:
+        raw_docs = [_engineering_monitor_normalized_doc(doc)
+                    for doc in engineering_scope_documents(payload.get("documents") or [])]
+    except EngineeringScopeUnavailable as exc:
+        return _engineering_monitor_empty(str(exc))
     monitored_docs = [doc for doc in raw_docs if doc.get("is_monitored")]
     countable_docs = [doc for doc in monitored_docs if doc.get("is_countable")]
 
@@ -4248,9 +4330,9 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
         "source_file_name": latest.original_filename,
         "detail_sheet": latest.detail_sheet,
         "document_count": total,
-        "raw_document_count": latest.document_count,
+        "raw_document_count": len(raw_docs),
         "mdr_scopes": mdr_scope_summaries(filtered_docs, discipline_order),
-        "excluded_count": latest.excluded_count,
+        "excluded_count": sum(not doc.get("is_countable") for doc in monitored_docs),
         "flow": _engineering_monitor_flow(filtered_docs),
         "summary": summary,
         "status_rows": status_rows,
@@ -4309,6 +4391,10 @@ def _engineering_from_ded_snapshot(filters: dict) -> dict:
         "issue_status",
         "fabrication_ref",
     ))
+    try:
+        raw_docs = engineering_scope_documents(raw_docs)
+    except EngineeringScopeUnavailable as exc:
+        return _engineering_empty(str(exc))
     summary_remarks = {
         row.discipline: row.remarks
         for row in latest.discipline_summaries.all()
@@ -4321,6 +4407,7 @@ def _engineering_from_ded_snapshot(filters: dict) -> dict:
         afc_code = row.get("afc_code") or ""
         base_docs.append({
             "codigo": row.get("document_number") or "-",
+            "release_status": row["release_status"],
             "codigo_secundario": row.get("fabrication_ref") or "",
             "titulo": row.get("title") or "-",
             "disciplina": row.get("discipline") or "-",
@@ -4547,6 +4634,11 @@ def _engineering_from_eclic_api(filters: dict) -> dict:
             "responsavel_atividade": _eclic_value(item, "Responsible", "responsavel_atividade", default="-"),
             "eclic_id": item.get("Id") or item.get("id"),
         })
+
+    try:
+        base_docs = engineering_scope_documents(base_docs)
+    except EngineeringScopeUnavailable as exc:
+        return _engineering_empty(str(exc))
 
     discipline_counts = Counter(doc["disciplina"] for doc in base_docs)
     status_counts = Counter(doc["status_documento"] for doc in base_docs)
@@ -5212,12 +5304,14 @@ def _construction_datafy(filters: dict) -> dict:
         supply_erection_min = int(filters.get("supply_erection_min") or 0)
         if supply_discipline:
             cur.execute(
-                "select 1 from core_document d where upper(coalesce(nullif(d.discipline, ''), '-')) = upper(?) limit 1",
+                f"select 1 from core_document d where {document_scope_sql()} and upper(coalesce(nullif(d.discipline, ''), '-')) = upper(?) limit 1",
                 (supply_discipline,),
             )
             if cur.fetchone() is None:
                 supply_discipline = ""
-        drawing_where = []
+        # Hide Preparing demand, while stock.remaining_qty and the allocation
+        # CTEs retain reservations from both scopes in their committed balance.
+        drawing_where = [document_scope_sql()]
         drawing_params: list[Any] = []
         if supply_drawing_q:
             query = f"%{supply_drawing_q}%"
@@ -5241,7 +5335,7 @@ def _construction_datafy(filters: dict) -> dict:
                 + ")"
             )
             drawing_params.extend(campaign_aliases)
-        material_where = []
+        material_where = [document_scope_sql()]
         material_params: list[Any] = []
         if supply_priority:
             material_where.append("cast(d.priority as text) = ?")
@@ -5376,7 +5470,7 @@ def _construction_datafy(filters: dict) -> dict:
             join core_extractedtable t on t.document_id = d.id
             join core_materialitem mi on mi.table_id = t.id
             left join catalog_allocation a on a.material_item_id = mi.id
-            where d.piping_line_number <> ''
+            where {document_scope:d} and d.piping_line_number <> ''
             group by d.piping_line_number
             having count(distinct mi.id) >= 5
                and (100.0 * count(distinct a.material_item_id) / count(distinct mi.id)) >= ?
@@ -5399,7 +5493,7 @@ def _construction_datafy(filters: dict) -> dict:
                 join core_extractedtable t on t.document_id = d.id
                 join core_materialitem mi on mi.table_id = t.id
                 left join catalog_allocation a on a.material_item_id = mi.id
-                where d.piping_line_number <> ''
+                where {document_scope:d} and d.piping_line_number <> ''
                 group by d.piping_line_number
             ) line_coverage
             """,
@@ -5424,7 +5518,7 @@ def _construction_datafy(filters: dict) -> dict:
                     join core_extractedtable t on t.document_id = d.id
                     join core_materialitem mi on mi.table_id = t.id
                     left join catalog_allocation a on a.material_item_id = mi.id
-                    where d.piping_line_number <> ''
+                    where {document_scope:d} and d.piping_line_number <> ''
                     group by d.piping_line_number
                 ) line_coverage
             ) readiness_buckets
@@ -5445,7 +5539,8 @@ def _construction_datafy(filters: dict) -> dict:
             select coalesce(nullif(discipline, ''), 'Sem disciplina') as discipline,
                    coalesce(nullif(revision, ''), 'Sem rev') as revision,
                    count(*) as total
-            from core_document
+            from core_document d
+            where {document_scope:d}
             group by coalesce(nullif(discipline, ''), 'Sem disciplina'),
                      coalesce(nullif(revision, ''), 'Sem rev')
             order by discipline, revision
@@ -5460,6 +5555,7 @@ def _construction_datafy(filters: dict) -> dict:
             from core_document d
             join core_extractedtable t on t.document_id = d.id
             join core_materialitem mi on mi.table_id = t.id
+            where {document_scope:d}
             group by coalesce(nullif(upper(trim(d.revision)), ''), '-')
             order by value
             """,
@@ -5473,7 +5569,7 @@ def _construction_datafy(filters: dict) -> dict:
             from core_document d
             join core_extractedtable t on t.document_id = d.id
             join core_materialitem mi on mi.table_id = t.id
-            where d.priority is not null
+            where {document_scope:d} and d.priority is not null
             group by d.priority
             order by d.priority asc
             """,
@@ -5487,6 +5583,7 @@ def _construction_datafy(filters: dict) -> dict:
             from core_document d
             join core_extractedtable t on t.document_id = d.id
             join core_materialitem mi on mi.table_id = t.id
+            where {document_scope:d}
             group by coalesce(nullif(d.discipline, ''), '-')
             order by count(*) desc, value
             """,
@@ -5500,6 +5597,7 @@ def _construction_datafy(filters: dict) -> dict:
             from core_document d
             join core_extractedtable t on t.document_id = d.id
             join core_materialitem mi on mi.table_id = t.id
+            where {document_scope:d}
             group by coalesce(nullif(d.piping_line_number, ''), '-')
             order by count(*) desc, value
             limit 160
@@ -5512,7 +5610,9 @@ def _construction_datafy(filters: dict) -> dict:
                    coalesce(nullif(t.name, ''), '-') as label,
                    count(*) as total
             from core_extractedtable t
+            join core_document d on d.id = t.document_id
             join core_materialitem mi on mi.table_id = t.id
+            where {document_scope:d}
             group by coalesce(nullif(t.name, ''), '-')
             order by count(*) desc, value
             limit 80
@@ -5531,9 +5631,12 @@ def _construction_datafy(filters: dict) -> dict:
                    coalesce(nullif(mf.name_en, ''), nullif(mi.category, ''), '-') as label,
                    count(*) as total
             from core_materialitem mi
+            join core_extractedtable t on t.id = mi.table_id
+            join core_document d on d.id = t.document_id
             left join match_one cm on cm.material_item_id = mi.id
             left join catalog_catalogitem ci on ci.id = cm.catalog_item_id
             left join catalog_materialfamily mf on mf.id = ci.family_id
+            where {document_scope:d}
             group by coalesce(nullif(mf.name_en, ''), nullif(mi.category, ''), '-')
             order by count(*) desc, value
             limit 120
@@ -5544,7 +5647,7 @@ def _construction_datafy(filters: dict) -> dict:
             f"""
             with doc_base as (
                 select d.id, d.drawing_number, d.original_filename, d.title,
-                       d.revision, d.discipline, d.status, d.priority, d.uploaded_at
+                       d.revision, d.discipline, d.status, d.priority, d.uploaded_at, d.release_status
                 from core_document d
                 {active_drawing_where_sql}
             ),
@@ -5563,7 +5666,7 @@ def _construction_datafy(filters: dict) -> dict:
             ),
             scoped_items as (
                 select db.id, db.drawing_number, db.original_filename, db.title,
-                       db.revision, db.discipline, db.status, db.priority,
+                       db.revision, db.discipline, db.status, db.priority, db.release_status,
                        db.uploaded_at, mi.id as material_item_id,
                        case
                          when upper(coalesce(t.name, '')) like '%DEMOLISH%'
@@ -5590,6 +5693,7 @@ def _construction_datafy(filters: dict) -> dict:
             rollup as (
                 select s.id, s.drawing_number, s.original_filename, s.title,
                        s.revision, s.discipline, s.status, s.priority,
+                       max(s.release_status) as release_status,
                        count(distinct case when s.scope = 'fabrication' then s.material_item_id end) as fab_total,
                        count(distinct case when s.scope = 'fabrication' then a.material_item_id end) as fab_covered,
                        case
@@ -5682,7 +5786,7 @@ def _construction_datafy(filters: dict) -> dict:
                 group by sp.catalog_item_id
             )
             select d.priority,
-                   d.id as document_id,
+                   d.id as document_id, d.release_status,
                    mi.id as material_item_id,
                    d.drawing_number,
                    d.original_filename,
@@ -5850,7 +5954,7 @@ def _construction_datafy(filters: dict) -> dict:
             ),
             scoped_items as (
                 select distinct mi.id as material_item_id,
-                       d.id as document_id,
+                       d.id as document_id, d.release_status,
                        d.priority,
                        d.drawing_number,
                        d.original_filename,
@@ -5903,7 +6007,7 @@ def _construction_datafy(filters: dict) -> dict:
             cur,
             f"""
             {material_scope_cte}
-            select material_item_id, document_id, priority, drawing_number, original_filename,
+            select material_item_id, document_id, release_status, priority, drawing_number, original_filename,
                    revision, revision_detail, discipline, line, campaign, scope, is_finalized,
                    requested_qty, allocated_qty, missing_qty, stock_free_na, stock_piece_count,
                    stock_total_qty, stock_free_qty, stock_po_numbers
@@ -6014,7 +6118,7 @@ def _construction_datafy(filters: dict) -> dict:
         supply_documents = _rows(
             cur,
             """
-            select d.id, d.drawing_number, d.original_filename, d.title, d.revision,
+            select d.id, d.drawing_number, d.original_filename, d.title, d.revision, d.release_status,
                    d.revision_detail, d.discipline, d.status, d.priority,
                    d.piping_line_number,
                    count(distinct t.id) as tables_count,
@@ -6029,6 +6133,7 @@ def _construction_datafy(filters: dict) -> dict:
             left join core_extractedtable t on t.document_id = d.id
             left join core_materialitem mi on mi.table_id = t.id
             left join catalog_allocation a on a.material_item_id = mi.id
+            where {document_scope:d}
             group by d.id
             order by d.priority asc, d.uploaded_at desc
             limit 18
@@ -6037,6 +6142,7 @@ def _construction_datafy(filters: dict) -> dict:
 
     return {
         "available": True,
+        "drawing_release_scope": f"{current_release_scope()}-v2",
         "kpis": {
             "piping_lines": int(readiness["lines"] or 0),
             "ready_100": int(readiness["ready_100"] or 0),
@@ -6125,6 +6231,7 @@ def _construction_datafy_empty(message: str = "DATAFY PostgreSQL is unavailable.
 
 
 def _construction_datafy_snapshot(filters: dict) -> dict:
+    filters = scope_supply_filters(filters)
     try:
         payload = _construction_datafy(filters)
     except Exception as live_error:
@@ -6156,14 +6263,18 @@ def _construction_datafy_snapshot(filters: dict) -> dict:
                 (
                     candidate
                     for candidate in snapshots
-                    if normalized_supply_snapshot_filters(candidate.filters) == requested_snapshot_filters
+                    if supply_snapshot_matches_scope(candidate.filters, current_release_scope())
+                    and normalized_supply_snapshot_filters(candidate.filters) == requested_snapshot_filters
                 ),
                 None,
             )
     except (OperationalError, ProgrammingError):
         snapshot = None
 
-    if snapshot:
+    # Both the persisted filters and the payload must prove their release scope.
+    # Legacy or mismatched snapshots cannot be relabelled by the current request.
+    if (snapshot and supply_snapshot_matches_scope(snapshot.filters, current_release_scope())
+            and (snapshot.payload or {}).get("drawing_release_scope") == f"{current_release_scope()}-v2"):
         payload = json.loads(json.dumps(snapshot.payload, default=json_default, ensure_ascii=False))
         _supply_normalize_operational_payload(payload)
         payload["source_mode"] = "postgres_snapshot"
@@ -6186,7 +6297,8 @@ def management_dashboard(filters: dict | None = None) -> dict:
         json.dumps(
             {
                 "filters": parsed_filters,
-                "source": "postgres-live-v2",
+                "source": "postgres-live-v4-release",
+                "release_scope": current_release_scope(),
             },
             sort_keys=True,
             default=json_default,

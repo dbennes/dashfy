@@ -35,7 +35,7 @@ class SectionNotesTests(TestCase):
         note = response.json()["note"]
         self.assertEqual(note["author"], "Ana Silva")
         self.assertEqual(note["status"], "pending")
-        self.assertEqual(note["context"], {"discipline": "piping"})
+        self.assertEqual(note["context"], {"discipline": "piping", "release_scope": "official"})
         self.assertEqual(len(note["events"]), 1)
         self.assertEqual(note["events"][0]["actor"], "Ana Silva")
         self.assertEqual(self.create().status_code, 200)
@@ -106,7 +106,8 @@ class SectionNotesTests(TestCase):
         self.status(note["id"], "cancelled", 2)
         response = self.client.get(reverse("core:section_minutes"))
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertIn("private", response["Cache-Control"])
         book = load_workbook(BytesIO(response.content))
         self.assertEqual(book.sheetnames, ["Follow-up minutes"])
         sheet = book.active

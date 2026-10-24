@@ -52,7 +52,7 @@ class PostgreSQLRuntimeTests(SimpleTestCase):
 
         self.assertEqual(payload["source_mode"], "postgres_live")
         self.assertEqual(payload["source_database"], settings.DATAFY_DB_NAME)
-        live_source.assert_called_once_with({})
+        live_source.assert_called_once_with({"release_scope": "official", "release_scope_version": 1})
 
     @patch("apps.eclic.api_client._datafy_eclic_settings_fallback")
     def test_eclic_skips_datafy_fallback_when_config_is_complete(self, fallback):
@@ -179,6 +179,7 @@ class PostgreSQLSnapshotFallbackTests(TestCase):
             filters=stored_filters,
             payload={
                 "available": True,
+                "drawing_release_scope": "official-v2",
                 "material_flow": {"total": 3},
                 "material_rows": [{"material_item_id": 7}],
             },

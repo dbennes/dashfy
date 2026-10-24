@@ -30,7 +30,9 @@ select p.id, p.code, p.name, p.discipline, p.document_id, p.drawing_number,
        p.latest_import_id
   from fabrication_fabricationpackage p
   left join fabrication_p6import i on i.id = p.latest_import_id
+  left join core_document d on d.id = p.document_id
  where p.is_active = true and p.discipline = 'structural'
+   and {package_scope}
  order by p.id
 """
 

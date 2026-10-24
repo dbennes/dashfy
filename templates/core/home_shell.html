@@ -6,11 +6,11 @@
 <link rel="stylesheet" href="{% static 'css/dashboard-loading.css' %}?v=20260928-analysing">
 {% endblock %}
 {% block content %}
-<div class="sn-export"><button class="sn-button" type="button" data-sn-legacy hidden>Previous section comments</button><span>Comments and decisions across all sections</span><a class="sn-button" href="{% url 'core:section_minutes' %}">Export minutes</a></div>
-<div data-dashboard-target data-loading="true" aria-busy="true" inert data-content-url="{% url 'core:dashboard_content' %}"></div>
+<div class="sn-export"><button class="sn-button" type="button" data-sn-legacy hidden>Previous section comments</button><span>Comments and decisions across all sections</span><a class="sn-button" href="{% url 'core:section_minutes' %}?release_scope={{ drawing_release_scope }}">Export minutes</a></div>
+<div data-dashboard-target data-loading="true" aria-busy="true" inert data-content-url="{% url 'core:dashboard_content' %}" data-release-scope="{{ drawing_release_scope }}"></div>
 {% include 'core/_section_notes.html' %}
-<script src="{% static 'js/section-notes.js' %}?v=20260928-analysing" async></script>
-<script src="{% static 'js/dashboard-loading.js' %}?v=20260928-analysing" async></script>
+<script src="{% static 'js/section-notes.js' %}?v=20261023-release-scope" async></script>
+<script src="{% static 'js/dashboard-loading.js' %}?v=20261023-release-scope" async></script>
 <noscript><p>JavaScript is needed to load the dashboard and panel history.</p></noscript>
 {% endblock %}
 {% block app_js %}{% endblock %}

@@ -55,7 +55,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="sn-export"><button class="sn-button" type="button" data-sn-legacy hidden>Previous section comments</button><span>Comments and decisions across all sections</span><a class="sn-button" href="{% url 'core:section_minutes' %}"><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Export minutes</a></div>
+<div class="sn-export"><button class="sn-button" type="button" data-sn-legacy hidden>Previous section comments</button><span>Comments and decisions across all sections</span><a class="sn-button" href="{% url 'core:section_minutes' %}?release_scope={{ drawing_release_scope }}"><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Export minutes</a></div>
 
 
 {# ===== FILTERBAR (sticky) ===== #}
@@ -116,7 +116,7 @@
     </select>
   </div>
   <div class="fb-actions">
-    <a class="btn" href="{% url 'core:home' %}">
+    <a class="btn" href="{% url 'core:home' %}?release_scope={{ drawing_release_scope }}">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       Clear
     </a>
@@ -399,7 +399,7 @@
         {% if monitor.source_mode == "postgres_import" or request.user.is_admin %}
           <div class="c3-source-actions" aria-label="Engineering monitor source actions">
             {% if monitor.source_mode == "postgres_import" %}
-              <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_engineering_monitor' %}" download title="Exportar dados normalizados do MDR">
+              <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_engineering_monitor' %}?{{ drawing_scope_query }}" download title="Exportar dados normalizados do MDR">
                 <i class="bi bi-download"></i><span>Exportar base</span>
               </a>
             {% endif %}
@@ -441,18 +441,18 @@
         {% endif %}
       </div>
       <div class="c3-source-actions" aria-label="Supply source actions">
-        <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_datafy_supply' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}" title="Export the current DATAFY Supply snapshot for reimport">
+        <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_datafy_supply' %}?{{ drawing_scope_query }}" title="Export the current DATAFY Supply snapshot for reimport">
           <i class="bi bi-download"></i><span>Export</span>
         </a>
         {% if request.user.is_admin %}
-          <form class="p6-import-form" action="{% url 'core:import_datafy_supply' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}" method="post" enctype="multipart/form-data">
+          <form class="p6-import-form" action="{% url 'core:import_datafy_supply' %}?{{ drawing_scope_query }}" method="post" enctype="multipart/form-data">
             {% csrf_token %}
             <label class="p6-import-btn c3-monitor-action" title="Import a DATAFY Supply snapshot exported from this section">
               <input type="file" name="datafy_supply_file" accept=".json,application/json" onchange="this.form.submit()">
               <span>Import</span>
             </label>
           </form>
-          <form class="p6-import-form" action="{% url 'core:refresh_datafy_supply' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}" method="post">
+          <form class="p6-import-form" action="{% url 'core:refresh_datafy_supply' %}?{{ drawing_scope_query }}" method="post">
             {% csrf_token %}
             <button class="source-refresh-btn c3-monitor-action" type="submit">Update DATAFY</button>
           </form>
@@ -685,7 +685,7 @@
         </div>
 
         <div class="c3-probe-table-wrap">
-          <table class="c3-probe-table" data-c3-probe-grid="materials" data-c3-server-paged="true" data-page-url="{% url 'core:material_rows_page' %}" data-page-size="300" data-total="{{ manager.material.material_rows|length }}">
+          <table class="c3-probe-table" data-c3-probe-grid="materials" data-c3-server-paged="true" data-page-url="{% url 'core:material_rows_page' %}?release_scope={{ drawing_release_scope }}" data-page-size="300" data-total="{{ manager.material.material_rows|length }}">
             <thead>
               <tr class="c3-column-header-row">
                 <th data-col="priority" data-sort="number">Priority <span>&lt;&gt;</span></th>
@@ -962,9 +962,9 @@
 
     {# ---------- Table ---------- #}
     <div class="fab-wrap"
-         data-fab-detail-url="{% url 'core:fabrication_detail' 0 %}"
-         data-fab-po-url="{% url 'core:fabrication_po_pending' 0 %}"
-         data-fab-exp-url="{% url 'core:fabrication_expedite' %}">
+         data-fab-detail-url="{% url 'core:fabrication_detail' 0 %}?release_scope={{ drawing_release_scope }}"
+         data-fab-po-url="{% url 'core:fabrication_po_pending' 0 %}?release_scope={{ drawing_release_scope }}"
+         data-fab-exp-url="{% url 'core:fabrication_expedite' %}?release_scope={{ drawing_release_scope }}">
       <table class="fab-table">
         <colgroup>
           {# P6 ID um pouco mais largo para caber a indentacao dos desenhos #}
@@ -1394,7 +1394,7 @@
       </div>
     </div>
     <div class="card-body">
-      <section class="dx-project-consult" data-project-3d data-project-default-tab="model" data-model-autoload="true" data-model-auto-refine="true" data-model-url="{% static 'models/bonga-2-disciplines-fast.glb' %}?v=20260921-tie-ins-piping" data-model-detail-url="{% static 'models/bonga-2-disciplines-hq.glb' %}?v=20260921-tie-ins-piping" data-model-hierarchy-url="{% static 'models/bonga-2-hierarchy.json' %}" data-model-selection-url="{% url 'core:model_node_glb' 0 %}" data-material-items-url="{% url 'core:material_items_3d' %}" data-model-review-url="{% url 'core:model_review' %}">
+      <section class="dx-project-consult" data-project-3d data-project-default-tab="model" data-model-autoload="true" data-model-auto-refine="true" data-model-url="{% static 'models/bonga-2-disciplines-fast.glb' %}?v=20260921-tie-ins-piping" data-model-detail-url="{% static 'models/bonga-2-disciplines-hq.glb' %}?v=20260921-tie-ins-piping" data-model-hierarchy-url="{% static 'models/bonga-2-hierarchy.json' %}" data-model-selection-url="{% url 'core:model_node_glb' 0 %}" data-material-items-url="{% url 'core:material_items_3d' %}?release_scope={{ drawing_release_scope }}" data-model-review-url="{% url 'core:model_review' %}?release_scope={{ drawing_release_scope }}">
         <div class="dx-project-consult-shell">
           <aside class="dx-project-tree-panel" id="projectReviewTree">
             <div class="dx-project-search">
@@ -1515,7 +1515,7 @@
 <script src="{% static 'js/engineering-mdr.js' %}?v=20261002-status-scopes" defer></script>
 {% if not dashboard_fragment %}
 {% include 'core/_section_notes.html' %}
-<script src="{% static 'js/section-notes.js' %}?v=20260928-priority" defer></script>
+<script src="{% static 'js/section-notes.js' %}?v=20261023-release-scope" defer></script>
 {% endif %}
 
 {% if user.is_admin %}
@@ -3386,7 +3386,7 @@
       var tbody = document.getElementById("fabPoBody");
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--fb-fg-subtle);">Loading…</td></tr>';
       openModal("fabPoModal");
-      fetch(PO_URL.replace(/0(\/po-pending\/?)$/, btn.dataset.openPo + "$1"), { credentials: "same-origin" })
+      fetch(PO_URL.replace(/0(\/po-pending\/?)(?=\?|$)/, btn.dataset.openPo + "$1"), { credentials: "same-origin" })
         .then(function (resp) { return resp.json(); })
         .then(function (data) {
           var start = document.getElementById("fabPoStart");
@@ -3505,7 +3505,7 @@
         '<i class="bi bi-arrow-repeat"></i> Loading materials…</div></div></td>';
       tr.after(sub);
 
-      var url = DETAIL_URL.replace(/0(\/detail\/?)$/, tr.dataset.pk + "$1");
+      var url = DETAIL_URL.replace(/0(\/detail\/?)(?=\?|$)/, tr.dataset.pk + "$1");
       fetch(url, { credentials: "same-origin" })
         .then(function (resp) {
           if (!resp.ok) throw new Error("HTTP " + resp.status);

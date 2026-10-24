@@ -13,6 +13,8 @@ from decimal import Decimal
 from difflib import SequenceMatcher
 import re
 
+from .release_scope import current_release_scope, document_scope_sql
+
 
 _REVISION_PATTERN = re.compile(r"([A-Z])\s*0*(\d{1,3})", re.IGNORECASE)
 _REVISION_LETTER_RANK = {"R": 10, "A": 20, "B": 25, "C": 30}
@@ -65,7 +67,7 @@ def _canonical_excluded_document_ids(ready_rows: list[dict]) -> set[int]:
     for row in ready_rows:
         drawing = re.sub(r"\s+", " ", str(row.get("drawing_number") or "").strip().upper())
         key = f"DRAWING:{drawing}" if drawing else f"DOCUMENT:{int(row['pk'])}"
-        group = (int(row["project_id"]), key)
+        group = (int(row["project_id"]), key, row.get("release_status", "official"))
         current = winners.get(group)
         if current is None or _candidate_is_newer(row, current):
             winners[group] = row
@@ -150,8 +152,37 @@ def _is_duplicate_blank_table(blank_items: list[dict], named_items: list[dict]) 
     return bool(blank_keys and named_keys and blank_keys.issubset(named_keys))
 
 
+def scoped_document_query(query: str) -> str:
+    """Resolve static scope tokens at execution time, never at module import.
+
+    Stock/allocation CTEs intentionally have no token: every scope shares the
+    same committed stock. Orphan P6 records use exact drawing + discipline;
+    unknown identities remain Official and ambiguous identities need Both.
+    """
+    orphan_release = """(
+        select case when count(distinct scope_d.release_status) = 1 then min(scope_d.release_status)
+                    when count(*) = 0 then 'official' else null end
+        from core_document scope_d
+        where trim(coalesce(p.drawing_number, '')) <> ''
+          and upper(trim(scope_d.drawing_number)) = upper(trim(p.drawing_number))
+          and lower(trim(scope_d.discipline)) = lower(trim(p.discipline))
+          and scope_d.release_status in ('official', 'preparing')
+    )"""
+    package_release = f"(case when p.document_id is not null then d.release_status else {orphan_release} end)"
+    scope = current_release_scope()
+    package_scope = (
+        f"((p.document_id is not null and {document_scope_sql()}) or p.document_id is null)"
+        if scope == "all" else f"({package_release} = '{scope}')"
+    )
+    query = query.replace("{package_scope}", package_scope)
+    query = query.replace("{package_release_status}", package_release)
+    query = re.sub(r"\{document_scope:([a-zA-Z_][a-zA-Z0-9_]*)\}",
+                   lambda match: document_scope_sql(match.group(1)), query)
+    return query
+
+
 def _read_rows(cursor, query: str, params: tuple = ()) -> list[dict]:
-    cursor.execute(query, params)
+    cursor.execute(scoped_document_query(query), params)
     return [dict(row) for row in cursor.fetchall()]
 
 
@@ -164,19 +195,24 @@ def supply_scope_exclusions(conn) -> dict[str, set[int]]:
     Material descriptions are read only for pages containing an unnamed table.
     """
     cursor = conn.cursor()
+    hidden_ids = {
+        int(row["id"]) for row in _read_rows(cursor, """
+            select d.id from core_document d where not ({document_scope:d})
+        """)
+    }
     ready_rows = _read_rows(cursor, """
-        select d.id as pk, d.project_id, d.drawing_number, d.revision, d.uploaded_at
+        select d.id as pk, d.project_id, d.drawing_number, d.revision, d.uploaded_at, d.release_status
         from core_document d
-        where exists (
+        where {document_scope:d} and (exists (
             select 1 from core_extractedtable t
             join core_materialitem mi on mi.table_id = t.id
             where t.document_id = d.id
         ) or (
             d.status in ('success', 'review')
             and (d.processed_at is not null or d.extraction_method <> '')
-        )
+        ))
     """)
-    excluded_docs = _canonical_excluded_document_ids(ready_rows)
+    excluded_docs = hidden_ids | _canonical_excluded_document_ids(ready_rows)
     tables = [row for row in _read_rows(cursor, """
         select id, document_id, name, page_number from core_extractedtable
     """) if int(row["document_id"]) not in excluded_docs]

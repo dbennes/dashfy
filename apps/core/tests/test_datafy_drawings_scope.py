@@ -8,6 +8,7 @@ from apps.core.datafy_drawings_scope import (
     _is_duplicate_blank_table,
     supply_scope_exclusions,
 )
+from apps.core.release_scope import release_scope_context
 
 
 class DatafyDrawingScopeTests(TestCase):
@@ -21,7 +22,7 @@ class DatafyDrawingScopeTests(TestCase):
             create table core_document (
                 id integer primary key, project_id integer, drawing_number text,
                 revision text, uploaded_at text, status text, processed_at text,
-                extraction_method text
+                extraction_method text, release_status text not null default 'official'
             );
             create table core_extractedtable (
                 id integer primary key, document_id integer, name text, page_number integer
@@ -33,9 +34,10 @@ class DatafyDrawingScopeTests(TestCase):
         """)
 
     def document(self, pk, *, drawing="DWG-1000-00001", revision="A01", uploaded="2026-09-01",
-                 project=1, status="uploaded", processed=None, method="", material=True):
-        self.conn.execute("insert into core_document values (?, ?, ?, ?, ?, ?, ?, ?)",
-                          (pk, project, drawing, revision, uploaded, status, processed, method))
+                 project=1, status="uploaded", processed=None, method="", material=True,
+                 release_status="official"):
+        self.conn.execute("insert into core_document values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                          (pk, project, drawing, revision, uploaded, status, processed, method, release_status))
         if material:
             self.table(pk * 10, pk)
             self.item(pk * 100, pk * 10)
@@ -55,6 +57,25 @@ class DatafyDrawingScopeTests(TestCase):
         self.document(3, revision="B99", uploaded="2026-09-02")
         self.document(4, revision="A99", uploaded="2026-09-03")
         self.assertEqual(supply_scope_exclusions(self.conn)["document_ids"], {2, 3, 4})
+
+    def test_preparing_is_excluded_and_never_supersedes_official_revision(self):
+        self.document(1, revision="A01")
+        self.document(2, revision="C02", release_status="preparing")
+        self.document(3, drawing="NEW-PREPARING", material=False, release_status="preparing")
+        self.assertEqual(supply_scope_exclusions(self.conn)["document_ids"], {2, 3})
+
+    def test_both_selects_canonical_revisions_per_release_family(self):
+        self.document(1, revision="A01")
+        self.document(2, revision="C02", release_status="preparing")
+        self.document(3, revision="C03", release_status="preparing")
+        for scope, excluded in [("official", {2, 3}), ("preparing", {1, 2}), ("all", {2})]:
+            with self.subTest(scope=scope), release_scope_context(scope):
+                self.assertEqual(supply_scope_exclusions(self.conn)["document_ids"], excluded)
+
+    def test_missing_release_status_schema_fails_closed(self):
+        self.conn.execute("alter table core_document rename column release_status to old_release_status")
+        with self.assertRaises(sqlite3.OperationalError):
+            supply_scope_exclusions(self.conn)
 
     def test_normalized_revision_uses_upload_then_id_for_ties(self):
         self.document(1, revision="C2", uploaded="2026-09-01")
@@ -139,7 +160,7 @@ class DatafyDrawingScopeTests(TestCase):
         statements = []
         self.conn.set_trace_callback(statements.append)
         self.assertEqual(supply_scope_exclusions(self.conn), {"document_ids": set(), "table_ids": set()})
-        self.assertEqual(len(statements), 2)
+        self.assertEqual(len(statements), 3)
         self.assertTrue(all(query.lstrip().lower().startswith("select") for query in statements))
 
     def test_candidate_pages_only_and_read_only_source_access(self):
@@ -151,6 +172,6 @@ class DatafyDrawingScopeTests(TestCase):
         statements = []
         self.conn.set_trace_callback(statements.append)
         self.assertEqual(supply_scope_exclusions(self.conn)["table_ids"], {11})
-        self.assertEqual(len(statements), 3)
+        self.assertEqual(len(statements), 4)
         self.assertTrue(all(query.lstrip().lower().startswith("select") for query in statements))
         self.assertIn("table_id in (10, 11)", statements[-1])

@@ -6,6 +6,7 @@ from collections import defaultdict
 
 from .fabrication_source import _as_dict, _weekly_overall_value, overall_value, stage_value, stage_is_applicable, STAGE_KEYS
 from .datafy_drawings_scope import _canonical_excluded_document_ids
+from .release_scope import current_release_scope
 
 
 def line_key(value):
@@ -85,6 +86,9 @@ def review_discipline(value):
 def build_review(documents, packages):
     documents = list(documents)
     all_documents = {doc["id"]: doc for doc in documents}
+    scope = current_release_scope()
+    allowed = {"official", "preparing"} if scope == "all" else {scope}
+    documents = [doc for doc in documents if doc.get("release_status", "official") in allowed]
     # Superseded revisions must not add an unlinked state to the current line.
     versioned = [{**doc, "pk": doc["id"]} for doc in documents if doc.get("project_id") is not None]
     excluded = _canonical_excluded_document_ids(versioned)
@@ -98,16 +102,29 @@ def build_review(documents, packages):
     by_document = defaultdict(list)
     for package in packages:
         document_id = package.get("document_id")
+        previous = all_documents.get(document_id, {})
+        package_release = package.get("release_status") or previous.get("release_status")
+        # Hidden packages cannot reconnect to a visible drawing by number.
+        # In Both, revision fallback stays inside the package's own family.
+        if package_release and package_release not in allowed:
+            continue
         discipline = review_discipline(package.get("discipline"))
         if document_id not in current_ids:
             # Revision replacement can clear the package FK (SET_NULL). Match
             # the full drawing number only; never guess from a partial line tag.
-            previous = all_documents.get(document_id, {})
             number = str(package.get("drawing_number") or previous.get("drawing_number") or "").strip().upper()
             candidates = [doc for doc in by_number.get(number, [])
                           if review_discipline(doc.get("discipline")) == discipline
+                          and (not package_release or doc.get("release_status", "official") == package_release)
                           and (previous.get("project_id") is None
                                or doc.get("project_id") == previous["project_id"])]
+            if not package_release:
+                # An orphan has no release provenance. A number shared across
+                # Official and Preparing is ambiguous even in a filtered view.
+                releases = {doc.get("release_status", "official") for doc in all_documents.values()
+                            if str(doc.get("drawing_number") or "").strip().upper() == number}
+                if len(releases) > 1:
+                    candidates = []
             document_id = candidates[0]["id"] if len(candidates) == 1 else None
         if document_id is not None:
             by_document[(document_id, discipline)].append(package_state(package))
@@ -121,7 +138,8 @@ def build_review(documents, packages):
         states = by_document.get((doc["id"], discipline), [])
         status = aggregate_status(states)
         drawings.append({"id": str(doc["id"]), "name": doc.get("drawing_number") or str(doc["id"]),
-                         "title": doc.get("title") or "", "discipline": discipline, "lines": tags, "status": status})
+                         "title": doc.get("title") or "", "discipline": discipline, "lines": tags, "status": status,
+                         "release_status": doc.get("release_status", "official")})
         for tag in tags:
             line = by_line.setdefault(line_key(tag), {"tag": tag, "states": [], "drawing_ids": []})
             line["states"].extend(states or ["unlinked"])
@@ -129,7 +147,7 @@ def build_review(documents, packages):
     lines = [{"key": key, "tag": line["tag"], "status": aggregate_status(line["states"]),
               "drawing_ids": line["drawing_ids"], "unlinked": "unlinked" in line["states"]}
              for key, line in sorted(by_line.items())]
-    return {"available": True, "drawings": drawings, "lines": lines,
+    return {"available": True, "drawings": drawings, "lines": lines, "release_scope": scope,
             "source": "DATAFY / SPDM fabrication", "completion_rule": "All linked packages at 100%; no unlinked drawings"}
 
 
@@ -138,12 +156,17 @@ def review_payload():
     with _datafy_conn() as conn:
         cur = conn.cursor()
         documents = _rows(cur, """
-            select id, project_id, revision, uploaded_at, drawing_number, title, discipline, piping_line_number, raw_text
+            select id, project_id, revision, uploaded_at, drawing_number, title, discipline,
+                   piping_line_number, raw_text, release_status
             from core_document
             order by drawing_number, id
         """)
         packages = _rows(cur, """
-            select document_id, drawing_number, discipline, stages, actual_start
-            from fabrication_fabricationpackage where is_active = true
+            select p.document_id, p.drawing_number, p.discipline, p.stages, p.actual_start,
+                   {package_release_status} as release_status
+            from fabrication_fabricationpackage p
+            left join core_document d on d.id = p.document_id
+            where p.is_active = true
+              and {package_scope}
         """)
     return build_review(documents, packages)

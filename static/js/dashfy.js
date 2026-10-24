@@ -2226,12 +2226,16 @@
     };
     const loadDatafyMaterialItems = async context => {
       if (!modelUrls.materialItems || !context) return null;
-      const params = new URLSearchParams(window.location.search || '');
+      const materialUrl = new URL(modelUrls.materialItems, window.location.origin);
+      const params = materialUrl.searchParams;
+      new URLSearchParams(window.location.search || '').forEach((value, key) => {
+        if (!params.has(key)) params.set(key, value);
+      });
       params.set('drawing', context.drawing || '');
       params.set('line', context.line || '');
       params.set('scope', context.scope || '');
       params.set('status', 'all');
-      const url = `${modelUrls.materialItems}?${params.toString()}`;
+      const url = materialUrl.toString();
       const response = await fetch(url, {
         cache: 'no-store',
         headers: { Accept: 'application/json' },

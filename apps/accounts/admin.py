@@ -12,6 +12,9 @@ class UserAdmin(DjangoUserAdmin):
     fieldsets = DjangoUserAdmin.fieldsets + (
         ("Shell BI", {"fields": ("role", "client", "phone", "avatar", "last_seen")}),
     )
+    add_fieldsets = DjangoUserAdmin.add_fieldsets + (
+        ("Shell BI", {"fields": ("role", "client")}),
+    )
 
 
 @admin.register(Client)

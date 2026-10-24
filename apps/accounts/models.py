@@ -31,6 +31,8 @@ class User(AbstractUser):
 
     class Role(models.TextChoices):
         ADMIN = "admin", _("Administrador")
+        PLANNING = "planning", _("Planejamento")
+        SUPPLY = "supply", _("Suprimentos")
         ANALYST = "analyst", _("Analista")
         VIEWER = "viewer", _("Visualizador")
         CLIENT = "client", _("Cliente")
@@ -69,7 +71,10 @@ class User(AbstractUser):
 
     @property
     def can_export(self) -> bool:
-        return self.role in {self.Role.ADMIN, self.Role.ANALYST, self.Role.CLIENT}
+        return self.role in {
+            self.Role.ADMIN, self.Role.PLANNING, self.Role.SUPPLY,
+            self.Role.ANALYST, self.Role.CLIENT,
+        }
 
 
 class ModulePermission(models.Model):

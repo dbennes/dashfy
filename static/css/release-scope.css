@@ -1,0 +1,31 @@
+.cockpit-v3 .tb-release-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+.cockpit-v3 .tb-release-scope label {
+  color: var(--fg-3);
+  font: 10px var(--font-mono);
+}
+.cockpit-v3 .tb-release-scope select {
+  width: 108px;
+  min-height: 28px;
+  padding: 3px 6px;
+  border: 1px solid var(--line-3);
+  border-radius: var(--r-3);
+  background: var(--bg-2);
+  color: var(--fg-0);
+  font: 11px var(--font-sans);
+}
+.cockpit-v3 .tb-release-scope select:focus-visible {
+  outline: 2px solid var(--signal-cyan);
+  outline-offset: 2px;
+}
+@media (max-width: 1100px) {
+  .cockpit-v3 .tb-release-scope label { display: none; }
+}
+@media (max-width: 600px) {
+  .cockpit-v3 .tb-release-scope select { width: 94px; }
+}

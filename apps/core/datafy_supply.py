@@ -8,7 +8,12 @@ from django.db import transaction
 
 from .models import DatafySupplySnapshot
 from .real_sources import _construction_datafy, json_default
-from .supply_snapshot_filters import hash_supply_snapshot_filters, normalized_supply_snapshot_filters
+from .supply_snapshot_filters import (
+    hash_supply_snapshot_filters,
+    normalized_supply_snapshot_filters,
+    scope_supply_filters,
+    supply_snapshot_matches_scope,
+)
 
 
 def _json_ready(value: Any) -> Any:
@@ -20,19 +25,25 @@ def supply_filters_hash(filters: dict[str, Any]) -> str:
 
 
 def latest_supply_snapshot(filters: dict[str, Any]) -> DatafySupplySnapshot | None:
+    filters = scope_supply_filters(filters)
     filters_hash = supply_filters_hash(filters)
-    return (
+    snapshots = (
         DatafySupplySnapshot.objects
         .filter(is_active=True, filters_hash=filters_hash)
         .order_by("-created_at", "-id")
-        .first()
     )
+    return next((snapshot for snapshot in snapshots
+                 if supply_snapshot_matches_scope(snapshot.filters, filters["release_scope"])
+                 and (snapshot.payload or {}).get("drawing_release_scope") == f"{filters['release_scope']}-v2"), None)
 
 
 def refresh_supply_snapshot(filters: dict[str, Any], *, refreshed_by: Any = None) -> DatafySupplySnapshot:
     from django.conf import settings
 
+    filters = scope_supply_filters(filters)
     payload = _json_ready(_construction_datafy(filters))
+    if payload.get("drawing_release_scope") != f"{filters['release_scope']}-v2":
+        raise ValueError("The supply source did not confirm the selected drawing scope.")
     filters_hash = supply_filters_hash(filters)
     flow = payload.get("material_flow") or {}
     campaign_views = payload.get("supply_campaign_views") or []
@@ -47,7 +58,8 @@ def refresh_supply_snapshot(filters: dict[str, Any], *, refreshed_by: Any = None
     active_snapshot_ids = [
         snapshot.pk
         for snapshot in DatafySupplySnapshot.objects.filter(is_active=True)
-        if normalized_supply_snapshot_filters(snapshot.filters) == normalized_filters
+        if supply_snapshot_matches_scope(snapshot.filters, filters["release_scope"])
+        and normalized_supply_snapshot_filters(snapshot.filters) == normalized_filters
     ]
 
     with transaction.atomic():

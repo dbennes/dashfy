@@ -9,6 +9,22 @@ from django.core.exceptions import PermissionDenied
 from .models import ModulePermission, User
 
 
+def can_view_preparing(user) -> bool:
+    """Preparing access follows an explicit profile, independently of modules.
+
+    Legacy analysts and clients retain their existing Official-only scope.
+    Staff status permits Django administration but does not grant this scope.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return bool(
+        getattr(user, "is_superuser", False)
+        or getattr(user, "role", None) in {
+            User.Role.ADMIN, User.Role.PLANNING, User.Role.SUPPLY,
+        }
+    )
+
+
 def has_module_permission(user: User, module: str, action: str = "view") -> bool:
     if not user.is_authenticated:
         return False

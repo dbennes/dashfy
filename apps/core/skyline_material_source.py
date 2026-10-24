@@ -18,6 +18,7 @@ from typing import Any, Iterable
 
 from django.conf import settings
 from .dashboard_cache import cache
+from .release_scope import current_release_scope
 from django.utils import timezone
 
 from . import fabrication_source as fabrication
@@ -44,16 +45,19 @@ def line_identity(value: Any) -> str:
 
 _DOCUMENTS_SQL = """
 select d.id as document_id, d.project_id, d.piping_line_number as line,
-       d.drawing_number, d.revision, d.status, d.field_complete,
+       d.drawing_number, d.revision, d.status, d.release_status, d.field_complete,
        d.field_complete_at,
        exists(select 1 from core_extractedtable t
               join core_materialitem mi on mi.table_id = t.id
               where t.document_id = d.id) as has_materials
   from core_document d
  where trim(coalesce(d.piping_line_number, '')) <> ''
+   and {document_scope:d}
    and (trim(coalesce(d.drawing_number, '')) = '' or not exists (
        select 1 from core_document newer_d
         where newer_d.project_id = d.project_id
+          and {document_scope:newer_d}
+          and newer_d.release_status = d.release_status
           and lower(newer_d.drawing_number) = lower(d.drawing_number)
           and (newer_d.uploaded_at > d.uploaded_at or
                (newer_d.uploaded_at = d.uploaded_at and newer_d.id > d.id))
@@ -482,10 +486,10 @@ def skyline_material_readiness(
     if as_of_date is not None and as_of_date < observed_on:
         return {line: {key: _evidence("unknown", as_of_date, "Live DATAFY data does not establish historical readiness.")
                        for key in CATEGORIES} for line in requested}
-    cache_identity = [observed_on.isoformat(), sorted(requested),
+    cache_identity = [current_release_scope(), observed_on.isoformat(), sorted(requested),
                       settings.DATAFY_DB_HOST, settings.DATAFY_DB_PORT,
                       settings.DATAFY_DB_NAME, settings.DATAFY_DB_USER]
-    cache_key = "skyline-materials:v4:" + hashlib.sha256(json.dumps(cache_identity).encode()).hexdigest()
+    cache_key = "skyline-materials:v5-release:" + hashlib.sha256(json.dumps(cache_identity).encode()).hexdigest()
     cached = cache.get(cache_key)
     if cached is not None:
         return deepcopy(cached)

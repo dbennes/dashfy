@@ -64,13 +64,14 @@ class Element extends Events {
   querySelector() { return null; }
 }
 
-function harness() {
+function harness(releaseScope = 'official') {
   const requests = [], scripts = [], frames = [], events = [];
   const timers = new Map();
   let timerId = 0;
   const notes = deferred();
   const target = new Element({'data-loading': 'true', 'aria-busy': 'true', inert: ''});
   target.dataset.contentUrl = '/dashboard/content/';
+  target.dataset.releaseScope = releaseScope;
   const status = new Element(), retry = new Element(), intro = new Element();
   const heading = new Element(), spinner = new Element(), shell = new Element({inert: ''});
   const body = new Element();
@@ -138,11 +139,20 @@ function harness() {
   };
 }
 
+test('pins fragment requests to the authorized scope rendered for this tab', async () => {
+  for (const scope of ['official', 'preparing', 'all']) {
+    const h = harness(scope);
+    await until(() => h.requests.length === 1, 'dashboard data request starts');
+    assert.equal(h.requests[0].url.searchParams.get('release_scope'), scope);
+    assert.equal(h.requests[0].url.searchParams.get('project'), 'BN-EPC1');
+  }
+});
+
 test('keeps the entry animation until fresh data, scripts, History and layout are ready', async () => {
   const h = harness();
   await until(() => h.requests.length === 1, 'dashboard data request starts');
   assert.equal(h.requests[0].options.cache, 'no-store');
-  assert.equal(h.requests[0].url.search, '?project=BN-EPC1');
+  assert.equal(h.requests[0].url.search, '?project=BN-EPC1&release_scope=official');
   assert.equal(h.body.classList.contains('has-login-boot'), true);
   assert.equal(h.shell.inert, true);
   h.intro.dispatchEvent({type: 'click'});

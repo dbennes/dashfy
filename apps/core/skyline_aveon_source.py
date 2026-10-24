@@ -31,16 +31,19 @@ logger = logging.getLogger(__name__)
 _PACKAGES_SQL = """
 select p.id, p.code, p.name, p.document_id, p.drawing_number, p.p6_ref,
        p.plan_finish, p.actual_finish, p.stages, p.latest_import_id,
-       d.piping_line_number as line, d.project_id,
+       d.piping_line_number as line, d.project_id, {package_release_status} as release_status,
        d.drawing_number as document_drawing_number,
        not exists(select 1 from core_document other_d
                    where other_d.id <> d.id and other_d.project_id = d.project_id
+                     and {document_scope:other_d}
+                     and other_d.release_status = d.release_status
                      and upper(trim(other_d.drawing_number)) = upper(trim(d.drawing_number))) as drawing_identity_unique,
        i.original_filename as source_workbook, i.imported_at
   from fabrication_fabricationpackage p
   left join core_document d on d.id = p.document_id
   left join fabrication_p6import i on i.id = p.latest_import_id
  where p.is_active = true and p.discipline = 'piping'
+   and {package_scope}
  order by p.id
 """
 
@@ -48,7 +51,9 @@ _PROGRESS_SQL = """
 select e.id, e.package_id, e.progress_date, e.stages, e.overall_after
   from fabrication_fabricationprogressentry e
   join fabrication_fabricationpackage p on p.id = e.package_id
+  left join core_document d on d.id = p.document_id
  where p.is_active = true and p.discipline = 'piping' and e.progress_date <= ?
+   and {package_scope}
  order by e.progress_date, e.id
 """
 
