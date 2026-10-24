@@ -5,7 +5,6 @@ from django.urls import include, path, reverse
 from django.http import HttpResponse
 
 from apps.accounts.models import Client, ModulePermission, User
-from apps.core.real_sources import EngineeringScopeUnavailable
 from apps.eclic.models import Document
 from config.urls import urlpatterns as application_urls
 
@@ -38,62 +37,59 @@ class LegacyEClicReleaseScopeTests(TestCase):
                                                    code="SCOPE-OTHER", title="Other client drawing")
 
     def setUp(self):
-        classification = patch("apps.core.real_sources._engineering_release_index", return_value={
-            self.official.code: {"official"}, self.preparing.code: {"preparing"},
-            self.other_client.code: {"preparing"},
-        })
-        self.classification = classification.start()
-        self.addCleanup(classification.stop)
         network = patch("psycopg2.connect", side_effect=AssertionError("Live source access forbidden"))
-        network.start()
+        self.network = network.start()
         self.addCleanup(network.stop)
         self.client.force_login(self.viewer)
 
-    def test_viewer_forged_preparing_list_export_and_direct_pk_remain_official_only(self):
+    def test_external_eclic_documents_remain_visible_independent_of_datafy_selection(self):
         params = {"release_scope": "preparing"}
         home = self.client.get(reverse("eclic:home"), params)
         self.assertEqual(home.status_code, 200)
-        self.assertEqual(home.context["kpis"]["total"], 2)
+        self.assertEqual(home.context["kpis"]["total"], 3)
         listing = self.client.get(reverse("eclic:document_list"), params)
-        self.assertEqual({row.pk for row in listing.context["page_obj"]}, {self.official.pk, self.legacy.pk})
+        self.assertEqual({row.pk for row in listing.context["page_obj"]}, {self.official.pk, self.preparing.pk, self.legacy.pk})
         exported = self.client.get(reverse("eclic:document_list"), {**params, "format": "json"})
         self.assertEqual(exported.status_code, 200)
         self.assertContains(exported, self.official.code)
-        self.assertNotContains(exported, self.preparing.code)
+        self.assertContains(exported, self.preparing.code)
         self.assertNotContains(exported, self.other_client.code)
-        hidden = self.client.get(reverse("eclic:document_detail", args=[self.preparing.pk]), params)
-        self.assertEqual(hidden.status_code, 404)
+        detail = self.client.get(reverse("eclic:document_detail", args=[self.preparing.pk]), params)
+        self.assertEqual(detail.status_code, 200)
         self.assertEqual(self.client.get(reverse("eclic:document_detail", args=[self.official.pk])).status_code, 200)
+        self.network.assert_not_called()
 
     def test_planning_scope_selection_keeps_client_filter_in_every_view(self):
         self.client.force_login(self.planner)
-        for scope, expected in (("official", {self.official.pk, self.legacy.pk}),
-                                ("preparing", {self.preparing.pk}),
-                                ("all", {self.official.pk, self.preparing.pk, self.legacy.pk})):
+        expected = {self.official.pk, self.preparing.pk, self.legacy.pk}
+        for scope in ("official", "preparing", "all"):
             with self.subTest(scope=scope):
                 response = self.client.get(reverse("eclic:document_list"), {"release_scope": scope})
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual({row.pk for row in response.context["page_obj"]}, expected)
                 exported = self.client.get(reverse("eclic:document_list"), {"release_scope": scope, "format": "csv"})
                 self.assertEqual(exported.status_code, 200)
+                for document in (self.official, self.preparing, self.legacy):
+                    self.assertContains(exported, document.code)
                 self.assertNotContains(exported, self.other_client.code)
         self.assertEqual(self.client.get(reverse("eclic:document_detail", args=[self.other_client.pk]),
                                          {"release_scope": "all"}).status_code, 404)
 
-    def test_unavailable_classification_returns_503_instead_of_unfiltered_records(self):
-        self.classification.side_effect = EngineeringScopeUnavailable("Fixture classification offline")
+    def test_external_source_views_do_not_depend_on_datafy_availability(self):
         for url, params in ((reverse("eclic:home"), {}),
                             (reverse("eclic:document_list"), {}),
                             (reverse("eclic:document_list"), {"format": "json"}),
                             (reverse("eclic:document_detail", args=[self.official.pk]), {})):
             with self.subTest(url=url, params=params):
                 response = self.client.get(url, params)
-                self.assertEqual(response.status_code, 503)
-                self.assertNotIn(self.official.code, response.content.decode())
-                self.assertNotIn(self.preparing.code, response.content.decode())
+                self.assertEqual(response.status_code, 200)
+        self.network.assert_not_called()
 
-    def test_module_permission_is_checked_before_classification(self):
+        filtered = self.client.get(reverse("eclic:document_list"), {"code": self.preparing.code})
+        self.assertEqual([document.pk for document in filtered.context["page_obj"]], [self.preparing.pk])
+
+    def test_module_permission_is_still_required(self):
         self.client.force_login(self.denied)
         response = self.client.get(reverse("eclic:document_list"), {"release_scope": "preparing"})
         self.assertEqual(response.status_code, 403)
-        self.classification.assert_not_called()
+        self.network.assert_not_called()

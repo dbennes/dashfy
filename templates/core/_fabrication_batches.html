@@ -6,7 +6,6 @@
     {% if user.is_admin %}
     <form action="{% url 'core:import_fabrication_batches' %}" method="post" enctype="multipart/form-data">
       {% csrf_token %}
-      <input type="hidden" name="release_scope" value="{{ drawing_release_scope|default:'official' }}">
       <label class="fab-batch-import">Import batches<input type="file" name="batch_file" accept=".xlsx" aria-label="Import batch workbook" onchange="this.form.requestSubmit()"></label>
     </form>
     {% endif %}

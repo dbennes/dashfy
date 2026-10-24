@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import logging
-from functools import wraps
-
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
@@ -13,7 +10,6 @@ from django.views.decorators.http import require_POST
 from apps.accounts.models import Client
 from apps.accounts.permissions import filter_queryset_by_client, module_required
 from apps.exports.services import export_queryset_response
-from apps.core import real_sources
 
 from .api_client import EclicAPIError, EclicClient
 from .filters import DocumentFilter
@@ -23,25 +19,10 @@ from .services import sync_documents_for_client
 
 def _base_qs(request):
     qs = Document.objects.select_related("client")
-    qs = filter_queryset_by_client(qs, request.user)
-    classified = real_sources.engineering_scope_documents(list(qs.values("pk", "code")))
-    return qs.filter(pk__in=[row["pk"] for row in classified])
-
-
-def _classification_available(view):
-    @wraps(view)
-    def wrapped(request, *args, **kwargs):
-        try:
-            return view(request, *args, **kwargs)
-        except real_sources.EngineeringScopeUnavailable:
-            logging.getLogger(__name__).exception("Legacy ECLIC drawing classification unavailable")
-            return HttpResponse("Drawing classification is unavailable. Please retry.",
-                                status=503, content_type="text/plain; charset=utf-8")
-    return wrapped
+    return filter_queryset_by_client(qs, request.user)
 
 
 @module_required("eclic")
-@_classification_available
 def home(request):
     qs = _base_qs(request)
     f = DocumentFilter(request.GET or None, queryset=qs)
@@ -70,7 +51,6 @@ def home(request):
 
 
 @module_required("eclic")
-@_classification_available
 def document_list(request):
     qs = _base_qs(request)
     f = DocumentFilter(request.GET or None, queryset=qs)
@@ -92,7 +72,6 @@ def document_list(request):
 
 
 @module_required("eclic")
-@_classification_available
 def document_detail(request, pk: int):
     doc = get_object_or_404(_base_qs(request), pk=pk)
     return render(request, "eclic/document_detail.html", {"doc": doc})

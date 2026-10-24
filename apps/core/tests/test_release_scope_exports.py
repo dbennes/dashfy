@@ -1,4 +1,4 @@
-"""Exports and imported snapshots must honor the scope authorized by profile."""
+"""DATAFY exports are scoped; independent engineering registers stay whole."""
 from io import BytesIO
 import json
 from unittest.mock import patch
@@ -15,7 +15,6 @@ from apps.core.models import (
     EngineeringMonitorImport, EngineeringStatusImport,
 )
 from apps.core.release_scope import current_release_scope
-from apps.core.real_sources import EngineeringScopeUnavailable
 
 
 class ReleaseScopeExportTests(TestCase):
@@ -61,11 +60,6 @@ class ReleaseScopeExportTests(TestCase):
         )
 
     def setUp(self):
-        index = patch("apps.core.real_sources._engineering_release_index", return_value={
-            self.OFFICIAL: {"official"}, self.PREPARING: {"preparing"},
-        })
-        self.index = index.start()
-        self.addCleanup(index.stop)
         network = patch("psycopg2.connect", side_effect=AssertionError("Operational database access is forbidden"))
         network.start()
         self.addCleanup(network.stop)
@@ -79,12 +73,14 @@ class ReleaseScopeExportTests(TestCase):
 
     def cases(self):
         return (
-            (self.viewer, "preparing", {self.OFFICIAL}),
-            (self.planner, "preparing", {self.PREPARING}),
+            (self.viewer, "official", {self.OFFICIAL, self.PREPARING}),
+            (self.viewer, "preparing", {self.OFFICIAL, self.PREPARING}),
+            (self.planner, "official", {self.OFFICIAL, self.PREPARING}),
+            (self.planner, "preparing", {self.OFFICIAL, self.PREPARING}),
             (self.planner, "all", {self.OFFICIAL, self.PREPARING}),
         )
 
-    def test_monitor_export_rows_and_summary_follow_authorized_scope(self):
+    def test_monitor_export_and_summary_are_independent_of_datafy_scope(self):
         for user, requested, expected in self.cases():
             with self.subTest(role=user.role, requested=requested):
                 self.client.force_login(user)
@@ -103,9 +99,8 @@ class ReleaseScopeExportTests(TestCase):
                     "Desconsideradas": len(expected) - expected_countable,
                 })
                 self.assertEqual(sum(row[5] == "SIM" for row in rows), expected_countable)
-        self.assertTrue(self.index.called)
 
-    def test_ded_export_rows_status_totals_and_discipline_totals_are_scoped(self):
+    def test_ded_export_and_totals_are_independent_of_datafy_scope(self):
         for user, requested, expected in self.cases():
             with self.subTest(role=user.role, requested=requested):
                 self.client.force_login(user)
@@ -129,14 +124,16 @@ class ReleaseScopeExportTests(TestCase):
                 self.assertEqual(sum(statuses.values()), len(rows))
                 self.assertEqual(sum(disciplines.values()), len(rows))
 
-    def test_engineering_exports_fail_closed_when_classification_cannot_be_verified(self):
+    def test_engineering_exports_work_while_datafy_is_unavailable(self):
         self.client.force_login(self.viewer)
-        self.index.side_effect = EngineeringScopeUnavailable("Classification offline")
         for endpoint in ("core:export_engineering_monitor", "core:export_engineering_status"):
-            with self.subTest(endpoint=endpoint), self.assertLogs("apps.core.views", level="ERROR"):
+            with self.subTest(endpoint=endpoint), patch(
+                "apps.core.real_sources._datafy_conn", side_effect=AssertionError("DATAFY unavailable"),
+            ) as datafy:
                 response = self.client.get(reverse(endpoint), {"release_scope": "all"})
-                self.assertEqual(response.status_code, 302)
-                self.assertNotIn("Content-Disposition", response)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("Content-Disposition", response)
+                datafy.assert_not_called()
 
     def test_viewer_supply_export_cannot_forge_preparing_filters_or_metadata(self):
         self.client.force_login(self.viewer)

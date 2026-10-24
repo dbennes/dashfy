@@ -150,6 +150,19 @@ class OfficialDocumentSourceTests(SimpleTestCase):
         self.assertEqual(rows[0]["allocated_qty"], 0)
         self.assertEqual(rows[0]["missing_qty"], 5)
 
+    def test_purchase_order_totals_include_unlinked_orders_once_in_every_scope(self):
+        # PO-1 serves both drawing families. PO-2 has no drawing allocation.
+        self.db.execute("insert into catalog_allocation values (2, 100, 1, 1)")
+        self.db.execute("insert into core_purchaseorder values (2, 'PO-2', 'Unlinked supplier', 'success', 100, 0, '2026-09-01', '2026-09-01')")
+        self.db.execute("insert into core_purchaseorderitem values (2, 2)")
+        for scope in ("official", "preparing", "all"):
+            with self.subTest(scope=scope), release_scope_context(scope):
+                self.assertEqual(real_sources._datafy_po_totals(self.conn.cursor()), {"orders": 2, "items": 2})
+                with patch.object(real_sources, "_datafy_conn", return_value=nullcontext(self.conn)):
+                    dashboard = real_sources._datafy_dashboard()
+                self.assertEqual(dashboard["kpis"]["pos"], 2)
+                self.assertEqual(dashboard["kpis"]["po_items"], 2)
+
     def test_fabrication_filters_preparing_and_keeps_unlinked_p6_scope(self):
         self.assertEqual([row["id"] for row in self.rows(fabrication_source._PACKAGE_SQL)], [1, 3])
         self.assertEqual(self.rows(fabrication_source._PACKAGE_ONE_SQL, (2,)), [])
@@ -259,31 +272,3 @@ class OfficialSnapshotFallbackTests(SimpleTestCase):
                         snapshots.return_value.order_by.return_value.first.return_value = snapshot
                         payload = real_sources._construction_datafy_snapshot({})
                     self.assertEqual(payload["available"], requested == stored)
-
-
-class EngineeringReleaseSourceTests(SimpleTestCase):
-    def test_legacy_unknown_codes_are_official_and_both_retains_both_families(self):
-        rows = [{"document_number": code} for code in ("UNKNOWN", "PREP-1", "SHARED")]
-        index = {"PREP-1": {"preparing"}, "SHARED": {"official", "preparing"}}
-        expected = {
-            "official": [("UNKNOWN", "official"), ("SHARED", "official")],
-            "preparing": [("PREP-1", "preparing"), ("SHARED", "preparing")],
-            "all": [("UNKNOWN", "official"), ("PREP-1", "preparing"),
-                    ("SHARED", "official"), ("SHARED", "preparing")],
-        }
-        for scope, values in expected.items():
-            with self.subTest(scope=scope), release_scope_context(scope), \
-                 patch.object(real_sources, "_engineering_release_index", return_value=index):
-                scoped = real_sources.engineering_scope_documents(rows)
-                self.assertEqual([(row["document_number"], row["release_status"]) for row in scoped], values)
-
-    def test_unverified_engineering_snapshot_returns_unavailable(self):
-        latest = SimpleNamespace(metadata={"import_mode": "mdr_engineering"},
-                                 payload={"documents": [{"document_number": "PREP-1"}]})
-        with patch.object(real_sources.EngineeringMonitorImport.objects, "filter") as snapshots, \
-             patch.object(real_sources, "_engineering_release_index", side_effect=real_sources.EngineeringScopeUnavailable("unverified")):
-            snapshots.return_value.first.return_value = latest
-            payload = real_sources._engineering_monitor_from_snapshot({})
-        self.assertEqual(payload["documents"], [])
-        self.assertEqual(payload["document_count"], 0)
-        self.assertIn("unverified", payload["error"])

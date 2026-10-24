@@ -55,7 +55,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="sn-export"><button class="sn-button" type="button" data-sn-legacy hidden>Previous section comments</button><span>Comments and decisions across all sections</span><a class="sn-button" href="{% url 'core:section_minutes' %}?release_scope={{ drawing_release_scope }}"><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Export minutes</a></div>
+<div class="sn-export"><button class="sn-button" type="button" data-sn-legacy hidden>Previous section comments</button><span>Comments and decisions across all sections</span><a class="sn-button" href="{% url 'core:section_minutes' %}"><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Export minutes</a></div>
 
 
 {# ===== FILTERBAR (sticky) ===== #}
@@ -399,7 +399,7 @@
         {% if monitor.source_mode == "postgres_import" or request.user.is_admin %}
           <div class="c3-source-actions" aria-label="Engineering monitor source actions">
             {% if monitor.source_mode == "postgres_import" %}
-              <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_engineering_monitor' %}?{{ drawing_scope_query }}" download title="Exportar dados normalizados do MDR">
+              <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_engineering_monitor' %}" download title="Exportar dados normalizados do MDR">
                 <i class="bi bi-download"></i><span>Exportar base</span>
               </a>
             {% endif %}
@@ -440,6 +440,11 @@
           · DATAFY · PostgreSQL unavailable
         {% endif %}
       </div>
+      {% if manager.material.po_totals %}
+      <div class="c3-meta-line" data-datafy-po-totals>
+        POs · <b>{{ manager.material.po_totals.orders|intcomma }}</b> total · <b>{{ manager.material.po_totals.items|intcomma }}</b> PO items · All POs
+      </div>
+      {% endif %}
       <div class="c3-source-actions" aria-label="Supply source actions">
         <a class="c3-export-link c3-monitor-action" href="{% url 'core:export_datafy_supply' %}?{{ drawing_scope_query }}" title="Export the current DATAFY Supply snapshot for reimport">
           <i class="bi bi-download"></i><span>Export</span>
@@ -1515,7 +1520,7 @@
 <script src="{% static 'js/engineering-mdr.js' %}?v=20261002-status-scopes" defer></script>
 {% if not dashboard_fragment %}
 {% include 'core/_section_notes.html' %}
-<script src="{% static 'js/section-notes.js' %}?v=20261023-release-scope" defer></script>
+<script src="{% static 'js/section-notes.js' %}?v=20261024-datafy-only" defer></script>
 {% endif %}
 
 {% if user.is_admin %}

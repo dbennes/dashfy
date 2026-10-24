@@ -35,7 +35,7 @@ class SectionNotesTests(TestCase):
         note = response.json()["note"]
         self.assertEqual(note["author"], "Ana Silva")
         self.assertEqual(note["status"], "pending")
-        self.assertEqual(note["context"], {"discipline": "piping", "release_scope": "official"})
+        self.assertEqual(note["context"], {"discipline": "piping"})
         self.assertEqual(len(note["events"]), 1)
         self.assertEqual(note["events"][0]["actor"], "Ana Silva")
         self.assertEqual(self.create().status_code, 200)

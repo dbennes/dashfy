@@ -69,54 +69,44 @@ class BatchImportTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(FabricationBatchImport.objects.count(), 1)
 
-    def test_preparing_import_is_separate_and_both_uses_only_latest_per_scope(self):
-        for _ in range(2):
-            official = import_workbook(SimpleUploadedFile('official.xlsx', workbook_bytes()))
-        self.assertEqual(official.payload['release_scope'], 'official')
-        with release_scope_context('preparing'):
-            self.assertEqual(current_batches(), {})
-            for _ in range(2):
-                preparing = import_workbook(SimpleUploadedFile('preparing.xlsx', workbook_bytes()))
-            preparing.payload['labels'][0] = 'Batch 3'
-            preparing.save(update_fields=['payload'])
-            self.assertEqual(preparing.payload['release_scope'], 'preparing')
-            self.assertEqual(current_batches()['filename'], 'preparing.xlsx')
-            self.assertEqual(current_batches()['payload']['scopes']['all']['item_count'], 6)
-        self.assertEqual(current_batches()['filename'], 'official.xlsx')
-        with release_scope_context('all'):
-            result = current_batches()
-            self.assertEqual(result['filename'], 'official.xlsx + preparing.xlsx')
-            self.assertEqual(result['payload']['scopes']['all']['item_count'], 12)
-            self.assertEqual(result['payload']['labels'], ['Batch 1B', 'Batch 2A', 'Batch 3', 'Unassigned'])
-            self.assertEqual(result['payload']['scopes']['all']['total'], [4, 2, 4, 2])
-            self.assertEqual(result['payload']['scopes']['all']['done'], [2, 0, 2, 2])
-            self.assertEqual(result['payload']['unassigned_items'], 2)
+    def test_import_is_global_and_accepts_every_drawing_selection(self):
+        for scope in ('official', 'preparing', 'all'):
+            with self.subTest(scope=scope), release_scope_context(scope):
+                snapshot = import_workbook(SimpleUploadedFile(f'{scope}.xlsx', workbook_bytes()))
+                self.assertNotIn('release_scope', snapshot.payload)
+                self.assertNotIn('release_scope_version', snapshot.payload)
+        self.assertEqual(FabricationBatchImport.objects.count(), 3)
+        expected = current_batches()
+        self.assertEqual(expected['filename'], 'all.xlsx')
+        self.assertEqual(expected['payload']['scopes']['all']['item_count'], 6)
+        for scope in ('official', 'preparing', 'all'):
+            with self.subTest(scope=scope), release_scope_context(scope):
+                self.assertEqual(current_batches(), expected)
 
-    def test_legacy_batches_are_official_and_both_import_is_rejected(self):
+    def test_previous_scope_metadata_does_not_filter_or_combine_batch_revisions(self):
         FabricationBatchImport.objects.create(original_filename='legacy.xlsx', file_hash='legacy',
                                                payload=parse_workbook(workbook_bytes()))
-        self.assertEqual(current_batches()['filename'], 'legacy.xlsx')
-        with release_scope_context('preparing'):
-            self.assertEqual(current_batches(), {})
-        with release_scope_context('all'):
-            self.assertEqual(current_batches()['payload']['scopes']['all']['item_count'], 6)
-            with self.assertRaisesMessage(ValueError, 'Choose Official or Preparing'):
-                import_workbook(SimpleUploadedFile('both.xlsx', workbook_bytes()))
-        self.assertEqual(FabricationBatchImport.objects.count(), 1)
+        for status in ('official', 'preparing'):
+            payload = parse_workbook(workbook_bytes())
+            payload.update(release_scope=status, release_scope_version=1)
+            FabricationBatchImport.objects.create(original_filename=f'previous-{status}.xlsx',
+                                                   file_hash=status, payload=payload)
+        expected = current_batches()
+        self.assertEqual(expected['filename'], 'previous-preparing.xlsx')
+        self.assertEqual(expected['payload']['scopes']['all']['item_count'], 6)
+        for scope in ('official', 'preparing', 'all'):
+            with self.subTest(scope=scope), release_scope_context(scope):
+                self.assertEqual(current_batches(), expected)
 
-    def test_batch_upload_posts_explicit_scope_and_redirect_keeps_selection(self):
+    def test_batch_upload_accepts_both_and_preserves_admin_permission(self):
         user = User.objects.create_user(username='batch-admin-scope', role='admin')
         self.client.force_login(user)
         url = reverse('core:import_fabrication_batches')
-        response = self.client.post(url, {'release_scope': 'preparing',
-                                         'batch_file': SimpleUploadedFile('preparing.xlsx', workbook_bytes())})
-        self.assertEqual(response.status_code, 302)
-        self.assertIn('?release_scope=preparing#s03', response.url)
-        self.assertEqual(FabricationBatchImport.objects.get().payload['release_scope'], 'preparing')
-        response = self.client.post(url, {'release_scope': 'all',
-                                         'batch_file': SimpleUploadedFile('both.xlsx', workbook_bytes())})
-        self.assertEqual(response.status_code, 302)
-        self.assertIn('?release_scope=all#s03', response.url)
-        self.assertEqual(FabricationBatchImport.objects.count(), 1)
-        self.assertTrue(any('Choose Official or Preparing' in str(message)
-                            for message in response.wsgi_request._messages))
+        for scope in ('official', 'preparing', 'all'):
+            with self.subTest(scope=scope):
+                response = self.client.post(url, {'release_scope': scope,
+                                                 'batch_file': SimpleUploadedFile(f'{scope}.xlsx', workbook_bytes())})
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.url, reverse('core:home') + '#s03')
+                self.assertNotIn('release_scope', FabricationBatchImport.objects.first().payload)
+        self.assertEqual(FabricationBatchImport.objects.count(), 3)

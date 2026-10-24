@@ -59,11 +59,6 @@ class MdrCodeStatusTests(SimpleTestCase):
 
 
 class MdrImportTests(TestCase):
-    def setUp(self):
-        scope_index = patch("apps.core.real_sources._engineering_release_index", return_value={})
-        scope_index.start()
-        self.addCleanup(scope_index.stop)
-
     def test_legacy_active_base_never_appears_under_mdr_headings(self):
         legacy = EngineeringMonitorImport.objects.create(
             original_filename="old-engineering.xlsx", file_hash="legacy",

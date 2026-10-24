@@ -3329,6 +3329,14 @@ def datafy_dashboard() -> dict:
     return _safe_source("DATAFY PostgreSQL", _datafy_dashboard)
 
 
+def _datafy_po_totals(cursor) -> dict[str, int]:
+    """Purchase orders have one global register, independent of drawing scope."""
+    return {
+        "orders": int(_scalar(cursor, "select count(*) from core_purchaseorder")),
+        "items": int(_scalar(cursor, "select count(*) from core_purchaseorderitem")),
+    }
+
+
 def _datafy_dashboard() -> dict:
     with _datafy_conn() as conn:
         cur = conn.cursor()
@@ -3344,8 +3352,9 @@ def _datafy_dashboard() -> dict:
         missing_materials = max(total_materials - covered_materials, 0)
         documents = int(_scalar(cur, "select count(*) from core_document d where {document_scope:d}"))
         drawings_ok = int(_scalar(cur, "select count(*) from core_document d where {document_scope:d} and status='success'"))
-        pos = int(_scalar(cur, "select count(*) from core_purchaseorder"))
-        po_items = int(_scalar(cur, "select count(*) from core_purchaseorderitem"))
+        po_totals = _datafy_po_totals(cur)
+        pos = po_totals["orders"]
+        po_items = po_totals["items"]
         stock_pieces = int(_scalar(cur, "select count(*) from catalog_stockpiece"))
         allocations = int(_scalar(cur, """select count(*) from catalog_allocation a
                 join core_materialitem mi on mi.id = a.material_item_id
@@ -4139,60 +4148,6 @@ def _engineering_monitor_normalized_doc(doc: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
-class EngineeringScopeUnavailable(RuntimeError):
-    pass
-
-
-def _engineering_release_index() -> dict[str, set[str]]:
-    identity = [settings.DATAFY_DB_HOST, settings.DATAFY_DB_PORT, settings.DATAFY_DB_NAME]
-    key = "engineering-release-index:v1:" + hashlib.sha256(json.dumps(identity).encode()).hexdigest()
-    found = cache.get(key)
-    if found is not None:
-        return found
-    try:
-        with _datafy_conn() as conn:
-            rows = _rows(conn.cursor(), """
-                select drawing_number as code, release_status from core_document
-                union
-                select code, release_status from eclic_eclicdocument
-            """)
-    except Exception as exc:
-        raise EngineeringScopeUnavailable("DATAFY drawing classification is unavailable; engineering scope cannot be verified.") from exc
-    result: dict[str, set[str]] = {}
-    for row in rows:
-        code = " ".join(str(row.get("code") or "").strip().upper().split())
-        status = row.get("release_status")
-        if code and status in {"official", "preparing"}:
-            result.setdefault(code, set()).add(status)
-    cache.set(key, result, timeout=45)
-    return result
-
-
-def engineering_scope_documents(rows) -> list[dict]:
-    """Apply the authorized release scope to legacy engineering imports/API.
-
-    Unknown legacy codes remain Official. Exact known Preparing codes are
-    isolated; Both keeps one classified row per distinct release family.
-    """
-    rows = list(rows)
-    if not rows:
-        return []
-    index = _engineering_release_index()
-    scope = current_release_scope()
-    allowed = {"official", "preparing"} if scope == "all" else {scope}
-    output = []
-    for source in rows:
-        row = dict(source)
-        codes = [" ".join(str(row.get(field) or "").strip().upper().split())
-                 for field in ("document_number", "codigo", "Code", "code", "drawing_number")]
-        known = set().union(*(index[code] for code in codes if code in index))
-        explicit = row.get("release_status")
-        statuses = {explicit} if explicit in {"official", "preparing"} else known or {"official"}
-        for status in sorted(statuses & allowed):
-            output.append({**row, "release_status": status})
-    return output
-
-
 def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
     try:
         latest = EngineeringMonitorImport.objects.filter(is_active=True).first()
@@ -4206,11 +4161,9 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
         )
 
     payload = latest.payload or {}
-    try:
-        raw_docs = [_engineering_monitor_normalized_doc(doc)
-                    for doc in engineering_scope_documents(payload.get("documents") or [])]
-    except EngineeringScopeUnavailable as exc:
-        return _engineering_monitor_empty(str(exc))
+    # MDR is an external engineering register. Preparing classifies DATAFY
+    # drawing demand, so it must not change this workbook's scope or totals.
+    raw_docs = [_engineering_monitor_normalized_doc(dict(doc)) for doc in list(payload.get("documents") or [])]
     monitored_docs = [doc for doc in raw_docs if doc.get("is_monitored")]
     countable_docs = [doc for doc in monitored_docs if doc.get("is_countable")]
 
@@ -4330,9 +4283,9 @@ def _engineering_monitor_from_snapshot(filters: dict) -> dict[str, Any]:
         "source_file_name": latest.original_filename,
         "detail_sheet": latest.detail_sheet,
         "document_count": total,
-        "raw_document_count": len(raw_docs),
+        "raw_document_count": latest.document_count,
         "mdr_scopes": mdr_scope_summaries(filtered_docs, discipline_order),
-        "excluded_count": sum(not doc.get("is_countable") for doc in monitored_docs),
+        "excluded_count": latest.excluded_count,
         "flow": _engineering_monitor_flow(filtered_docs),
         "summary": summary,
         "status_rows": status_rows,
@@ -4391,10 +4344,6 @@ def _engineering_from_ded_snapshot(filters: dict) -> dict:
         "issue_status",
         "fabrication_ref",
     ))
-    try:
-        raw_docs = engineering_scope_documents(raw_docs)
-    except EngineeringScopeUnavailable as exc:
-        return _engineering_empty(str(exc))
     summary_remarks = {
         row.discipline: row.remarks
         for row in latest.discipline_summaries.all()
@@ -4407,7 +4356,6 @@ def _engineering_from_ded_snapshot(filters: dict) -> dict:
         afc_code = row.get("afc_code") or ""
         base_docs.append({
             "codigo": row.get("document_number") or "-",
-            "release_status": row["release_status"],
             "codigo_secundario": row.get("fabrication_ref") or "",
             "titulo": row.get("title") or "-",
             "disciplina": row.get("discipline") or "-",
@@ -4634,11 +4582,6 @@ def _engineering_from_eclic_api(filters: dict) -> dict:
             "responsavel_atividade": _eclic_value(item, "Responsible", "responsavel_atividade", default="-"),
             "eclic_id": item.get("Id") or item.get("id"),
         })
-
-    try:
-        base_docs = engineering_scope_documents(base_docs)
-    except EngineeringScopeUnavailable as exc:
-        return _engineering_empty(str(exc))
 
     discipline_counts = Counter(doc["disciplina"] for doc in base_docs)
     status_counts = Counter(doc["status_documento"] for doc in base_docs)
@@ -5286,6 +5229,7 @@ def _construction_taskfy(filters: dict) -> dict:
 def _construction_datafy(filters: dict) -> dict:
     with _datafy_conn() as conn:
         cur = conn.cursor()
+        po_totals = _datafy_po_totals(cur)
         min_readiness = int(filters.get("min_readiness") or 0)
         supply_priority = str(filters.get("supply_priority") or "").strip()
         supply_drawing_q = str(filters.get("supply_drawing_q") or "").strip()
@@ -6143,6 +6087,7 @@ def _construction_datafy(filters: dict) -> dict:
     return {
         "available": True,
         "drawing_release_scope": f"{current_release_scope()}-v2",
+        "po_totals": po_totals,
         "kpis": {
             "piping_lines": int(readiness["lines"] or 0),
             "ready_100": int(readiness["ready_100"] or 0),
@@ -6297,7 +6242,7 @@ def management_dashboard(filters: dict | None = None) -> dict:
         json.dumps(
             {
                 "filters": parsed_filters,
-                "source": "postgres-live-v4-release",
+                "source": "postgres-live-v5-datafy-scope",
                 "release_scope": current_release_scope(),
             },
             sort_keys=True,
@@ -6305,7 +6250,7 @@ def management_dashboard(filters: dict | None = None) -> dict:
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
-    cache_key = f"management-dashboard:outline-v4:{cache_token}"
+    cache_key = f"management-dashboard:outline-v4-datafy-scope:{cache_token}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached

@@ -950,13 +950,7 @@ def export_engineering_monitor_view(request):
         return redirect(reverse("core:home") + "#s01-monitor")
 
     payload = latest.payload or {}
-    try:
-        scoped_documents = real_sources.engineering_scope_documents(list(payload.get("documents") or []))
-    except Exception:
-        logging.getLogger(__name__).exception("Unable to resolve engineering export drawing scope")
-        messages.error(request, "The drawing classification is unavailable. Please retry the export.")
-        return redirect(reverse("core:home") + "#s01-monitor")
-    docs = [_monitor_export_doc(dict(doc)) for doc in scoped_documents]
+    docs = [_monitor_export_doc(dict(doc)) for doc in list(payload.get("documents") or [])]
     docs.sort(key=lambda doc: (int(doc.get("row_number") or 0), str(doc.get("document_number") or "")))
 
     output = io.BytesIO()
@@ -1162,19 +1156,13 @@ def _engineering_status_export_queryset(request):
             | Q(responsible__icontains=query)
             | Q(fabrication_ref__icontains=query)
         )
-    scoped_rows = real_sources.engineering_scope_documents(list(qs.values("pk", "document_number")))
-    return latest, qs.filter(pk__in=[row["pk"] for row in scoped_rows])
+    return latest, qs
 
 
 @login_required
 def export_engineering_status_view(request):
     """Exporta desenhos/documentos DED e status do snapshot ativo."""
-    try:
-        latest, qs = _engineering_status_export_queryset(request)
-    except Exception:
-        logging.getLogger(__name__).exception("Unable to resolve DED export drawing scope")
-        messages.error(request, "The drawing classification is unavailable. Please retry the export.")
-        return redirect(reverse("core:home") + "#s01")
+    latest, qs = _engineering_status_export_queryset(request)
     if latest is None or qs is None:
         messages.error(request, "Nao ha snapshot DED ativo na base do sistema para exportar.")
         return redirect(reverse("core:home") + "#s01")

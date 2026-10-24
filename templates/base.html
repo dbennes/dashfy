@@ -131,8 +131,8 @@
       {% if can_view_preparing %}
       <form class="tb-release-scope" method="get" action="{{ request.path }}" onsubmit="var section = document.querySelector('#c3-section-nav .sn-tab.active'); this.action = this.action.split('#')[0] + (section ? '#' + section.dataset.target : window.location.hash)">
         {% for key, values in request.GET.lists %}{% if key != 'release_scope' %}{% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}{% endif %}{% endfor %}
-        <label for="drawing-release-scope">Drawings</label>
-        <select id="drawing-release-scope" name="release_scope" aria-label="Drawing release scope" onchange="this.form.requestSubmit()">
+        <label for="drawing-release-scope">Datafy</label>
+        <select id="drawing-release-scope" name="release_scope" aria-label="DATAFY drawing scope" title="DATAFY drawings and material demand" onchange="this.form.requestSubmit()">
           <option value="official"{% if drawing_release_scope == 'official' %} selected{% endif %}>Official</option>
           <option value="preparing"{% if drawing_release_scope == 'preparing' %} selected{% endif %}>Preparing</option>
           <option value="all"{% if drawing_release_scope == 'all' %} selected{% endif %}>Both</option>
