@@ -678,11 +678,11 @@
         panel.replaceChildren();
         var items = Array.isArray(data.items) ? data.items : [];
         if (data.available === false) {
-          panel.appendChild(element("p", "vt-item-note", data.detail || "Trackfy is unavailable."));
+          panel.appendChild(element("p", "vt-item-note", data.detail || "DATAFY is unavailable."));
           return;
         }
         if (!items.length) {
-          panel.appendChild(element("p", "vt-item-note", "This shipment has no item listed in Trackfy."));
+          panel.appendChild(element("p", "vt-item-note", "This shipment has no item listed in DATAFY."));
         } else {
           var list = element("ul", "vt-item-list");
           items.forEach(function (item) { list.appendChild(itemRow(item)); });
@@ -740,7 +740,7 @@
       return row;
     }
     function containerRow(container, expanded) {
-      // Every field here comes from Trackfy; it is written as text, never as markup.
+      // Every field here comes from DATAFY; it is written as text, never as markup.
       var item = element("div", "vt-container");
       var head = element("button", "vt-container-head");
       head.type = "button";
@@ -787,7 +787,7 @@
       list.replaceChildren();
       if (!matches.length) {
         list.appendChild(element("p", "vt-container-empty", state.containers.length
-          ? "No container matches this search." : "No container was returned by Trackfy."));
+          ? "No container matches this search." : "No container is in transit in DATAFY."));
         return;
       }
       matches.forEach(function (container, index) {
@@ -806,10 +806,10 @@
         var totals = data.totals || {};
         var withOpen = number(totals.with_open) || 0, fleet = number(totals.fleet) || 0;
         text(query("containers-summary"), data.available === false
-          ? (data.detail || "Trackfy is unavailable.")
+          ? (data.detail || "DATAFY is unavailable.")
           : withOpen === 0
-            ? "No container has an open shipment" + (fleet ? " · fleet of " + fleet : "")
-            : withOpen + (withOpen === 1 ? " container" : " containers") + " awaiting receipt · "
+            ? "No container is in transit" + (fleet ? " · fleet of " + fleet : "")
+            : withOpen + (withOpen === 1 ? " container" : " containers") + " in transit · "
               + (number(totals.open_shipments) || 0) + " open shipment"
               + ((number(totals.open_shipments) || 0) === 1 ? "" : "s")
               + (fleet ? " · fleet of " + fleet : ""));

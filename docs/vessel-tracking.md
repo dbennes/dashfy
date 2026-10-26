@@ -204,6 +204,24 @@ configured maximum. The source of every track observation is `AIS`.
 
 ## Verification
 
+The map container panel and the vessel dossier read DATAFY Logistics, using
+the same default project as `/logistics/arrivals/`. They show only shipments
+with `status=sent` (In transit). Draft, delivered, verified, discrepancy and
+cancelled shipments are excluded; receiving a container removes it on the
+next panel opening. The queue is shared: DATAFY currently has no vessel
+assignment field, so the panel does not infer a cargo-to-vessel association.
+
+Container numbers and material contents come from the issued manifest
+snapshots. Removed items are excluded from counts and contents. Both API
+endpoints use the existing read-only `DATAFY_DB_*` connection; they never
+fall back to legacy Trackfy data. A source outage is shown as unavailable.
+The legacy S04 Trackfy dashboard keeps its own existing source.
+
+Deploy the Python, template and JavaScript changes together, run
+`collectstatic --noinput`, and restart the application. No migration is needed.
+Verify that clicking a vessel shows the same in-transit containers as DATAFY's
+**Receive container** queue, and that clicking each container loads its materials.
+
 ```bash
 python manage.py check
 python manage.py makemigrations --check --dry-run

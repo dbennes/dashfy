@@ -1,8 +1,8 @@
-/* Vessel dossier: holographic 3D stage plus the Trackfy cargo it is carrying.
+/* Vessel dossier: holographic 3D stage plus the DATAFY cargo it is carrying.
  *
  * Opened from the map by vessel-tracking.js, which dispatches `vt:open-dossier`
  * with the vessel payload it already holds. Everything shown here is real: AIS
- * observations for the vessel, Trackfy rows for the cargo. Nothing is invented,
+ * observations for the vessel, DATAFY rows for the cargo. Nothing is invented,
  * and the 3D model is decoration for data that stands on its own — if the model
  * or WebGL is unavailable the dossier still works.
  */
@@ -309,7 +309,7 @@ function initDossier(root) {
       headers: { Accept: "application/json" }, credentials: "same-origin",
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.detail || "Trackfy data could not be loaded.");
+    if (!response.ok) throw new Error(data.detail || "DATAFY data could not be loaded.");
     return data;
   }
 
@@ -427,10 +427,10 @@ function initDossier(root) {
     rail.replaceChildren();
     const shipments = containers.reduce((sum, c) => sum + (num(c.open_count) || 0), 0);
     q("boxes-count").textContent = containers.length
-      ? `${containers.length} units · ${shipments} open`
+      ? `${containers.length} units · ${shipments} in transit`
       : "0 units";
     if (!containers.length) {
-      rail.appendChild(el("p", "vh-hint", "No container is awaiting receipt."));
+      rail.appendChild(el("p", "vh-hint", "No container is in transit in DATAFY."));
       return;
     }
     const busiest = Math.max(...containers.map((c) => num((c.open_shipments || [])[0]?.items) || 0), 1);
@@ -546,12 +546,12 @@ function initDossier(root) {
       const items = Array.isArray(data.items) ? data.items : [];
       body.replaceChildren();
       if (data.available === false) {
-        body.appendChild(el("p", "vh-hint", data.detail || "Trackfy is unavailable."));
+        body.appendChild(el("p", "vh-hint", data.detail || "DATAFY is unavailable."));
         return;
       }
       setProgress(num(data.checked) || 0, num(data.total_count) || items.length);
       if (!items.length) {
-        body.appendChild(el("p", "vh-hint", `${shipment.report} has no item listed in Trackfy.`));
+        body.appendChild(el("p", "vh-hint", `${shipment.report} has no item listed in DATAFY.`));
         return;
       }
       state.items = items;
@@ -570,6 +570,12 @@ function initDossier(root) {
   async function loadContainers() {
     try {
       const data = await api("containers/");
+      if (data.available === false) {
+        state.containers = [];
+        q("boxes-count").textContent = "Unavailable";
+        q("boxes").replaceChildren(el("p", "vh-hint", data.detail || "DATAFY is unavailable."));
+        return;
+      }
       state.containers = Array.isArray(data.containers) ? data.containers : [];
       renderBoxes(state.containers);
       // Open the most overdue container straight away: that is the one to chase.

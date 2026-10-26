@@ -9,10 +9,10 @@ from rest_framework.test import APIClient
 PAYLOAD = {
     "available": True,
     "containers": [{
-        "id": 7, "number": "WEL/RL/002", "owner": "WESTPAQ/UTC", "status": "In transit",
+        "id": 7, "number": "RRR-2000120", "owner": "WESTPAQ/UTC", "status": "In transit",
         "location": "—", "open_count": 1, "oldest_days_open": 116,
         "open_shipments": [{
-            "id": 54, "report": "TRK-2026-0054", "status": "sent", "status_label": "Sent",
+            "id": 54, "report": "SHP-2026-0016", "status": "sent", "status_label": "Sent",
             "origin": "AVEON YARD", "destination": "BONGA", "sent": "23/05/2026 10:00",
             "sent_iso": "2026-05-23T10:00:00+00:00", "days_open": 116, "items": 123, "issues": 0,
         }],
@@ -38,11 +38,11 @@ class VesselContainersAPITests(TestCase):
         data = response.json()
         self.assertEqual(data["totals"]["open_shipments"], 5)
         container = data["containers"][0]
-        self.assertEqual(container["number"], "WEL/RL/002")
-        self.assertEqual(container["open_shipments"][0]["report"], "TRK-2026-0054")
+        self.assertEqual(container["number"], "RRR-2000120")
+        self.assertEqual(container["open_shipments"][0]["report"], "SHP-2026-0016")
         source.assert_called_once_with()
 
-    def test_a_trackfy_outage_degrades_without_leaking_the_reason(self):
+    def test_a_datafy_outage_degrades_without_leaking_the_reason(self):
         broken = {"available": False, "error": "could not connect to host 10.0.0.9 user=postgres password=hunter2",
                   "containers": [], "totals": {"containers": 0, "with_open": 0, "open_shipments": 0}}
         with patch("apps.core.tracking_source.map_containers_safe", return_value=broken):

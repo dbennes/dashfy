@@ -313,9 +313,9 @@ class VesselImportView(VesselAPIView):
 
 
 class VesselContainersView(VesselAPIView):
-    """Trackfy containers and their open shipments, for the map's container panel.
+    """DATAFY containers and their open shipments, for the map's container panel.
 
-    Read-only: the Taskfy database is never written from here. A Trackfy outage
+    Read-only: the DATAFY database is never written from here. A DATAFY outage
     degrades to an empty list with a reason, so the map keeps working.
     """
 
@@ -325,14 +325,14 @@ class VesselContainersView(VesselAPIView):
         payload = map_containers_safe()
         if not payload.get("available"):
             # The upstream error can name hosts and credentials; keep it server-side.
-            logger.warning("Trackfy container lookup failed for the vessel map")
+            logger.warning("DATAFY container lookup failed for the vessel map")
             return Response({"available": False, "containers": [], "totals": payload.get("totals", {}),
-                             "detail": "Trackfy is unavailable. Container data could not be loaded."})
+                             "detail": "DATAFY is unavailable. Container data could not be loaded."})
         return Response(payload)
 
 
 class VesselShipmentItemsView(VesselAPIView):
-    """What is inside one Trackfy shipment, for the map's container panel."""
+    """What is inside one DATAFY shipment, for the map's container panel."""
 
     def get(self, request, pk):
         from apps.core.tracking_source import shipment_items_safe
@@ -340,9 +340,9 @@ class VesselShipmentItemsView(VesselAPIView):
         payload = shipment_items_safe(pk)
         if not payload.get("available"):
             # The upstream error can name hosts and credentials; keep it server-side.
-            logger.warning("Trackfy shipment item lookup failed for the vessel map")
+            logger.warning("DATAFY shipment item lookup failed for the vessel map")
             return Response({"available": False, "found": False, "items": [], "total_count": 0,
-                             "detail": "Trackfy is unavailable. Shipment contents could not be loaded."})
+                             "detail": "DATAFY is unavailable. Shipment contents could not be loaded."})
         if not payload.get("found"):
-            return Response({"detail": "This shipment no longer exists in Trackfy."}, status=404)
+            return Response({"detail": "This shipment no longer exists in DATAFY."}, status=404)
         return Response(payload)

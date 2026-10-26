@@ -74,6 +74,7 @@ function buildDom() {
   root.dataset.apiBase = "/vessels/api/";
   root.dataset.vesselModel = "";
   root.querySelector = (selector) => {
+    if (selector === ".vh-box") return nodes.get("boxes").children.find((node) => node.nodeName === "button") || null;
     const match = /\[data-vh-([a-z-]+)\]/.exec(selector);
     return match ? nodes.get(match[1]) || null : null;
   };
@@ -193,4 +194,47 @@ test("cargo text is never written as markup", () => {
   const source = readFileSync(MODULE, "utf8");
   // Trackfy rows are uploaded content; they must only ever become text nodes.
   assert.equal(/\.innerHTML\s*=/.test(source), false, "no innerHTML assignment is allowed in the dossier");
+});
+
+test("DATAFY transit containers open their manifest and source outages remain visible", async () => {
+  const dom = install();
+  const containers = ["HH23-033", "334031", "NRSM 052", "RRR-2000120"].map((number, index) => ({
+    id: index + 13, number, owner: "UTC", status: "In transit", open_count: 1, oldest_days_open: 6,
+    open_shipments: [{ id: index + 13, report: `SHP-2026-00${index + 13}`, status: "sent",
+      origin: "Mabu Warehouse", destination: "Bonga North", days_open: 6, items: 1 }],
+  }));
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(url);
+    return { ok: true, json: async () => url.endsWith("containers/")
+      ? { available: true, containers }
+      : { available: true, found: true, total_count: 1, checked: 0, items: [{
+          description: "DATAFY manifest material", code: "MAT-1", quantity: 2.5,
+          received_quantity: null, unit: "EA", status: "pending", status_label: "Pending",
+        }] } };
+  };
+  // A distinct ES module gives this test its own DOM-bound listeners even
+  // where Node classifies the production .js file as cached CommonJS.
+  await import(`data:text/javascript;base64,${Buffer.from(readFileSync(MODULE, "utf8")).toString("base64")}`);
+  dom.root.dispatchEvent(new dom.FakeEvent("vt:open-dossier", { detail: VESSEL }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(dom.nodes.get("boxes-count").textContent, "4 units · 4 in transit");
+  assert.equal(dom.nodes.get("boxes").children.length, 4);
+  assert.equal(dom.nodes.get("items-title").textContent, "HH23-033");
+  assert.ok(requests.some((url) => url.endsWith("shipments/13/items/")));
+  assert.equal(dom.nodes.get("items").children[0].nodeName, "table");
+  assert.equal(dom.nodes.get("manifest").disabled, false);
+  dom.nodes.get("boxes").children[3].dispatchEvent(new dom.FakeEvent("click"));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(dom.nodes.get("items-title").textContent, "RRR-2000120");
+  assert.ok(requests.some((url) => url.endsWith("shipments/16/items/")));
+  dom.nodes.get("close").dispatchEvent(new dom.FakeEvent("click"));
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({
+    available: false, containers: [], detail: "DATAFY is unavailable.",
+  }) });
+  dom.root.dispatchEvent(new dom.FakeEvent("vt:open-dossier", { detail: VESSEL }));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(dom.nodes.get("boxes-count").textContent, "Unavailable");
+  assert.equal(dom.nodes.get("boxes").children[0].textContent, "DATAFY is unavailable.");
+  dom.nodes.get("close").dispatchEvent(new dom.FakeEvent("click"));
 });

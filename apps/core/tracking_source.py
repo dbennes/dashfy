@@ -384,42 +384,48 @@ def tracking_dashboard_safe() -> dict:
 
 
 def map_containers() -> dict:
-    """Containers com envio ABERTO (draft/sent), para o modal do mapa.
+    """DATAFY Arrival & check containers still in transit (status=sent).
 
-    Le as mesmas tabelas do dashboard S04, sem escrever nada. Containers sem
-    nenhum envio pendente ficam de fora: o painel existe para mostrar o que
-    ainda nao foi recebido, nao a frota inteira. O total da frota continua em
-    ``totals`` para dar contexto ao numero exibido.
+    Match DATAFY's default project without creating one. Loading drafts and
+    containers already delivered are not in transit. Only SELECTs are issued;
+    the existing response contract is shared by the map and vessel dossier.
     """
-    from .real_sources import _taskfy_conn
+    from .real_sources import _datafy_conn
 
     now = timezone.now()
-    with _taskfy_conn() as conn:
+    with _datafy_conn() as conn:
         cur = conn.cursor()
         containers = _rows(
             cur,
             """
-            select id, container_number, owner, status, current_location
-              from trackfy_conteiner
-             order by container_number
+            select id, number as container_number, owner
+              from logistics_container
+             where project_id = (select id from core_project order by created_at asc limit 1)
+             order by number
             """,
         )
         open_rows = _rows(
             cur,
             """
-            select s.id, s.container_id, s.report_number, s.status, s.origin,
-                   s.destination, s.date_sent, s.created_at,
-                   (select count(*) from trackfy_shipmentitem i where i.shipment_id = s.id) as items_count,
-                   (select count(*) from trackfy_shipmentitem i
-                     where i.shipment_id = s.id and i.receive_status in ('missing', 'damaged')) as issues_count
-              from trackfy_shipment s
-             where s.status in ('draft', 'sent')
-             order by coalesce(s.date_sent, s.created_at) desc
+            select s.id, s.container_id, s.number as report_number, s.status, s.origin,
+                   s.destination, s.sent_at as date_sent, s.created_at,
+                   s.container_number_snapshot,
+                   (select count(*) from logistics_shipmentitem i
+                     where i.shipment_id = s.id and i.removed_at is null) as items_count,
+                   (select count(*) from logistics_shipmentitem i
+                     where i.shipment_id = s.id and i.removed_at is null
+                       and i.check_status in ('missing', 'damaged')) as issues_count
+              from logistics_shipment s
+             where s.status = 'sent'
+               and s.project_id = (select id from core_project order by created_at asc limit 1)
+             order by coalesce(s.sent_at, s.created_at) desc, s.id desc
             """,
         )
 
     by_container: dict[int, list[dict]] = {}
+    container_numbers = {}
     for row in open_rows:
+        container_numbers.setdefault(row["container_id"], row.get("container_number_snapshot"))
         reference = row.get("date_sent") or row.get("created_at")
         days_open = int((now - reference).total_seconds() // 86400) if isinstance(reference, datetime) else 0
         status = str(row.get("status") or "")
@@ -427,7 +433,7 @@ def map_containers() -> dict:
             "id": row["id"],
             "report": row.get("report_number") or "—",
             "status": status,
-            "status_label": STATUS_LABELS.get(status, status.title() or "—"),
+            "status_label": "In transit",
             "origin": row.get("origin") or "—",
             "destination": row.get("destination") or "—",
             "sent": _fmt_dt(row.get("date_sent")),
@@ -444,11 +450,10 @@ def map_containers() -> dict:
             continue
         payload.append({
             "id": row["id"],
-            "number": row.get("container_number") or "—",
+            "number": container_numbers.get(row["id"]) or row.get("container_number") or "—",
             "owner": row.get("owner") or "—",
-            "status": row.get("status") or "—",
-            "location": LOCATION_LABELS.get(str(row.get("current_location") or "").lower(),
-                                            row.get("current_location") or "—"),
+            "status": "In transit",
+            "location": "—",
             "open_count": len(shipments),
             "oldest_days_open": max((item["days_open"] for item in shipments), default=0),
             "open_shipments": shipments,
@@ -471,7 +476,7 @@ def map_containers_safe() -> dict:
     """Nunca derruba o mapa: em falha devolve lista vazia com o motivo."""
     try:
         return map_containers()
-    except Exception as exc:  # pragma: no cover - depende do Postgres do Taskfy
+    except Exception as exc:  # pragma: no cover - depende do Postgres do DATAFY
         return {"available": False, "error": str(exc), "containers": [],
                 "totals": {"fleet": 0, "containers": 0, "with_open": 0, "open_shipments": 0}}
 
@@ -485,38 +490,41 @@ ITEM_STATUS_LABELS = {
 
 
 def shipment_items(shipment_id: int, *, limit: int = 500) -> dict:
-    """Itens dentro de um envio, para o painel do mapa.
+    """DATAFY manifest items for the map and vessel dossier.
 
     Somente leitura. O envio precisa existir; a lista e limitada porque um
     envio pode ter centenas de linhas e o painel e um resumo, nao um relatorio.
     """
-    from .real_sources import _taskfy_conn
+    from .real_sources import _datafy_conn
 
-    with _taskfy_conn() as conn:
+    with _datafy_conn() as conn:
         cur = conn.cursor()
         header = _rows(
             cur,
             """
-            select s.id, s.report_number, s.status, s.origin, s.destination, s.date_sent,
-                   c.container_number, c.owner
-              from trackfy_shipment s
-              join trackfy_conteiner c on c.id = s.container_id
-             where s.id = %s
+            select s.id, s.number as report_number, s.status, s.origin, s.destination,
+                   s.sent_at as date_sent, s.container_number_snapshot as container_number, c.owner
+              from logistics_shipment s
+              join logistics_container c on c.id = s.container_id
+             where s.id = ?
+               and s.project_id = (select id from core_project order by created_at asc limit 1)
             """,
             (shipment_id,),
         )
         if not header:
             return {"available": True, "found": False, "items": [], "shipment": None, "total_count": 0}
-        total = int(_scalar(cur, "select count(*) from trackfy_shipmentitem where shipment_id = %s", (shipment_id,)))
+        total = int(_scalar(cur, "select count(*) from logistics_shipmentitem where shipment_id = ? and removed_at is null", (shipment_id,)))
         rows = _rows(
             cur,
             """
-            select id, material_code, material_rfid, material_description,
-                   quantity, received_quantity, unit, receive_status, observations
-              from trackfy_shipmentitem
-             where shipment_id = %s
-             order by id
-             limit %s
+            select id, material_code_snapshot as material_code, rfid_snapshot as material_rfid,
+                   description_snapshot as material_description, quantity_snapshot as quantity,
+                   received_quantity, unit_snapshot as unit, check_status as receive_status,
+                   check_notes as observations
+              from logistics_shipmentitem
+             where shipment_id = ? and removed_at is null
+             order by drawing_number_snapshot, log_code_snapshot, id
+             limit ?
             """,
             (shipment_id, max(1, min(2000, int(limit)))),
         )
@@ -568,6 +576,6 @@ def shipment_items_safe(shipment_id: int) -> dict:
     """Nunca derruba o painel: em falha devolve lista vazia com o motivo."""
     try:
         return shipment_items(shipment_id)
-    except Exception as exc:  # pragma: no cover - depende do Postgres do Taskfy
+    except Exception as exc:  # pragma: no cover - depende do Postgres do DATAFY
         return {"available": False, "error": str(exc), "found": False,
                 "shipment": None, "items": [], "total_count": 0, "returned_count": 0}

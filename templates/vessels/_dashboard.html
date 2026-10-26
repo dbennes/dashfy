@@ -84,9 +84,9 @@
       <div class="vt-map-frame">
         <div class="vt-map" data-vt-map aria-label="Vessel positions, port arrival areas and recorded AIS track"></div>
         <div class="vt-map-empty" data-vt-map-empty role="status"><i class="bi bi-compass" aria-hidden="true"></i><strong data-vt-map-empty-title>Loading map…</strong><span data-vt-map-empty-text>Preparing the map and stored positions.</span><button type="button" class="vt-button" data-vt-map-retry hidden>Retry map</button></div>
-        <div class="vt-containers" data-vt-containers hidden role="dialog" aria-label="Trackfy containers and open shipments">
+        <div class="vt-containers" data-vt-containers hidden role="dialog" aria-label="DATAFY containers in transit">
           <div class="vt-containers-head">
-            <div><span class="vt-kicker">TRACKFY · CONTAINERS</span><strong data-vt-containers-summary>Loading containers…</strong></div>
+            <div><span class="vt-kicker">DATAFY · CONTAINERS IN TRANSIT</span><strong data-vt-containers-summary>Loading containers…</strong></div>
             <button type="button" class="vt-button vt-close" data-vt-containers-close aria-label="Close containers"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
           </div>
           <label class="vt-search vt-containers-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" data-vt-containers-search placeholder="Find container or report" aria-label="Find container or shipment report" autocomplete="off"></label>
@@ -136,13 +136,12 @@
             <div class="vh-mini-map" data-vh-mini></div>
           </div>
         </section>
-        <section class="vh-card vh-boxes" aria-label="Containers awaiting receipt">
+        <section class="vh-card vh-boxes" aria-label="DATAFY containers in transit">
           <div class="vh-boxes-head">
-            <h3 class="vh-card-title">Containers<br><span class="vh-card-sub">awaiting receipt</span></h3>
+            <h3 class="vh-card-title">Containers<br><span class="vh-card-sub">DATAFY · in transit</span></h3>
             <span class="vh-boxes-total" data-vh-boxes-count>—</span>
             <ul class="vh-legend">
               <li><i data-state="sent"></i> In transit</li>
-              <li><i data-state="draft"></i> Draft</li>
               <li><i data-state="late"></i> Overdue</li>
             </ul>
           </div>
